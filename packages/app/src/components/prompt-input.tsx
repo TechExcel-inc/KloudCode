@@ -1,6 +1,6 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { createEffect, on, Component, Show, onCleanup, createMemo, createSignal } from "solid-js"
+import { createEffect, on, Component, Show, onCleanup, createMemo, createSignal, type JSX, type ValidComponent, type ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -25,6 +25,8 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
+import { Popover as Kobalte } from "@kobalte/core/popover"
+import { List } from "@opencode-ai/ui/list"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { useProviders } from "@/hooks/use-providers"
@@ -98,6 +100,92 @@ const EXAMPLES = [
 ] as const
 
 const NON_EMPTY_TEXT = /[^\s\u200B]/
+
+const HARDCODED_NODES = ["Admin Top Toolbar", "Employee Portal", "Team Portal", "User Manager", "System Setting", "Admin Top Toolbar", "Introduction", "Employee Login"] as const
+
+type NodeSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "as" | "ref">
+
+function NodeSelectorPopover(props: {
+  current: string
+  onSelect: (value: string) => void
+  children?: JSX.Element
+  triggerAs?: ValidComponent
+  triggerProps?: NodeSelectorTriggerProps
+  onClose?: (cause: "escape" | "select") => void
+}) {
+  const [open, setOpen] = createSignal(false)
+
+  const close = (cause: "escape" | "select") => {
+    setOpen(false)
+    props.onClose?.(cause)
+  }
+
+  return (
+    <Kobalte
+      open={open()}
+      onOpenChange={(next) => setOpen(next)}
+      modal={false}
+      placement="top-start"
+      gutter={4}
+    >
+      <Kobalte.Trigger as={props.triggerAs ?? "div"} {...props.triggerProps}>
+        {props.children}
+      </Kobalte.Trigger>
+      <Kobalte.Portal>
+        <Kobalte.Content
+          class="w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
+          onEscapeKeyDown={(event) => {
+            close("escape")
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onPointerDownOutside={() => setOpen(false)}
+          onFocusOutside={() => setOpen(false)}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+          }}
+        >
+          <List
+            class="p-1 flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+            search={{
+              placeholder: "Search nodes...",
+              autofocus: true,
+              action: (
+                <div class="flex items-center gap-1">
+                  <Tooltip placement="top" value="Add node">
+                    <IconButton
+                      icon="plus-small"
+                      variant="ghost"
+                      iconSize="normal"
+                      class="size-6"
+                      aria-label="Add node"
+                      onClick={() => {}}
+                    />
+                  </Tooltip>
+                </div>
+              ),
+            }}
+            emptyMessage="No nodes found"
+            key={(x: string) => x}
+            items={[...HARDCODED_NODES]}
+            current={props.current}
+            filterKeys={[]}
+            onSelect={(x) => {
+              if (x) props.onSelect(x)
+              close("select")
+            }}
+          >
+            {(item: string) => (
+              <div class="w-full flex items-center gap-x-2 text-13-regular">
+                <span class="truncate">{item}</span>
+              </div>
+            )}
+          </List>
+        </Kobalte.Content>
+      </Kobalte.Portal>
+    </Kobalte>
+  )
+}
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -1074,6 +1162,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
+
+  const nodes = HARDCODED_NODES
+  const [currentNode, setCurrentNode] = createSignal<string>("login")
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1580,6 +1671,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         variant="ghost"
                       />
                     </TooltipKeybind>
+                  </div>
+                  <div data-component="prompt-node-control">
+                    <NodeSelectorPopover
+                      current={currentNode()}
+                      onSelect={(value) => {
+                        setCurrentNode(value)
+                        restoreFocus()
+                      }}
+                      triggerAs={Button}
+                      triggerProps={{
+                        variant: "ghost",
+                        size: "normal",
+                        style: control(),
+                        class: "min-w-0 max-w-[320px] text-13-regular text-text-base group",
+                        "data-action": "prompt-node",
+                      }}
+                      onClose={restoreFocus}
+                    >
+                      <span class="truncate">{currentNode()}</span>
+                      <Icon name="chevron-down" size="small" class="shrink-0" />
+                    </NodeSelectorPopover>
                   </div>
                 </Show>
               </div>

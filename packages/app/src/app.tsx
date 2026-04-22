@@ -35,6 +35,7 @@ import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
+import { PluginRegistryProvider } from "@/context/plugin-registry"
 import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
@@ -91,7 +92,8 @@ function AppShellProviders(props: ParentProps) {
     <SettingsProvider>
       <PermissionProvider>
         <LayoutProvider>
-          <NotificationProvider>
+          <PluginRegistryProvider>
+            <NotificationProvider>
             <ModelsProvider>
               <CommandProvider>
                 <HighlightsProvider>
@@ -100,6 +102,7 @@ function AppShellProviders(props: ParentProps) {
               </CommandProvider>
             </ModelsProvider>
           </NotificationProvider>
+          </PluginRegistryProvider>
         </LayoutProvider>
       </PermissionProvider>
     </SettingsProvider>

@@ -18,6 +18,7 @@ const DEFAULT_SIDEBAR_WIDTH = 344
 const DEFAULT_FILE_TREE_WIDTH = 200
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
+const DEFAULT_PLUGIN_PANEL_WIDTH = 300
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
 export function getAvatarColors(key?: string) {
@@ -252,6 +253,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         session: {
           width: DEFAULT_SESSION_WIDTH,
         },
+        pluginPanels: {} as Record<string, { opened: boolean; width: number }>,
         mobileSidebar: {
           opened: false,
         },
@@ -688,6 +690,42 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return
           }
           setStore("session", "width", width)
+        },
+      },
+      pluginPanel: {
+        opened(id: string) {
+          return createMemo(() => store.pluginPanels?.[id]?.opened ?? false)
+        },
+        width(id: string) {
+          return createMemo(() => store.pluginPanels?.[id]?.width ?? DEFAULT_PLUGIN_PANEL_WIDTH)
+        },
+        open(id: string, defaultWidth?: number) {
+          if (!store.pluginPanels?.[id]) {
+            setStore("pluginPanels", id, { opened: true, width: defaultWidth ?? DEFAULT_PLUGIN_PANEL_WIDTH })
+            return
+          }
+          setStore("pluginPanels", id, "opened", true)
+        },
+        close(id: string) {
+          if (!store.pluginPanels?.[id]) {
+            setStore("pluginPanels", id, { opened: false, width: DEFAULT_PLUGIN_PANEL_WIDTH })
+            return
+          }
+          setStore("pluginPanels", id, "opened", false)
+        },
+        toggle(id: string, defaultWidth?: number) {
+          if (!store.pluginPanels?.[id]) {
+            setStore("pluginPanels", id, { opened: true, width: defaultWidth ?? DEFAULT_PLUGIN_PANEL_WIDTH })
+            return
+          }
+          setStore("pluginPanels", id, "opened", (x) => !x)
+        },
+        resize(id: string, width: number) {
+          if (!store.pluginPanels?.[id]) {
+            setStore("pluginPanels", id, { opened: true, width })
+            return
+          }
+          setStore("pluginPanels", id, "width", width)
         },
       },
       mobileSidebar: {

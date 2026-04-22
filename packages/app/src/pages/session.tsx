@@ -54,6 +54,7 @@ import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { EADPanel } from "@/pages/session/ead-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
@@ -398,13 +399,20 @@ export default function Page() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
+  const eadSizing = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
+  const eadPanelOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened("ead:webview")())
+  const eadPanelWidth = createMemo(() => (eadPanelOpen() ? layout.pluginPanel.width("ead:webview")() : 0))
   const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    const ead = eadPanelWidth()
+    if (!desktopSidePanelOpen()) {
+      if (ead === 0) return "100%"
+      return `calc(100% - ${ead}px)`
+    }
+    if (desktopReviewOpen()) return `calc(${layout.session.width()}px - ${ead}px)`
+    return `calc(100% - ${layout.fileTree.width()}px - ${ead}px)`
   })
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
 
@@ -2054,6 +2062,7 @@ export default function Page() {
           reviewSnap={ui.reviewSnap}
           size={size}
         />
+        <EADPanel sizing={eadSizing} />
       </div>
 
       <TerminalPanel />
