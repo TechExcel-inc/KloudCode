@@ -101,7 +101,7 @@ const EXAMPLES = [
 
 const NON_EMPTY_TEXT = /[^\s\u200B]/
 
-const HARDCODED_NODES = ["Admin Top Toolbar", "Employee Portal", "Team Portal", "User Manager", "System Setting", "Admin Top Toolbar", "Introduction", "Employee Login"] as const
+const HARDCODED_NODES = ["Admin Top Toolbar", "Employee Portal", "Team Portal", "User Manager", "System Setting", "Introduction", "Employee Login"] as const
 
 type NodeSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "as" | "ref">
 
@@ -1164,7 +1164,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
 
   const nodes = HARDCODED_NODES
-  const [currentNode, setCurrentNode] = createSignal<string>("login")
+  const [currentNode, setCurrentNode] = createSignal<string>("Employee Login")
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1187,6 +1187,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     setMode: (mode) => setStore("mode", mode),
     setPopover: (popover) => setStore("popover", popover),
+    currentNode,
     newSessionWorktree: () => props.newSessionWorktree,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     shouldQueue: props.shouldQueue,
