@@ -54,7 +54,9 @@ import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
-import { EADPanel } from "@/pages/session/ead-panel"
+import { EadMapPanel } from "@/pages/session/ead-map-panel"
+import { EadPilotPanel } from "@/pages/session/ead-pilot-panel"
+import { EAD_MAP_ID, EAD_PILOT_ID } from "@/ead/urls"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
@@ -399,14 +401,18 @@ export default function Page() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
-  const eadSizing = createSizing()
+  const eadMapSizing = createSizing()
+  const eadPilotSizing = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
-  const eadPanelOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened("ead:webview")())
-  const eadPanelWidth = createMemo(() => (eadPanelOpen() ? layout.pluginPanel.width("ead:webview")() : 0))
+  const eadMapOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened(EAD_MAP_ID)())
+  const eadPilotOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened(EAD_PILOT_ID)())
+  const eadMapWidth = createMemo(() => (eadMapOpen() ? layout.pluginPanel.width(EAD_MAP_ID)() : 0))
+  const eadPilotWidth = createMemo(() => (eadPilotOpen() ? layout.pluginPanel.width(EAD_PILOT_ID)() : 0))
+  const eadExtra = createMemo(() => eadMapWidth() + eadPilotWidth())
   const sessionPanelWidth = createMemo(() => {
-    const ead = eadPanelWidth()
+    const ead = eadExtra()
     if (!desktopSidePanelOpen()) {
       if (ead === 0) return "100%"
       return `calc(100% - ${ead}px)`
@@ -1895,6 +1901,7 @@ export default function Page() {
     <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+        <EadMapPanel sizing={eadMapSizing} />
         <Show when={!isDesktop() && !!params.id}>
           <Tabs value={store.mobileTab} class="h-auto">
             <Tabs.List>
@@ -2062,7 +2069,7 @@ export default function Page() {
           reviewSnap={ui.reviewSnap}
           size={size}
         />
-        <EADPanel sizing={eadSizing} />
+        <EadPilotPanel sizing={eadPilotSizing} />
       </div>
 
       <TerminalPanel />

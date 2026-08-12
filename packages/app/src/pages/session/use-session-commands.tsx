@@ -464,6 +464,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       onSelect: () => layout.fileTree.toggle(),
     }),
     viewCommand({
+      id: "ead.map.toggle",
+      title: language.t("command.ead.map.toggle"),
+      onSelect: () => layout.pluginPanel.toggle("ead:map", 320),
+    }),
+    viewCommand({
+      id: "ead.pilot.toggle",
+      title: language.t("command.ead.pilot.toggle"),
+      onSelect: () => layout.pluginPanel.toggle("ead:pilot", 420),
+    }),
+    viewCommand({
+      id: "ead.pilot.open",
+      title: language.t("command.ead.pilot.open"),
+      onSelect: () => {
+        layout.pluginPanel.open("ead:pilot", 420)
+      },
+    }),
+    viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
       keybind: "ctrl+l",

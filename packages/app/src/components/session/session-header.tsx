@@ -476,21 +476,42 @@ export function SessionHeader() {
                     </Button>
                   </TooltipKeybind>
 
-                  <Tooltip placement="bottom" value="Toggle EAD">
+                  <Tooltip placement="bottom" value="Toggle EAD Map">
                     <Button
                       variant="ghost"
                       class="titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => layout.pluginPanel.toggle("ead:webview", 400)}
-                      aria-label="Toggle EAD"
-                      aria-expanded={layout.pluginPanel.opened("ead:webview")()}
+                      onClick={() => layout.pluginPanel.toggle("ead:map", 320)}
+                      aria-label="Toggle EAD Map"
+                      aria-expanded={layout.pluginPanel.opened("ead:map")()}
+                    >
+                      <div class="relative flex items-center justify-center size-4">
+                        <Icon
+                          size="small"
+                          name="layout-left"
+                          classList={{
+                            "text-icon-strong": layout.pluginPanel.opened("ead:map")(),
+                            "text-icon-weak": !layout.pluginPanel.opened("ead:map")(),
+                          }}
+                        />
+                      </div>
+                    </Button>
+                  </Tooltip>
+
+                  <Tooltip placement="bottom" value="Toggle EAD Pilot">
+                    <Button
+                      variant="ghost"
+                      class="titlebar-icon w-8 h-6 p-0 box-border"
+                      onClick={() => layout.pluginPanel.toggle("ead:pilot", 420)}
+                      aria-label="Toggle EAD Pilot"
+                      aria-expanded={layout.pluginPanel.opened("ead:pilot")()}
                     >
                       <div class="relative flex items-center justify-center size-4">
                         <Icon
                           size="small"
                           name="link"
                           classList={{
-                            "text-icon-strong": layout.pluginPanel.opened("ead:webview")(),
-                            "text-icon-weak": !layout.pluginPanel.opened("ead:webview")(),
+                            "text-icon-strong": layout.pluginPanel.opened("ead:pilot")(),
+                            "text-icon-weak": !layout.pluginPanel.opened("ead:pilot")(),
                           }}
                         />
                       </div>

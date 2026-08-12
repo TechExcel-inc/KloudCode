@@ -36,6 +36,7 @@ import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { PluginRegistryProvider } from "@/context/plugin-registry"
+import { EadProvider } from "@/ead/settings"
 import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
@@ -93,6 +94,7 @@ function AppShellProviders(props: ParentProps) {
       <PermissionProvider>
         <LayoutProvider>
           <PluginRegistryProvider>
+            <EadProvider>
             <NotificationProvider>
             <ModelsProvider>
               <CommandProvider>
@@ -102,6 +104,7 @@ function AppShellProviders(props: ParentProps) {
               </CommandProvider>
             </ModelsProvider>
           </NotificationProvider>
+            </EadProvider>
           </PluginRegistryProvider>
         </LayoutProvider>
       </PermissionProvider>

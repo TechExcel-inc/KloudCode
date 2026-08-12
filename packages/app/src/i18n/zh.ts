@@ -65,6 +65,9 @@ export const dict = {
   "command.terminal.toggle": "切换终端",
 
   "command.fileTree.toggle": "切换文件树",
+  "command.ead.map.toggle": "切换 EAD Map",
+  "command.ead.pilot.toggle": "切换 EAD Pilot",
+  "command.ead.pilot.open": "打开 EAD AI 领航",
 
   "command.review.toggle": "切换审查",
 
@@ -748,6 +751,27 @@ export const dict = {
 
   "settings.models.title": "模型",
   "settings.models.description": "模型设置将在此处可配置。",
+  "settings.ead.title": "EAD Pilot",
+  "settings.ead.description": "连接 EAD PFM（eadfm.com）。可在 EAD Map 侧栏登录，或在此粘贴 token。",
+  "settings.ead.serverUrl.title": "应用地址",
+  "settings.ead.serverUrl.description": "Pilot iframe 使用的生产站点。",
+  "settings.ead.apiUrl.title": "API 地址",
+  "settings.ead.apiUrl.description": "EAD Map 使用的生产 API。",
+  "settings.ead.token.title": "认证 Token",
+  "settings.ead.token.description": "登录后保存的 Bearer token，用于 Map API 与 Pilot 同步。",
+  "settings.ead.token.clear": "清除",
+  "settings.ead.product.title": "当前产品",
+  "settings.ead.product.description": "在 EAD Map 侧栏中选择。",
+  "settings.ead.mcp.title": "MCP",
+  "settings.ead.mcp.description": "向当前 OpenCode 服务注册 eadpfm（需要 node 与 MCP 入口路径）。",
+  "settings.ead.mcp.copy": "复制片段",
+  "settings.ead.mcp.copied": "已复制",
+  "settings.ead.mcp.apply": "应用到服务",
+  "settings.ead.mcp.ok.title": "MCP 已连接",
+  "settings.ead.mcp.ok.description": "已添加并连接 eadpfm。",
+  "settings.ead.mcp.fail.title": "MCP 失败",
+  "settings.ead.mcpEntry.title": "MCP 入口",
+  "settings.ead.mcpEntry.description": "mcp-eadpfm/dist/index.js 的绝对路径",
 
   "settings.agents.title": "智能体",
   "settings.agents.description": "智能体设置将在此处可配置。",

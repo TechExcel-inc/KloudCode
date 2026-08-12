@@ -1,8 +1,9 @@
 import { useIsRouting, useLocation } from "@solidjs/router"
-import { batch, createEffect, onCleanup, onMount } from "solid-js"
+import { Show, batch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useLanguage } from "@/context/language"
 
 type Mem = Performance & {
@@ -76,6 +77,7 @@ function Cell(props: { bad?: boolean; dim?: boolean; label: string; tip: string;
 }
 
 export function DebugBar() {
+  const [open, setOpen] = createSignal(true)
   const language = useLanguage()
   const location = useLocation()
   const routing = useIsRouting()
@@ -361,11 +363,21 @@ export function DebugBar() {
   })
 
   return (
-    <aside
-      aria-label={language.t("debugBar.ariaLabel")}
-      class="pointer-events-auto fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 text-text-strong shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]"
-    >
-      <div class="grid grid-cols-5 gap-px font-mono">
+    <Show when={open()}>
+      <aside
+        aria-label={language.t("debugBar.ariaLabel")}
+        class="pointer-events-auto fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 text-text-strong shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]"
+      >
+        <div class="flex justify-end px-1 pt-0.5">
+          <IconButton
+            icon="close-small"
+            variant="ghost"
+            class="h-5 w-5"
+            onClick={() => setOpen(false)}
+            aria-label={language.t("common.close")}
+          />
+        </div>
+        <div class="grid grid-cols-5 gap-px font-mono">
         <Cell
           label={language.t("debugBar.nav.label")}
           tip={language.t("debugBar.nav.tip")}
@@ -437,7 +449,8 @@ export function DebugBar() {
           dim={state.heap.used === undefined}
           wide
         />
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </Show>
   )
 }
