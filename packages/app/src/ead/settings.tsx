@@ -35,6 +35,7 @@ type State = {
   badge: Badge
   expanded: Record<string, string[]>
   jobsOnly: boolean
+  workContextId: number
 }
 
 const empty: State = {
@@ -63,6 +64,7 @@ const empty: State = {
   badge: "ead",
   expanded: {},
   jobsOnly: false,
+  workContextId: 0,
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
@@ -116,6 +118,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       badge: () => store.badge ?? "ead",
       expanded: (schemaId: number) => store.expanded?.[String(schemaId)] ?? [],
       jobsOnly: () => store.jobsOnly === true,
+      workContextId: () => store.workContextId ?? 0,
       setToken(token: string) {
         setStore("token", token.trim())
       },
@@ -185,6 +188,9 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       setJobsOnly(value: boolean) {
         setStore("jobsOnly", value)
+      },
+      setWorkContext(id: number) {
+        setStore("workContextId", Number.isFinite(id) && id > 0 ? id : 0)
       },
       setExpanded(schemaId: number, paths: string[]) {
         setStore("expanded", String(schemaId), paths)

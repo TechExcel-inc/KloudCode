@@ -141,3 +141,44 @@ export function badge(nodeId: number, counts: Record<string, number>) {
   const n = Number(counts[String(nodeId)] || 0)
   return n > 0 ? n : 0
 }
+
+export function collectIds<T extends { nodeId: number; children: T[] }>(nodes: T[]): number[] {
+  const out: number[] = []
+  const walk = (list: T[]) => {
+    for (const node of list) {
+      if (node.nodeId > 0) out.push(node.nodeId)
+      if (node.children.length) walk(node.children)
+    }
+  }
+  walk(nodes)
+  return out
+}
+
+/** Parent badge = own count + descendants (Cursor rollupPfmCountsByMapTree). */
+export function rollupCounts<T extends { nodeId: number; children: T[] }>(
+  nodes: T[],
+  direct: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  const walk = (node: T): number => {
+    const self = Number(direct[String(node.nodeId)] || 0)
+    let sum = self
+    for (const child of node.children) sum += walk(child)
+    if (sum > 0) out[String(node.nodeId)] = sum
+    return sum
+  }
+  for (const node of nodes) walk(node)
+  return out
+}
+
+/** Ancestors of target (root → parent), for expand-to-work-context. */
+export function pathIds<T extends { nodeId: number; children: T[] }>(nodes: T[], target: number): number[] {
+  const walk = (list: T[], path: number[]): number[] | undefined => {
+    for (const node of list) {
+      if (node.nodeId === target) return path
+      const hit = walk(node.children, [...path, node.nodeId])
+      if (hit) return hit
+    }
+  }
+  return walk(nodes, []) ?? []
+}

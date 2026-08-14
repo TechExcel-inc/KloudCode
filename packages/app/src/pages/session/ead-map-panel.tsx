@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Button } from "@opencode-ai/ui/button"
@@ -12,50 +12,98 @@ import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
 import { queuePilot } from "@/ead/actions"
 import {
-  createJob,
   loadActiveMap,
   loadContext,
-  loadFilterNodeIds,
   loadJobsForNode,
   loadLinkedBundle,
+  loadOpenFilterNodeIds,
+  loadPfmEadCounts,
+  loadPfmJobCounts,
+  loadPfmTestCounts,
   loadProducts,
   loadRawContext,
   loadSourceSchema,
   loadSubSchemas,
+  loadTeamMembers,
   login,
   me,
   resetPassword,
   selectSourcePath,
   sendCode,
   signup,
+  suggestProduct,
   verifyCode,
   type PfmNode,
   type Product,
   type SubSchema,
+  type TeamMember,
 } from "@/ead/api"
 import { openPilot } from "@/ead/bridge"
-import { draftComposer, sendChat } from "@/ead/composer"
+import { sendChat } from "@/ead/composer"
 import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
-import { readPfmFilter } from "@/ead/filters"
+import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { useEad } from "@/ead/settings"
 import {
   buildTree,
+  collectIds,
   filterByCount,
   filterByIds,
   filterDisplay,
   filterPfm,
   filterSource,
   parseRows,
+  pathIds,
+  rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
 import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_SERVER_URL } from "@/ead/urls"
+
+type AuthTab =
+  | "signin"
+  | "signup-start"
+  | "signup-verify"
+  | "signup-create"
+  | "forgot"
+  | "forgot-reset"
+  | "forgot-success"
+type Hint = { productId: number; name: string }
+type Banner = { kind: "loading" | "ok" | "error"; text: string }
+type Menu =
+  | ""
+  | "user"
+  | "lang"
+  | "product"
+  | "schema"
+  | "setup"
+  | "job"
+  | "run"
+  | "view"
+  | "scope"
+  | "owner"
+  | "chip"
+
+const KINDS: ContextKind[] = ["jobs", "prompt", "skills", "api", "source"]
+
+const field = "w-full px-2 py-1.5 text-12-regular rounded-md border border-border-weak-base bg-background-base"
+const drop =
+  "absolute z-20 mt-1 min-w-[11rem] max-w-[18rem] rounded-md border border-border-weak-base bg-background-base shadow-md py-1 text-12-regular"
+const item =
+  "w-full px-2.5 py-1.5 text-left text-12-regular hover:bg-surface-base-hover text-text-base disabled:opacity-40"
+const itemActive = "bg-surface-base-active text-text-strong"
 
 function Tree(props: {
   nodes: PfmNode[]
   selected: number
   onSelect: (node: PfmNode) => void
   depth?: number
+  badge?: "ead" | "jobs" | "tests" | "none"
+  counts?: Record<string, number>
+  work?: number
+  force?: number[]
+  chip?: number
+  onChip: (id: number) => void
+  onInject: (kind: ContextKind, node: PfmNode) => void
 }) {
   const depth = () => props.depth ?? 0
   return (
@@ -63,33 +111,97 @@ function Tree(props: {
       {(node) => {
         const [open, setOpen] = createSignal(depth() < 2)
         const kids = () => node.children.length > 0
+        const on = () => props.selected === node.nodeId
+        const work = () => !!props.work && props.work === node.nodeId && !on()
+        const shown = () => !!props.force?.includes(node.nodeId) || open()
+        const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
+        const label = () => {
+          const n = count()
+          if (n <= 0 || !props.badge || props.badge === "none") return ""
+          if (props.badge === "ead") return `EAD ${n}`
+          if (props.badge === "jobs") return `Jobs ${n}`
+          return `Tests ${n}`
+        }
         return (
           <div>
-            <button
-              type="button"
-              class="w-full flex items-center gap-1 px-2 py-1 text-left text-12-regular rounded-md hover:bg-surface-base-hover"
+            <div
+              class="w-full flex items-center gap-1 px-1.5 py-0.5 text-left text-12-regular rounded-md hover:bg-surface-base-hover group"
               classList={{
-                "bg-surface-base-active text-text-strong": props.selected === node.nodeId,
-                "text-text-base": props.selected !== node.nodeId,
+                "bg-surface-base-active text-text-strong": on(),
+                "text-sky-400": work(),
+                "text-text-base": !on() && !work(),
               }}
-              style={{ "padding-left": `${8 + depth() * 12}px` }}
-              onClick={() => props.onSelect(node)}
+              style={{ "padding-left": `${6 + depth() * 12}px` }}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <span
+                <button
+                  type="button"
                   class="w-3 shrink-0 text-text-weak"
                   onClick={(e) => {
                     e.stopPropagation()
                     setOpen((v) => !v)
                   }}
                 >
-                  {open() ? "▾" : "▸"}
-                </span>
+                  {shown() ? "▾" : "▸"}
+                </button>
               </Show>
-              <span class="truncate">{node.name}</span>
-            </button>
-            <Show when={kids() && open()}>
-              <Tree nodes={node.children} selected={props.selected} onSelect={props.onSelect} depth={depth() + 1} />
+              <Show when={work()}>
+                <span class="w-1.5 h-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+              </Show>
+              <button type="button" class="min-w-0 flex-1 truncate text-left" onClick={() => props.onSelect(node)}>
+                {node.name}
+              </button>
+              <Show when={label()}>
+                <span class="shrink-0 px-1 rounded text-11-regular bg-surface-base-active text-text-weak">{label()}</span>
+              </Show>
+              <Show when={on()}>
+                <div class="relative shrink-0">
+                  <button
+                    type="button"
+                    class="px-1 rounded text-11-regular border border-border-weaker-base text-text-weak hover:bg-surface-base-hover"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
+                    }}
+                  >
+                    ▾
+                  </button>
+                  <Show when={props.chip === node.nodeId}>
+                    <div class={`${drop} right-0`}>
+                      <For each={KINDS}>
+                        {(k) => (
+                          <button
+                            type="button"
+                            class={item}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              props.onChip(0)
+                              props.onInject(k, node)
+                            }}
+                          >
+                            {kindLabel(k)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+            <Show when={kids() && shown()}>
+              <Tree
+                nodes={node.children}
+                selected={props.selected}
+                onSelect={props.onSelect}
+                depth={depth() + 1}
+                badge={props.badge}
+                counts={props.counts}
+                work={props.work}
+                force={props.force}
+                chip={props.chip}
+                onChip={props.onChip}
+                onInject={props.onInject}
+              />
             </Show>
           </div>
         )
@@ -104,8 +216,12 @@ function SourceTree(props: {
   onSelect: (node: SourceNode) => void
   depth?: number
   counts?: Record<string, number>
+  pending?: Record<string, boolean>
   expanded?: string[]
   onExpand?: (path: string, open: boolean) => void
+  chip?: number
+  onChip: (id: number) => void
+  onInject: (kind: ContextKind, node: SourceNode) => void
 }) {
   const depth = () => props.depth ?? 0
   return (
@@ -116,6 +232,8 @@ function SourceTree(props: {
         const open = () => (controlled() ? props.expanded!.includes(node.nodePath) : local())
         const kids = () => node.children.length > 0
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
+        const pending = () => !!props.pending?.[node.nodePath]
+        const on = () => props.selected === node.nodeId
         const toggle = (e: MouseEvent) => {
           e.stopPropagation()
           const next = !open()
@@ -127,27 +245,63 @@ function SourceTree(props: {
         }
         return (
           <div>
-            <button
-              type="button"
-              class="w-full flex items-center gap-1 px-2 py-1 text-left text-12-regular rounded-md hover:bg-surface-base-hover"
+            <div
+              class="w-full flex items-center gap-1 px-1.5 py-0.5 text-left text-12-regular rounded-md hover:bg-surface-base-hover"
               classList={{
-                "bg-surface-base-active text-text-strong": props.selected === node.nodeId,
-                "text-text-base": props.selected !== node.nodeId,
+                "bg-surface-base-active text-text-strong": on(),
+                "text-text-base": !on(),
               }}
-              style={{ "padding-left": `${8 + depth() * 12}px` }}
-              onClick={() => props.onSelect(node)}
+              style={{ "padding-left": `${6 + depth() * 12}px` }}
               title={node.nodePath}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <span class="w-3 shrink-0 text-text-weak" onClick={toggle}>
+                <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
                   {open() ? "▾" : "▸"}
-                </span>
+                </button>
               </Show>
-              <span class="truncate">{node.nodeName}</span>
+              <button type="button" class="min-w-0 flex-1 truncate text-left" onClick={() => props.onSelect(node)}>
+                {node.nodeName}
+              </button>
+              <Show when={pending()}>
+                <span class="shrink-0 px-1 rounded text-11-regular bg-surface-base-active text-text-weak">…</span>
+              </Show>
               <Show when={count() > 0}>
-                <span class="shrink-0 text-11-regular text-text-weak">· {count()}</span>
+                <span class="shrink-0 text-11-regular text-text-weak">{count()}</span>
               </Show>
-            </button>
+              <Show when={on()}>
+                <div class="relative shrink-0">
+                  <button
+                    type="button"
+                    class="px-1 rounded text-11-regular border border-border-weaker-base text-text-weak hover:bg-surface-base-hover"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
+                    }}
+                  >
+                    ▾
+                  </button>
+                  <Show when={props.chip === node.nodeId}>
+                    <div class={`${drop} right-0`}>
+                      <For each={KINDS}>
+                        {(k) => (
+                          <button
+                            type="button"
+                            class={item}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              props.onChip(0)
+                              props.onInject(k, node)
+                            }}
+                          >
+                            {kindLabel(k)}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+              </Show>
+            </div>
             <Show when={kids() && open()}>
               <SourceTree
                 nodes={node.children}
@@ -155,8 +309,12 @@ function SourceTree(props: {
                 onSelect={props.onSelect}
                 depth={depth() + 1}
                 counts={props.counts}
+                pending={props.pending}
                 expanded={props.expanded}
                 onExpand={props.onExpand}
+                chip={props.chip}
+                onChip={props.onChip}
+                onInject={props.onInject}
               />
             </Show>
           </div>
@@ -165,10 +323,6 @@ function SourceTree(props: {
     </For>
   )
 }
-
-type AuthTab = "signin" | "signup" | "reset"
-
-const KINDS: ContextKind[] = ["prompt", "jobs", "skills", "api", "source"]
 
 export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
@@ -190,24 +344,42 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [source, setSource] = createSignal<SourceNode[]>([])
   const [schemas, setSchemas] = createSignal<SubSchema[]>([])
   const [jobIds, setJobIds] = createSignal<Set<number> | undefined>()
+  const [baseMapId, setBaseMapId] = createSignal(0)
+  const [mapName, setMapName] = createSignal("")
   const [eadCounts, setEadCounts] = createSignal<Record<string, number>>({})
   const [jobCounts, setJobCounts] = createSignal<Record<string, number>>({})
   const [testCounts, setTestCounts] = createSignal<Record<string, number>>({})
   const [pendingPaths, setPendingPaths] = createSignal<Record<string, boolean>>({})
+  const [pfmEad, setPfmEad] = createSignal<Record<string, number>>({})
+  const [pfmJobs, setPfmJobs] = createSignal<Record<string, number>>({})
+  const [pfmTests, setPfmTests] = createSignal<Record<string, number>>({})
+  const [hint, setHint] = createSignal<Hint | undefined>()
+  const [banner, setBanner] = createSignal<Banner | null>(null)
+  const [diag, setDiag] = createSignal(false)
   const [query, setQuery] = createSignal("")
+  const [pq, setPq] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [err, setErr] = createSignal("")
   const [user, setUser] = createSignal("")
+  const [email, setEmail] = createSignal("")
   const [tab, setTab] = createSignal<AuthTab>("signin")
   const [id, setId] = createSignal("")
   const [pass, setPass] = createSignal("")
+  const [showPass, setShowPass] = createSignal(false)
   const [target, setTarget] = createSignal("")
   const [code, setCode] = createSignal("")
   const [username, setUsername] = createSignal("")
   const [signupToken, setSignupToken] = createSignal("")
   const [newPass, setNewPass] = createSignal("")
-  const [kind, setKind] = createSignal<ContextKind>("prompt")
-  const [title, setTitle] = createSignal("")
+  const [menu, setMenu] = createSignal<Menu>("")
+  const [chip, setChip] = createSignal(0)
+  const [members, setMembers] = createSignal<TeamMember[]>([])
+  const [multi, setMulti] = createSignal(false)
+  const [draftEmails, setDraftEmails] = createSignal<string[]>([])
+  const [draftMe, setDraftMe] = createSignal(false)
+  const [oq, setOq] = createSignal("")
+
+  let flashTimer: ReturnType<typeof setTimeout> | undefined
 
   const badgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -217,22 +389,82 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     return eadCounts()
   })
 
+  const pfmBadgeCounts = createMemo(() => {
+    const mode = ead.badge()
+    if (mode === "jobs") return pfmJobs()
+    if (mode === "tests") return pfmTests()
+    if (mode === "none") return {} as Record<string, number>
+    return pfmEad()
+  })
+
+  const pfmFilter = createMemo(() => {
+    void ead.mapTick()
+    return readPfmFilter()
+  })
+
+  const owner = createMemo(() => {
+    void ead.mapTick()
+    return readOwner(ead.productId())
+  })
+
+  const countIds = (counts: Record<string, number>) =>
+    new Set(
+      Object.entries(counts)
+        .filter(([, n]) => n > 0)
+        .map(([k]) => Number(k))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    )
+
   const pfmVisible = createMemo(() => {
+    void ead.mapTick()
     const node = root()
     if (!node) return [] as PfmNode[]
     let nodes = [node]
     const jobs = jobIds()
-    if (ead.jobsOnly() && jobs) nodes = filterByIds(nodes, jobs)
+    if (ead.jobsOnly()) {
+      const mode = ead.badge()
+      if (mode === "ead") {
+        const ids = countIds(pfmEad())
+        nodes = ids.size ? filterByIds(nodes, ids) : []
+      } else if (mode === "tests") {
+        const ids = countIds(pfmTests())
+        nodes = ids.size ? filterByIds(nodes, ids) : []
+      } else if (jobs) {
+        nodes = filterByIds(nodes, jobs)
+      }
+    }
     const filter = readPfmFilter()
     if (filter.active && filter.ids.length) nodes = filterByIds(nodes, new Set(filter.ids))
     return filterPfm(nodes, query())
   })
+
+  const openPath = createMemo(() => pathIds(pfmVisible(), ead.workContextId()))
 
   const sourceVisible = createMemo(() => {
     const nodes = ead.eadsOnly()
       ? filterByCount(source(), eadCounts(), pendingPaths(), true)
       : source()
     return filterSource(nodes, query())
+  })
+
+  const filtered = createMemo(() => {
+    const q = pq().trim().toLowerCase()
+    if (!q) return products()
+    return products().filter((p) => p.name.toLowerCase().includes(q) || String(p.productId).includes(q))
+  })
+
+  const ownerMembers = createMemo(() => {
+    const q = oq().trim().toLowerCase()
+    if (!q) return members()
+    return members().filter(
+      (m) => m.label.toLowerCase().includes(q) || m.email.toLowerCase().includes(q),
+    )
+  })
+
+  const schemaType = createMemo(() => {
+    const sid = ead.subSchemaId()
+    if (sid <= 0) return "Base"
+    return schemas().find((s) => s.id === sid)?.name || `#${sid}`
   })
 
   const sourceOpts = () => ({
@@ -242,6 +474,29 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     sourcePath: ead.sourcePath() || undefined,
     sourceName: ead.sourceName() || undefined,
   })
+
+  const folder = () => {
+    const dir = String(sdk.directory || "").replace(/[/\\]+$/, "")
+    const parts = dir.split(/[/\\]/).filter(Boolean)
+    return parts[parts.length - 1] || ""
+  }
+
+  const flash = (kind: Banner["kind"], text: string) => {
+    setBanner({ kind, text })
+    if (flashTimer) clearTimeout(flashTimer)
+    if (kind !== "ok") return
+    flashTimer = setTimeout(() => setBanner(null), 2500)
+  }
+
+  const closeMenus = () => {
+    setMenu("")
+    setChip(0)
+  }
+
+  const bump = () => {
+    ead.bumpMap()
+    if (layout.pluginPanel.opened(EAD_PILOT_ID)()) ead.bumpPilot()
+  }
 
   const launch = (action: Parameters<typeof queuePilot>[0]) => {
     queuePilot(action)
@@ -253,6 +508,19 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setJobCounts({})
     setTestCounts({})
     setPendingPaths({})
+    setPfmEad({})
+    setPfmJobs({})
+    setPfmTests({})
+  }
+
+  const toggleBadge = (next: "ead" | "jobs" | "tests") => {
+    ead.setBadge(ead.badge() === next ? "none" : next)
+  }
+
+  const soon = (name: string) => {
+    const msg = `${name} coming soon`
+    setErr(msg)
+    showToast({ title: "EAD", description: msg })
   }
 
   const loadSource = async (sync = false) => {
@@ -319,7 +587,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }
   }
 
+  let gen = 0
   const refresh = async () => {
+    const run = ++gen
+    const live = () => run === gen
     const token = ead.token()
     if (!token) {
       setProducts([])
@@ -327,26 +598,53 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setSource([])
       setSchemas([])
       setJobIds(undefined)
+      setBaseMapId(0)
+      setMapName("")
       clearCounts()
       setUser("")
+      setEmail("")
+      setHint(undefined)
+      setBanner(null)
       return
     }
     setBusy(true)
     setErr("")
+    flash("loading", "Refreshing EAD Map…")
     try {
       const fetcher = http()
       const profile = await me(token, fetcher)
+      if (!live()) return
+      setEmail(String(profile?.email || ""))
       setUser(String(profile?.name || profile?.userName || profile?.email || "signed in"))
       const list = await loadProducts(token, fetcher)
+      if (!live()) return
       setProducts(list)
       const pid = ead.productId()
-      const selected = pid > 0 ? list.find((p) => p.productId === pid) : undefined
+      if (pid <= 0) {
+        setRoot(undefined)
+        setSource([])
+        setSchemas([])
+        setJobIds(undefined)
+        setBaseMapId(0)
+        setMapName("")
+        clearCounts()
+        const hit = await suggestProduct(token, list, folder(), fetcher)
+        if (!live()) return
+        setHint(hit ? { productId: hit.productId, name: hit.name } : undefined)
+        flash("ok", "Refreshed")
+        return
+      }
+      setHint(undefined)
+      const selected = list.find((p) => p.productId === pid)
       if (!selected) {
         setRoot(undefined)
         setSource([])
         setSchemas([])
         setJobIds(undefined)
+        setBaseMapId(0)
+        setMapName("")
         clearCounts()
+        flash("ok", "Refreshed")
         return
       }
       if (selected.name && selected.name !== ead.productName()) {
@@ -354,21 +652,46 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
       const sub = ead.subSchemaId()
       const map = await loadActiveMap(token, selected.productId, fetcher, sub > 0 ? sub : undefined)
+      if (!live()) return
       ead.setMapId(map.mapId)
       setRoot(map.root)
+      setBaseMapId(map.baseMapId)
+      setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
       if (map.supportSubSchemas && map.mapId > 0) {
-        setSchemas(await loadSubSchemas(token, map.mapId, fetcher))
+        const next = await loadSubSchemas(token, map.mapId, fetcher)
+        if (!live()) return
+        setSchemas(next)
       } else {
         setSchemas([])
       }
-      if (ead.jobsOnly() && map.mapId > 0) {
-        const ids = await loadFilterNodeIds(token, map.mapId, fetcher)
+      if (map.mapId > 0) {
+        const ids = await loadOpenFilterNodeIds(token, map.mapId, fetcher)
+        if (!live()) return
         setJobIds(new Set(ids))
       } else {
         setJobIds(undefined)
       }
+      if (map.root) {
+        const ids = collectIds([map.root])
+        const [eads, jobs, tests] = await Promise.all([
+          loadPfmEadCounts(token, ids, fetcher),
+          loadPfmJobCounts(token, ids, fetcher),
+          loadPfmTestCounts(token, ids, fetcher),
+        ])
+        if (!live()) return
+        setPfmEad(rollupCounts([map.root], eads))
+        setPfmJobs(rollupCounts([map.root], jobs))
+        setPfmTests(rollupCounts([map.root], tests))
+      } else {
+        setPfmEad({})
+        setPfmJobs({})
+        setPfmTests({})
+      }
       if (ead.view() === "source") await loadSource()
+      if (!live()) return
+      flash("ok", "Refreshed")
     } catch (e) {
+      if (!live()) return
       const msg = e instanceof Error ? e.message : String(e)
       if (msg === "AUTH_EXPIRED") {
         ead.signOut()
@@ -377,26 +700,54 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setSource([])
         setSchemas([])
         setJobIds(undefined)
+        setBaseMapId(0)
+        setMapName("")
         clearCounts()
         setUser("")
+        setEmail("")
+        setHint(undefined)
         setErr("Session expired — please sign in again.")
+        flash("error", "Session expired — please sign in again.")
         return
       }
       setErr(msg)
+      flash("error", msg)
       setRoot(undefined)
       setSource([])
       setSchemas([])
       setJobIds(undefined)
+      setBaseMapId(0)
+      setMapName("")
       clearCounts()
     } finally {
-      setBusy(false)
+      if (live()) setBusy(false)
     }
   }
 
   createEffect(() => {
     if (!panelOpen()) return
-    void ead.mapTick()
+    void ead.token()
+    void ead.productId()
+    void ead.subSchemaId()
     void refresh()
+  })
+
+  createEffect(() => {
+    const open = menu()
+    const id = chip()
+    if (!open && !id) return
+    const onDoc = (e: MouseEvent) => {
+      const el = e.target
+      if (!(el instanceof Element)) return
+      if (el.closest("[data-ead-menu]")) return
+      closeMenus()
+    }
+    document.addEventListener("mousedown", onDoc)
+    onCleanup(() => document.removeEventListener("mousedown", onDoc))
+  })
+
+  onCleanup(() => {
+    if (flashTimer) clearTimeout(flashTimer)
   })
 
   const applyContext = async (nodeId: number, nodeName: string, type: "pfm" | "source") => {
@@ -422,11 +773,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const selectNode = (node: PfmNode) => {
+    closeMenus()
     ead.setNode(node.nodeId, node.name)
     void applyContext(node.nodeId, node.name, "pfm")
   }
 
   const selectSource = (node: SourceNode) => {
+    closeMenus()
     ead.setSource(node.nodeId, node.nodeName, node.nodePath)
     const token = ead.token()
     const sid = ead.schemaId()
@@ -493,6 +846,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       const result = await sendCode(target(), intent, http())
       showToast({ title: "EAD", description: result.message, variant: "success" })
       if (result.code) setCode(result.code)
+      setTab(intent === "signup" ? "signup-verify" : "forgot-reset")
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -506,6 +860,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     try {
       setSignupToken(await verifyCode(target(), code(), http()))
       showToast({ title: "EAD", description: "Code verified.", variant: "success" })
+      setTab("signup-create")
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -548,7 +903,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         http(),
       )
       showToast({ title: "EAD", description: message, variant: "success" })
-      setTab("signin")
+      setTab("forgot-success")
       setId(target())
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -570,16 +925,23 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setSource([])
     setSchemas([])
     setJobIds(undefined)
+    setBaseMapId(0)
+    setMapName("")
     clearCounts()
     setUser("")
+    setEmail("")
+    setHint(undefined)
+    setBanner(null)
     setQuery("")
     setErr("")
-    setTitle("")
+    setTab("signin")
+    closeMenus()
   }
 
   const switchView = async (view: "pfm" | "source") => {
     ead.setView(view)
     setQuery("")
+    closeMenus()
     if (view !== "source") return
     setBusy(true)
     setErr("")
@@ -594,33 +956,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }
   }
 
-  const copyContext = () => {
-    const markdown = ead.contextMarkdown().trim()
-    const name = (ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName()).trim()
-    const text = markdown || (name ? `Active EAD context: ${name}` : "")
-    if (!text) {
-      showToast({ title: "EAD", description: "No active context to copy.", variant: "error" })
-      return
-    }
-    draftComposer((next) => prompt.set(next), text)
-    showToast({ title: "EAD", description: "Context drafted in composer.", variant: "success" })
-  }
-
-  const activeId = () => (ead.sourceId() > 0 ? ead.sourceId() : ead.nodeId())
-  const activeName = () => (ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName())
-  const activeKind = () => (ead.sourceId() > 0 ? ("source" as const) : ("pfm" as const))
-
-  const injectContext = async () => {
+  const inject = async (kind: ContextKind, nodeId: number, name: string, type: "pfm" | "source") => {
     const token = ead.token()
-    const nodeId = activeId()
-    const name = activeName()
     if (!token || nodeId <= 0) return
     setBusy(true)
     setErr("")
     try {
-      const raw = await loadRawContext(token, nodeId, http(), activeKind())
+      const raw = await loadRawContext(token, nodeId, http(), type)
       const jobs =
-        kind() === "jobs"
+        kind === "jobs"
           ? ((await loadJobsForNode(token, nodeId, http())) as Array<{
               jobId?: number
               title?: string
@@ -628,9 +972,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
               jobStatus?: number
             }>)
           : []
-      const text = formatModal(buildModal(kind(), nodeId, name, raw, jobs))
+      const text = formatModal(buildModal(kind, nodeId, name, raw, jobs))
       await sendChat({ text, set: (next) => prompt.set(next) })
-      showToast({ title: "EAD", description: `${kindLabel(kind())} drafted in composer.`, variant: "success" })
+      showToast({ title: "EAD", description: `${kindLabel(kind)} drafted in composer.`, variant: "success" })
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -638,40 +982,83 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }
   }
 
-  const onCreateTask = async () => {
+  const openOwner = async () => {
+    const next = menu() === "owner" ? "" : "owner"
+    setMenu(next)
+    setChip(0)
+    if (next !== "owner") return
+    const cur = owner()
+    setMulti(false)
+    setOq("")
+    setDraftMe(!!cur.includeMe && cur.active)
+    setDraftEmails(cur.memberEmails.length ? [...cur.memberEmails] : cur.memberEmail ? [cur.memberEmail] : [])
     const token = ead.token()
-    const nodeId = activeId()
-    const name = title().trim()
-    if (!token || nodeId <= 0 || !name) {
-      showToast({ title: "EAD", description: "Task title required.", variant: "error" })
-      return
-    }
-    setBusy(true)
-    setErr("")
+    const pid = ead.productId()
+    if (!token || pid <= 0) return
     try {
-      await createJob(token, { pfmNodeId: nodeId, title: name }, http())
-      setTitle("")
-      setKind("jobs")
-      const raw = await loadRawContext(token, nodeId, http(), activeKind())
-      const jobs = (await loadJobsForNode(token, nodeId, http())) as Array<{
-        jobId?: number
-        title?: string
-        description?: string
-        jobStatus?: number
-      }>
-      const text = formatModal(buildModal("jobs", nodeId, activeName(), raw, jobs))
-      await sendChat({ text, set: (next) => prompt.set(next) })
-      showToast({ title: "EAD", description: "Task created and jobs injected.", variant: "success" })
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setErr(msg)
-      showToast({ title: "EAD", description: msg, variant: "error" })
-    } finally {
-      setBusy(false)
+      setMembers(await loadTeamMembers(token, pid, http()))
+    } catch {
+      setMembers([])
     }
   }
 
-  const field = "w-full px-2 py-1.5 text-12-regular rounded-md border border-border-weak-base bg-background-base"
+  const writeOwnerChoice = (next: Parameters<typeof writeOwner>[1]) => {
+    const pid = ead.productId()
+    if (pid <= 0) return
+    writeOwner(pid, next)
+    bump()
+  }
+
+  const applyOwner = () => {
+    const mails = draftEmails()
+    const meOn = draftMe()
+    if (!mails.length && !meOn) {
+      writeOwnerChoice({
+        active: false,
+        memberEmail: "",
+        memberLabel: "",
+        memberEmails: [],
+        includeMe: false,
+      })
+    } else if (!mails.length && meOn) {
+      writeOwnerChoice({
+        active: true,
+        memberEmail: "",
+        memberLabel: "",
+        memberEmails: [],
+        includeMe: true,
+      })
+    } else if (mails.length === 1 && !meOn) {
+      const mail = mails[0]!
+      const hit = members().find((m) => m.email === mail)
+      writeOwnerChoice({
+        active: true,
+        memberEmail: mail,
+        memberLabel: hit?.label || mail,
+        memberEmails: [mail],
+        includeMe: false,
+      })
+    } else {
+      const first = mails[0] || ""
+      const hit = members().find((m) => m.email === first)
+      writeOwnerChoice({
+        active: true,
+        memberEmail: first,
+        memberLabel: hit?.label || first,
+        memberEmails: mails,
+        includeMe: meOn,
+      })
+    }
+    closeMenus()
+  }
+
+  const pickProduct = (product: Product) => {
+    setHint(undefined)
+    ead.setProduct(product.productId, product.name)
+    setMenu("")
+    setPq("")
+    void refresh()
+  }
 
   return (
     <Show when={isDesktop()}>
@@ -687,22 +1074,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         }}
         style={{ width: panelWidth() }}
       >
-        <div class="size-full flex flex-col border-r border-border-weaker-base">
+        <div class="size-full flex flex-col border-r border-border-weaker-base min-h-0">
           <div class="shrink-0 px-3 py-2 flex items-center justify-between border-b border-border-weaker-base gap-2">
             <span class="text-14-medium text-text-strong truncate">EAD Map</span>
             <div class="flex items-center gap-1">
-              <select
-                class="h-6 text-11-regular rounded border border-border-weaker-base bg-background-base px-1"
-                value={ead.language()}
-                onChange={(e) => {
-                  ead.setLanguage(e.currentTarget.value === "en" ? "en" : "zh")
-                  ead.bumpPilot()
-                }}
-                aria-label="Language"
-              >
-                <option value="zh">中文</option>
-                <option value="en">EN</option>
-              </select>
               <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh()} aria-label="Refresh" />
               <IconButton
                 icon="close-small"
@@ -714,54 +1089,122 @@ export function EadMapPanel(props: { sizing: Sizing }) {
             </div>
           </div>
 
-          <div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-3">
+          <div class="flex-1 min-h-0 flex flex-col">
             <Show
               when={ead.token()}
               fallback={
-                <div class="flex flex-col gap-2">
-                  <div class="flex gap-1">
-                    <Button size="small" variant={tab() === "signin" ? "primary" : "ghost"} onClick={() => setTab("signin")}>
-                      Sign in
-                    </Button>
-                    <Button size="small" variant={tab() === "signup" ? "primary" : "ghost"} onClick={() => setTab("signup")}>
-                      Sign up
-                    </Button>
-                    <Button size="small" variant={tab() === "reset" ? "primary" : "ghost"} onClick={() => setTab("reset")}>
-                      Reset
-                    </Button>
-                  </div>
-
+                <div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
                   <Show when={tab() === "signin"}>
+                    <p class="text-14-medium text-text-strong">Sign in</p>
                     <p class="text-12-regular text-text-weak">Sign in to EAD PFM (eadfm.com)</p>
-                    <input class={field} placeholder="Email / phone / login" value={id()} onInput={(e) => setId(e.currentTarget.value)} />
                     <input
-                      type="password"
                       class={field}
-                      placeholder="Password"
-                      value={pass()}
-                      onInput={(e) => setPass(e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void onLogin()
-                      }}
+                      placeholder="Email / phone / login"
+                      value={id()}
+                      onInput={(e) => setId(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onLogin()}>
-                      Sign in
-                    </Button>
-                  </Show>
-
-                  <Show when={tab() === "signup"}>
-                    <p class="text-12-regular text-text-weak">Create an EAD account</p>
-                    <input class={field} placeholder="Email or phone" value={target()} onInput={(e) => setTarget(e.currentTarget.value)} />
-                    <div class="flex gap-1">
-                      <Button size="small" variant="secondary" disabled={busy()} onClick={() => void onSendCode("signup")}>
-                        Send code
-                      </Button>
-                      <Button size="small" variant="ghost" disabled={busy()} onClick={() => void onVerify()}>
-                        Verify
+                    <div class="relative">
+                      <input
+                        type={showPass() ? "text" : "password"}
+                        class={`${field} pr-8`}
+                        placeholder="Password"
+                        value={pass()}
+                        onInput={(e) => setPass(e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void onLogin()
+                        }}
+                      />
+                      <button
+                        type="button"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-11-regular text-text-weak"
+                        onClick={() => setShowPass((v) => !v)}
+                      >
+                        {showPass() ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                      <button type="button" class="text-12-regular text-text-weak hover:underline" onClick={() => setTab("forgot")}>
+                        Forgot password?
+                      </button>
+                      <Button size="small" variant="primary" disabled={busy()} onClick={() => void onLogin()}>
+                        Sign in
                       </Button>
                     </div>
-                    <input class={field} placeholder="6-digit code" value={code()} onInput={(e) => setCode(e.currentTarget.value)} />
-                    <input class={field} placeholder="Username" value={username()} onInput={(e) => setUsername(e.currentTarget.value)} />
+                    <div class="flex items-center gap-2 text-11-regular text-text-weak">
+                      <span class="flex-1 border-t border-border-weaker-base" />
+                      or continue with
+                      <span class="flex-1 border-t border-border-weaker-base" />
+                    </div>
+                    <div class="flex gap-1">
+                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("Google")}>
+                        Google
+                      </Button>
+                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("GitHub")}>
+                        GitHub
+                      </Button>
+                    </div>
+                    <p class="text-12-regular text-text-weak">
+                      No account?{" "}
+                      <button type="button" class="underline" onClick={() => setTab("signup-start")}>
+                        Sign up
+                      </button>
+                    </p>
+                  </Show>
+
+                  <Show when={tab() === "signup-start"}>
+                    <p class="text-14-medium text-text-strong">Sign up</p>
+                    <p class="text-12-regular text-text-weak">Create an EAD account</p>
+                    <input
+                      class={field}
+                      placeholder="Email or phone"
+                      value={target()}
+                      onInput={(e) => setTarget(e.currentTarget.value)}
+                    />
+                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onSendCode("signup")}>
+                      Send code
+                    </Button>
+                    <div class="flex gap-1">
+                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("Google")}>
+                        Google
+                      </Button>
+                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("GitHub")}>
+                        GitHub
+                      </Button>
+                    </div>
+                    <button type="button" class="text-12-regular text-text-weak hover:underline self-start" onClick={() => setTab("signin")}>
+                      Back to sign in
+                    </button>
+                  </Show>
+
+                  <Show when={tab() === "signup-verify"}>
+                    <p class="text-14-medium text-text-strong">Verify</p>
+                    <p class="text-12-regular text-text-weak">Enter the code sent to {target()}</p>
+                    <input
+                      class={field}
+                      placeholder="6-digit code"
+                      value={code()}
+                      onInput={(e) => setCode(e.currentTarget.value)}
+                    />
+                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onVerify()}>
+                      Verify
+                    </Button>
+                    <button
+                      type="button"
+                      class="text-12-regular text-text-weak hover:underline self-start"
+                      onClick={() => setTab("signup-start")}
+                    >
+                      Back
+                    </button>
+                  </Show>
+
+                  <Show when={tab() === "signup-create"}>
+                    <p class="text-14-medium text-text-strong">Create account</p>
+                    <input
+                      class={field}
+                      placeholder="Username"
+                      value={username()}
+                      onInput={(e) => setUsername(e.currentTarget.value)}
+                    />
                     <input
                       type="password"
                       class={field}
@@ -770,17 +1213,34 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       onInput={(e) => setPass(e.currentTarget.value)}
                     />
                     <Button size="small" variant="primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
-                      Create account
+                      Create
                     </Button>
                   </Show>
 
-                  <Show when={tab() === "reset"}>
-                    <p class="text-12-regular text-text-weak">Reset password</p>
-                    <input class={field} placeholder="Email or phone" value={target()} onInput={(e) => setTarget(e.currentTarget.value)} />
-                    <Button size="small" variant="secondary" disabled={busy()} onClick={() => void onSendCode("reset")}>
+                  <Show when={tab() === "forgot"}>
+                    <p class="text-14-medium text-text-strong">Forgot password</p>
+                    <input
+                      class={field}
+                      placeholder="Email or phone"
+                      value={target()}
+                      onInput={(e) => setTarget(e.currentTarget.value)}
+                    />
+                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onSendCode("reset")}>
                       Send code
                     </Button>
-                    <input class={field} placeholder="6-digit code" value={code()} onInput={(e) => setCode(e.currentTarget.value)} />
+                    <button type="button" class="text-12-regular text-text-weak hover:underline self-start" onClick={() => setTab("signin")}>
+                      Back to sign in
+                    </button>
+                  </Show>
+
+                  <Show when={tab() === "forgot-reset"}>
+                    <p class="text-14-medium text-text-strong">Reset password</p>
+                    <input
+                      class={field}
+                      placeholder="6-digit code"
+                      value={code()}
+                      onInput={(e) => setCode(e.currentTarget.value)}
+                    />
                     <input
                       type="password"
                       class={field}
@@ -792,48 +1252,149 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       Reset password
                     </Button>
                   </Show>
+
+                  <Show when={tab() === "forgot-success"}>
+                    <p class="text-14-medium text-text-strong">Password updated</p>
+                    <p class="text-12-regular text-text-weak">You can sign in with your new password.</p>
+                    <Button size="small" variant="primary" onClick={() => setTab("signin")}>
+                      Back to sign in
+                    </Button>
+                  </Show>
+
+                  <Show when={err()}>
+                    <p class="text-12-regular text-text-weak break-words">{err()}</p>
+                  </Show>
                 </div>
               }
             >
-              <div class="flex flex-col gap-2">
+              <div class="navigator-chrome shrink-0 px-3 pt-2 pb-1 border-b border-border-weaker-base flex flex-col gap-1.5 relative z-10 overflow-visible">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-12-regular text-text-weak truncate">{user() || "Signed in"}</span>
-                  <div class="flex items-center gap-1 shrink-0">
-                    <Button
-                      size="small"
-                      variant="ghost"
-                      onClick={() => window.open(`${EAD_SERVER_URL}/welcome/profile`, "_blank")}
-                    >
-                      My Profile
+                  <span class="text-11-medium text-text-weak truncate">Select a Product</span>
+                  <div class="flex items-center gap-1 shrink-0" data-ead-menu>
+                    <Button size="small" variant="secondary" onClick={() => launch({ kind: "dashboard" })}>
+                      AI Pilot
                     </Button>
-                    <Button size="small" variant="ghost" onClick={onSignOut}>
-                      Sign out
-                    </Button>
+                    <div class="relative">
+                      <button
+                        type="button"
+                        class="h-6 w-6 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
+                        aria-label="Menu"
+                        onClick={() => setMenu(menu() === "user" ? "" : "user")}
+                      >
+                        ☰
+                      </button>
+                      <Show when={menu() === "user" || menu() === "lang"}>
+                        <div class={`${drop} right-0 w-52`}>
+                          <button
+                            type="button"
+                            class={item}
+                            disabled={ead.productId() <= 0}
+                            onClick={() => {
+                              closeMenus()
+                              launch({ kind: "editProduct" })
+                            }}
+                          >
+                            Edit Product
+                          </button>
+                          <button
+                            type="button"
+                            class={item}
+                            onClick={() => {
+                              closeMenus()
+                              window.open(`${EAD_SERVER_URL}/welcome/profile`, "_blank")
+                            }}
+                          >
+                            My Profile
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} flex items-center justify-between`}
+                            onClick={() => setMenu(menu() === "lang" ? "user" : "lang")}
+                          >
+                            <span>Language</span>
+                            <span class="text-11-regular text-text-weak">{ead.language() === "en" ? "EN" : "中文"}</span>
+                          </button>
+                          <Show when={menu() === "lang"}>
+                            <button
+                              type="button"
+                              class={`${item} pl-4 ${ead.language() === "en" ? itemActive : ""}`}
+                              onClick={() => {
+                                ead.setLanguage("en")
+                                ead.bumpPilot()
+                                closeMenus()
+                              }}
+                            >
+                              English
+                            </button>
+                            <button
+                              type="button"
+                              class={`${item} pl-4 ${ead.language() === "zh" ? itemActive : ""}`}
+                              onClick={() => {
+                                ead.setLanguage("zh")
+                                ead.bumpPilot()
+                                closeMenus()
+                              }}
+                            >
+                              中文
+                            </button>
+                          </Show>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <button type="button" class={`${item} text-text-weak`} onClick={onSignOut}>
+                            Log out
+                          </button>
+                          <Show when={user()}>
+                            <div class="px-2.5 py-1 text-11-regular text-text-weak truncate">{user()}</div>
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
                   </div>
                 </div>
 
-                <label class="text-12-medium text-text-weak">Product</label>
-                <div class="flex gap-1">
-                  <select
-                    class={`${field} flex-1`}
-                    ref={(el) => {
-                      createEffect(() => {
-                        const id = ead.productId() > 0 ? String(ead.productId()) : ""
-                        void products().length
-                        if (el.value !== id) el.value = id
-                      })
-                    }}
-                    onChange={(e) => {
-                      const next = Number(e.currentTarget.value)
-                      const product = products().find((p) => p.productId === next)
-                      if (!product) return
-                      ead.setProduct(product.productId, product.name)
-                      void refresh()
-                    }}
-                  >
-                    <option value="">Select product…</option>
-                    <For each={products()}>{(p) => <option value={String(p.productId)}>{p.name}</option>}</For>
-                  </select>
+                <div class="flex items-center gap-1" data-ead-menu>
+                  <div class="relative flex-1 min-w-0">
+                    <button
+                      type="button"
+                      class="w-full flex items-center gap-2 px-2 py-1.5 text-12-regular rounded-md border border-border-weak-base bg-background-base text-left hover:bg-surface-base-hover"
+                      aria-expanded={menu() === "product"}
+                      onClick={() => {
+                        setMenu(menu() === "product" ? "" : "product")
+                        setPq("")
+                        setChip(0)
+                      }}
+                    >
+                      <span class="flex-1 min-w-0 truncate text-text-base">
+                        {ead.productName() || "Select product…"}
+                      </span>
+                      <span class="shrink-0 text-text-weak">▾</span>
+                    </button>
+                    <Show when={menu() === "product"}>
+                      <div class={`${drop} left-0 right-0 w-auto max-w-none`}>
+                        <div class="px-2 pb-1.5 border-b border-border-weaker-base">
+                          <input
+                            class={`${field} py-1`}
+                            placeholder="Search…"
+                            value={pq()}
+                            onInput={(e) => setPq(e.currentTarget.value)}
+                            autofocus
+                          />
+                        </div>
+                        <div class="max-h-56 overflow-y-auto">
+                          <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">No products</div>}>
+                            {(p) => (
+                              <button
+                                type="button"
+                                class={`${item} ${ead.productId() === p.productId ? itemActive : ""}`}
+                                onClick={() => pickProduct(p)}
+                              >
+                                {p.name}
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
+                  </div>
                   <Button
                     size="small"
                     variant="ghost"
@@ -845,120 +1406,617 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Button>
                 </div>
 
-                <Show when={schemas().length > 0}>
-                  <label class="text-12-medium text-text-weak">Sub-schema</label>
-                  <select
-                    class={field}
-                    value={ead.subSchemaId() > 0 ? String(ead.subSchemaId()) : ""}
-                    onChange={(e) => {
-                      ead.setSubSchema(Number(e.currentTarget.value) || 0)
-                      void refresh()
-                    }}
-                  >
-                    <option value="">Base map</option>
-                    <For each={schemas()}>{(s) => <option value={String(s.id)}>{s.name}</option>}</For>
-                  </select>
+                <Show when={hint() && ead.productId() <= 0}>
+                  <div class="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border-weaker-base bg-surface-base text-12-regular">
+                    <span class="min-w-0 flex-1 truncate text-text-weak">
+                      Suggested: <span class="text-text-strong">{hint()!.name}</span>
+                    </span>
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      onClick={() => {
+                        const hit = hint()
+                        if (!hit) return
+                        pickProduct({ productId: hit.productId, name: hit.name })
+                      }}
+                    >
+                      Use
+                    </Button>
+                    <Button size="small" variant="ghost" onClick={() => setHint(undefined)}>
+                      Dismiss
+                    </Button>
+                  </div>
                 </Show>
 
-                <Show when={ead.productId() > 0}>
-                  <div class="text-11-regular text-text-weak flex flex-col gap-0.5">
-                    <span>
-                      Product ID: {ead.productId()}
-                      <Show when={ead.mapId() > 0}> · Map ID: {ead.mapId()}</Show>
-                    </span>
-                    <Show when={ead.schemaId() > 0}>
-                      <span class="truncate">
-                        Schema: {ead.schemaName() || ead.schemaId()} ({ead.schemaId()})
+                <Show when={ead.mapId() > 0}>
+                  <div class="relative flex items-center gap-1.5 min-w-0 text-11-regular" data-ead-menu>
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 flex items-center gap-1 text-left disabled:cursor-default"
+                      disabled={!schemas().length}
+                      onClick={() => {
+                        if (!schemas().length) return
+                        setMenu(menu() === "schema" ? "" : "schema")
+                        setChip(0)
+                      }}
+                    >
+                      <span class="shrink-0 text-text-weak">PFM:</span>
+                      <span class="min-w-0 truncate text-text-base" style={{ direction: "rtl", "text-align": "left" }}>
+                        <bdi>{mapName() || `Map ${ead.mapId()}`}</bdi>
                       </span>
+                      <span class="shrink-0 text-text-weak">–</span>
+                      <span class="shrink-0 text-text-base">{schemaType()}</span>
+                      <Show when={schemas().length}>
+                        <span class="shrink-0 text-text-weak">▾</span>
+                      </Show>
+                    </button>
+                    <Show when={baseMapId() > 0}>
+                      <span class="shrink-0 px-1.5 rounded-full text-11-regular border border-border-weaker-base text-text-weak">
+                        Sibling PFM
+                      </span>
+                    </Show>
+                    <Show when={menu() === "schema"}>
+                      <div class={`${drop} left-0`}>
+                        <button
+                          type="button"
+                          class={`${item} ${ead.subSchemaId() <= 0 ? itemActive : ""}`}
+                          onClick={() => {
+                            ead.setSubSchema(0)
+                            closeMenus()
+                            void refresh()
+                          }}
+                        >
+                          Base map
+                        </button>
+                        <For each={schemas()}>
+                          {(s) => (
+                            <button
+                              type="button"
+                              class={`${item} ${ead.subSchemaId() === s.id ? itemActive : ""}`}
+                              onClick={() => {
+                                ead.setSubSchema(s.id)
+                                closeMenus()
+                                void refresh()
+                              }}
+                            >
+                              {s.name}
+                            </button>
+                          )}
+                        </For>
+                      </div>
                     </Show>
                   </div>
                 </Show>
 
-                <div class="flex gap-1">
-                  <Button size="small" variant={ead.view() === "pfm" ? "primary" : "ghost"} onClick={() => void switchView("pfm")}>
-                    PFM
-                  </Button>
-                  <Button size="small" variant={ead.view() === "source" ? "primary" : "ghost"} onClick={() => void switchView("source")}>
-                    Source
-                  </Button>
-                </div>
-
-                <Show when={ead.view() === "pfm"}>
-                  <label class="flex items-center gap-2 text-12-regular text-text-weak">
-                    <input
-                      type="checkbox"
-                      checked={ead.jobsOnly()}
-                      onChange={(e) => {
-                        ead.setJobsOnly(e.currentTarget.checked)
-                        void refresh()
-                      }}
-                    />
-                    Jobs only
-                  </label>
-                </Show>
-
-                <Show when={ead.view() === "source"}>
-                  <div class="flex flex-col gap-1">
-                    <label class="flex items-center gap-2 text-12-regular text-text-weak">
-                      <input
-                        type="checkbox"
-                        checked={ead.eadsOnly()}
-                        onChange={(e) => ead.setEadsOnly(e.currentTarget.checked)}
-                      />
-                      EADs only
-                    </label>
-                    <label class="text-12-medium text-text-weak">Badge</label>
-                    <select
-                      class={field}
-                      value={ead.badge()}
-                      onChange={(e) => {
-                        const v = e.currentTarget.value
-                        if (v === "ead" || v === "jobs" || v === "tests" || v === "none") ead.setBadge(v)
+                <div class="flex items-center gap-1" data-ead-menu>
+                  <input
+                    class={`${field} flex-1 py-1`}
+                    placeholder={ead.view() === "source" ? "Search source…" : "Search PFM…"}
+                    value={query()}
+                    onInput={(e) => setQuery(e.currentTarget.value)}
+                  />
+                  <div class="relative shrink-0">
+                    <button
+                      type="button"
+                      class="h-7 w-7 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
+                      classList={{ "border-border-weak-base bg-surface-base-active": pfmFilter().active }}
+                      aria-label="Setup"
+                      onClick={() => {
+                        setMenu(menu() === "setup" ? "" : "setup")
+                        setChip(0)
                       }}
                     >
-                      <option value="ead">EAD</option>
-                      <option value="jobs">Jobs</option>
-                      <option value="tests">Tests</option>
-                      <option value="none">None</option>
-                    </select>
+                      ⋯
+                    </button>
+                    <Show when={menu() === "setup"}>
+                      <div class={`${drop} right-0 w-56`}>
+                        <button
+                          type="button"
+                          class={item}
+                          disabled={ead.productId() <= 0}
+                          onClick={() => {
+                            closeMenus()
+                            launch({ kind: "setup" })
+                          }}
+                        >
+                          View and Setup EAD Map
+                        </button>
+                        <button
+                          type="button"
+                          class={item}
+                          disabled={ead.productId() <= 0}
+                          onClick={() => {
+                            closeMenus()
+                            launch({ kind: "mindmap" })
+                          }}
+                        >
+                          Setup EAD Map Filter
+                        </button>
+                        <label class={`${item} flex items-center gap-2 cursor-pointer`}>
+                          <input
+                            type="checkbox"
+                            checked={owner().enabled}
+                            onChange={(e) => {
+                              const pid = ead.productId()
+                              if (pid <= 0) return
+                              writeOwner(pid, { enabled: e.currentTarget.checked })
+                              bump()
+                            }}
+                          />
+                          Enable Job Owner Filter
+                        </label>
+                        <button
+                          type="button"
+                          class={`${item} flex items-center justify-between`}
+                          onClick={() => {
+                            setDiag((v) => !v)
+                            closeMenus()
+                          }}
+                        >
+                          <span>Show debug</span>
+                          <span class="text-11-regular text-text-weak">{diag() ? "On" : "Off"}</span>
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+
+                <Show when={pfmFilter().ids.length > 0}>
+                  <div class="flex items-center gap-2 text-11-regular text-text-weak">
+                    <span>PFM Node Filter ({pfmFilter().ids.length}):</span>
+                    <button
+                      type="button"
+                      class="px-1.5 py-0.5 rounded border border-border-weaker-base hover:bg-surface-base-hover"
+                      classList={{ "text-text-strong border-border-weak-base": pfmFilter().active }}
+                      onClick={() => {
+                        const cur = pfmFilter()
+                        writePfmFilter(cur.ids, !cur.active)
+                        bump()
+                      }}
+                    >
+                      {pfmFilter().active ? "On" : "Off"}
+                    </button>
                   </div>
                 </Show>
 
-                <input
-                  class={field}
-                  placeholder={ead.view() === "source" ? "Search source…" : "Search PFM…"}
-                  value={query()}
-                  onInput={(e) => setQuery(e.currentTarget.value)}
-                />
+                <Show when={owner().enabled}>
+                  <div class="relative flex items-center gap-1.5 text-11-regular" data-ead-menu>
+                    <span class="shrink-0 text-text-weak">AI Job Owner:</span>
+                    <button
+                      type="button"
+                      class="min-w-0 truncate text-text-base hover:underline"
+                      onClick={() => void openOwner()}
+                    >
+                      {ownerSummary(owner())} ▾
+                    </button>
+                    <Show when={menu() === "owner"}>
+                      <div class={`${drop} left-0 w-64 max-h-80 overflow-y-auto`}>
+                        <div class="px-2 pb-1.5 border-b border-border-weaker-base flex items-center gap-1">
+                          <input
+                            class={`${field} flex-1 py-1`}
+                            placeholder="Search members…"
+                            value={oq()}
+                            onInput={(e) => setOq(e.currentTarget.value)}
+                          />
+                          <button
+                            type="button"
+                            class="shrink-0 px-2 py-1 rounded border border-border-weaker-base text-11-regular hover:bg-surface-base-hover"
+                            classList={{ "bg-surface-base-active": multi() }}
+                            onClick={() => {
+                              const next = !multi()
+                              setMulti(next)
+                              if (!next) return
+                              const cur = owner()
+                              setDraftMe(!!cur.includeMe && cur.active)
+                              setDraftEmails(
+                                cur.memberEmails.length
+                                  ? [...cur.memberEmails]
+                                  : cur.memberEmail
+                                    ? [cur.memberEmail]
+                                    : [],
+                              )
+                            }}
+                          >
+                            {multi() ? "Multi" : "Single"}
+                          </button>
+                        </div>
 
-                <Show when={busy()}>
+                        <Show
+                          when={multi()}
+                          fallback={
+                            <>
+                              <button
+                                type="button"
+                                class={`${item} ${!owner().active ? itemActive : ""}`}
+                                onClick={() => {
+                                  writeOwnerChoice({
+                                    active: false,
+                                    memberEmail: "",
+                                    memberLabel: "",
+                                    memberEmails: [],
+                                    includeMe: false,
+                                  })
+                                  closeMenus()
+                                }}
+                              >
+                                All
+                              </button>
+                              <Show when={email()}>
+                                <button
+                                  type="button"
+                                  class={`${item} ${owner().active && owner().includeMe && !owner().memberEmails.length ? itemActive : ""}`}
+                                  onClick={() => {
+                                    writeOwnerChoice({
+                                      active: true,
+                                      includeMe: true,
+                                      memberEmail: "",
+                                      memberLabel: "",
+                                      memberEmails: [],
+                                    })
+                                    closeMenus()
+                                  }}
+                                >
+                                  Me
+                                </button>
+                              </Show>
+                              <For each={ownerMembers()}>
+                                {(m) => (
+                                  <button
+                                    type="button"
+                                    class={`${item} ${owner().memberEmail === m.email && !owner().includeMe ? itemActive : ""}`}
+                                    onClick={() => {
+                                      writeOwnerChoice({
+                                        active: true,
+                                        memberEmail: m.email,
+                                        memberLabel: m.label,
+                                        memberEmails: [m.email],
+                                        includeMe: false,
+                                      })
+                                      closeMenus()
+                                    }}
+                                  >
+                                    {m.label}
+                                  </button>
+                                )}
+                              </For>
+                            </>
+                          }
+                        >
+                          <div class="px-2 py-1.5 flex items-center justify-between gap-2 border-b border-border-weaker-base">
+                            <button
+                              type="button"
+                              class="text-11-regular text-text-weak hover:underline"
+                              onClick={() => {
+                                const all = members().map((m) => m.email)
+                                const full = draftMe() && draftEmails().length === all.length && all.every((e) => draftEmails().includes(e))
+                                if (full) {
+                                  setDraftMe(false)
+                                  setDraftEmails([])
+                                  return
+                                }
+                                setDraftMe(true)
+                                setDraftEmails(all)
+                              }}
+                            >
+                              Select all
+                            </button>
+                            <div class="flex gap-1">
+                              <Button size="small" variant="ghost" onClick={() => closeMenus()}>
+                                Cancel
+                              </Button>
+                              <Button size="small" variant="secondary" onClick={applyOwner}>
+                                Apply
+                              </Button>
+                            </div>
+                          </div>
+                          <label class={`${item} flex items-center gap-2 cursor-pointer`}>
+                            <input
+                              type="checkbox"
+                              checked={draftMe()}
+                              onChange={(e) => setDraftMe(e.currentTarget.checked)}
+                            />
+                            Include me{email() ? ` (${email()})` : ""}
+                          </label>
+                          <For each={ownerMembers()}>
+                            {(m) => (
+                              <label class={`${item} flex items-center gap-2 cursor-pointer`}>
+                                <input
+                                  type="checkbox"
+                                  checked={draftEmails().includes(m.email)}
+                                  onChange={(e) => {
+                                    const on = e.currentTarget.checked
+                                    setDraftEmails((prev) =>
+                                      on ? [...new Set([...prev, m.email])] : prev.filter((x) => x !== m.email),
+                                    )
+                                  }}
+                                />
+                                <span class="truncate">{m.label}</span>
+                              </label>
+                            )}
+                          </For>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+              </div>
+
+              <div class="navigator-scroll flex-1 min-h-0 overflow-y-auto px-3 py-2 flex flex-col gap-2">
+                <Show when={banner()}>
+                  <div
+                    class="px-2 py-1 rounded text-11-regular border"
+                    classList={{
+                      "border-border-weaker-base text-text-weak": banner()!.kind === "loading",
+                      "border-border-weak-base text-text-strong bg-surface-base-active": banner()!.kind === "ok",
+                      "border-border-weak-base text-text-weak": banner()!.kind === "error",
+                    }}
+                  >
+                    {banner()!.text}
+                  </div>
+                </Show>
+
+                <Show when={diag()}>
+                  <pre class="px-2 py-1.5 rounded border border-border-weaker-base text-11-regular font-mono text-text-weak whitespace-pre-wrap break-words">
+                    {`productId=${ead.productId()}
+mapId=${ead.mapId()}
+view=${ead.view()}
+badge=${ead.badge()}
+jobsOnly=${ead.jobsOnly()}
+workContextId=${ead.workContextId()}
+err=${err() || "-"}`}
+                  </pre>
+                </Show>
+
+                <div class="tree-toolbar-row flex items-center gap-1 flex-wrap" data-ead-menu>
+                  <div class="relative">
+                    <button
+                      type="button"
+                      class="px-2 py-1 rounded border border-border-weaker-base text-11-regular text-text-base hover:bg-surface-base-hover"
+                      onClick={() => setMenu(menu() === "view" ? "" : "view")}
+                    >
+                      {ead.view() === "source" ? "AI Code" : "PFM Tree View"} ▾
+                    </button>
+                    <Show when={menu() === "view"}>
+                      <div class={drop}>
+                        <button
+                          type="button"
+                          class={`${item} ${ead.view() === "pfm" ? itemActive : ""}`}
+                          onClick={() => void switchView("pfm")}
+                        >
+                          PFM Tree View
+                        </button>
+                        <button
+                          type="button"
+                          class={`${item} ${ead.view() === "source" ? itemActive : ""}`}
+                          onClick={() => void switchView("source")}
+                        >
+                          AI Code
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+
+                  <Show when={ead.view() === "pfm"}>
+                    <div class="relative">
+                      <button
+                        type="button"
+                        class="px-2 py-1 rounded border border-border-weaker-base text-11-regular text-text-base hover:bg-surface-base-hover"
+                        title={`${ead.badge()} · ${ead.jobsOnly() ? "Filtered" : "All"}`}
+                        onClick={() => setMenu(menu() === "job" ? "" : "job")}
+                      >
+                        Filter
+                        <Show when={ead.badge() !== "none" || ead.jobsOnly()}>
+                          <span class="ml-1 text-text-weak">
+                            · {ead.badge() === "none" ? "none" : ead.badge()}
+                            {ead.jobsOnly() ? " · Filtered" : ""}
+                          </span>
+                        </Show>
+                      </button>
+                      <Show when={menu() === "job"}>
+                        <div class={`${drop} w-44`}>
+                          <div class="px-2.5 py-1 text-11-regular text-text-weak">Badge</div>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "ead" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("ead")}
+                          >
+                            EAD
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "jobs" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("jobs")}
+                          >
+                            Jobs
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "tests" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("tests")}
+                          >
+                            Tests
+                          </button>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <div class="px-2.5 py-1 text-11-regular text-text-weak">Scope</div>
+                          <button
+                            type="button"
+                            class={`${item} ${!ead.jobsOnly() ? itemActive : ""}`}
+                            onClick={() => {
+                              ead.setJobsOnly(false)
+                              setMenu("")
+                            }}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.jobsOnly() ? itemActive : ""}`}
+                            onClick={() => {
+                              ead.setJobsOnly(true)
+                              setMenu("")
+                            }}
+                          >
+                            Filtered
+                          </button>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
+
+                  <Show when={ead.view() === "source"}>
+                    <div class="relative ml-auto">
+                      <button
+                        type="button"
+                        class="h-7 w-7 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
+                        aria-label="EAD run"
+                        onClick={() => setMenu(menu() === "run" ? "" : "run")}
+                      >
+                        ⋯
+                      </button>
+                      <Show when={menu() === "run"}>
+                        <div class={`${drop} right-0 w-52`}>
+                          <div class="px-2.5 py-1 text-11-regular text-text-weak">Tree badges</div>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "ead" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("ead")}
+                          >
+                            Show EAD
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "jobs" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("jobs")}
+                          >
+                            Open Jobs
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.badge() === "tests" ? itemActive : ""}`}
+                            onClick={() => toggleBadge("tests")}
+                          >
+                            Open Tests
+                          </button>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <div class="px-2.5 py-1 text-11-regular text-text-weak">Source tree</div>
+                          <button
+                            type="button"
+                            class={`${item} ${!ead.eadsOnly() ? itemActive : ""}`}
+                            onClick={() => ead.setEadsOnly(false)}
+                          >
+                            Show all
+                          </button>
+                          <button
+                            type="button"
+                            class={`${item} ${ead.eadsOnly() ? itemActive : ""}`}
+                            onClick={() => ead.setEadsOnly(true)}
+                          >
+                            With EADs
+                          </button>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <button
+                            type="button"
+                            class={item}
+                            disabled={ead.productId() <= 0}
+                            onClick={() => {
+                              closeMenus()
+                              launch({ kind: "setupSource" })
+                            }}
+                          >
+                            Setup Source Tree
+                          </button>
+                          <button
+                            type="button"
+                            class={item}
+                            disabled={ead.productId() <= 0}
+                            onClick={() => {
+                              closeMenus()
+                              launch({ kind: "find", ...sourceOpts() })
+                            }}
+                          >
+                            AI Find / Create
+                          </button>
+                          <button
+                            type="button"
+                            class={item}
+                            disabled={ead.sourceId() <= 0}
+                            onClick={() => {
+                              closeMenus()
+                              launch({ kind: "create", ...sourceOpts() })
+                            }}
+                          >
+                            Analyze & Create EAD
+                          </button>
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
+                </div>
+
+                <Show when={ead.view() === "source"}>
+                  <div class="source-scope-bar flex gap-1" data-ead-menu>
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
+                      classList={{ "bg-surface-base-active text-text-strong": !ead.eadsOnly() }}
+                      onClick={() => ead.setEadsOnly(false)}
+                    >
+                      Show all source
+                    </button>
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
+                      classList={{ "bg-surface-base-active text-text-strong": ead.eadsOnly() }}
+                      onClick={() => ead.setEadsOnly(true)}
+                    >
+                      Show with EADs
+                    </button>
+                  </div>
+                </Show>
+
+                <Show when={busy() && !banner()}>
                   <span class="text-12-regular text-text-weak">Loading…</span>
                 </Show>
 
                 <Show when={ead.view() === "pfm"}>
                   <Show when={pfmVisible().length}>
-                    <div class="flex flex-col gap-1 border border-border-weaker-base rounded-md py-1 max-h-[42vh] overflow-y-auto">
-                      <Tree nodes={pfmVisible()} selected={ead.nodeId()} onSelect={selectNode} />
+                    <div class="flex flex-col gap-0.5">
+                      <Tree
+                        nodes={pfmVisible()}
+                        selected={ead.nodeId()}
+                        onSelect={selectNode}
+                        badge={ead.badge()}
+                        counts={pfmBadgeCounts()}
+                        work={ead.workContextId()}
+                        force={openPath()}
+                        chip={chip()}
+                        onChip={setChip}
+                        onInject={(kind, node) => void inject(kind, node.nodeId, node.name, "pfm")}
+                      />
                     </div>
                   </Show>
                   <Show when={!busy() && ead.productId() > 0 && !root()}>
                     <span class="text-12-regular text-text-weak">No active PFM map for this product.</span>
                   </Show>
-                  <Show when={!busy() && root() && pfmVisible().length === 0 && (query().trim() || ead.jobsOnly())}>
+                  <Show when={!busy() && root() && pfmVisible().length === 0 && (query().trim() || ead.jobsOnly() || pfmFilter().active)}>
                     <span class="text-12-regular text-text-weak">No matching nodes.</span>
                   </Show>
                 </Show>
 
                 <Show when={ead.view() === "source"}>
                   <Show when={sourceVisible().length}>
-                    <div class="flex flex-col gap-1 border border-border-weaker-base rounded-md py-1 max-h-[42vh] overflow-y-auto">
+                    <div class="flex flex-col gap-0.5">
                       <SourceTree
                         nodes={sourceVisible()}
                         selected={ead.sourceId()}
                         onSelect={selectSource}
                         counts={badgeCounts()}
+                        pending={pendingPaths()}
                         expanded={ead.expanded(ead.schemaId())}
                         onExpand={onExpand}
+                        chip={chip()}
+                        onChip={setChip}
+                        onInject={(kind, node) => void inject(kind, node.nodeId, node.nodeName, "source")}
                       />
                     </div>
                   </Show>
@@ -986,103 +2044,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Show>
                 </Show>
 
-                <Show when={ead.nodeId() > 0 || ead.sourceId() > 0}>
-                  <div class="flex flex-col gap-1">
-                    <span class="text-11-regular text-text-weak truncate">
-                      Selected: {ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName()}
-                      <Show when={ead.sourceId() > 0}> (source)</Show>
-                    </span>
-                    <Show when={ead.contextMarkdown()}>
-                      <span class="text-11-regular text-text-weak">Context synced → Chat system prompt</span>
-                    </Show>
-                    <label class="text-12-medium text-text-weak">Context</label>
-                    <select
-                      class={field}
-                      value={kind()}
-                      onChange={(e) => {
-                        const v = e.currentTarget.value
-                        if (v === "prompt" || v === "jobs" || v === "skills" || v === "api" || v === "source") setKind(v)
-                      }}
-                    >
-                      <For each={KINDS}>{(k) => <option value={k}>{kindLabel(k)}</option>}</For>
-                    </select>
-                    <Button size="small" variant="secondary" disabled={busy()} onClick={() => void injectContext()}>
-                      Inject to composer
-                    </Button>
-                    <div class="flex gap-1">
-                      <input
-                        class={`${field} flex-1`}
-                        placeholder="New task title"
-                        value={title()}
-                        onInput={(e) => setTitle(e.currentTarget.value)}
-                      />
-                      <Button size="small" variant="secondary" disabled={busy() || !title().trim()} onClick={() => void onCreateTask()}>
-                        Create task
-                      </Button>
-                    </div>
-                  </div>
+                <Show when={err()}>
+                  <p class="text-12-regular text-text-weak break-words">{err()}</p>
                 </Show>
-
-                <div class="flex flex-col gap-1">
-                  <Button size="small" variant="primary" onClick={() => launch({ kind: "dashboard" })}>
-                    AI Pilot / AI 领航
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    disabled={ead.productId() <= 0}
-                    onClick={() => launch({ kind: "setup" })}
-                  >
-                    Setup EAD Map
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    disabled={ead.productId() <= 0}
-                    onClick={() => launch({ kind: "mindmap" })}
-                  >
-                    PFM Mindmap filter
-                  </Button>
-                  <Show when={ead.view() === "source"}>
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      disabled={ead.productId() <= 0}
-                      onClick={() => launch({ kind: "setupSource" })}
-                    >
-                      Setup Source Tree
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      disabled={ead.productId() <= 0}
-                      onClick={() => launch({ kind: "find", ...sourceOpts() })}
-                    >
-                      AI Find / Create
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      disabled={ead.sourceId() <= 0}
-                      onClick={() => launch({ kind: "create", ...sourceOpts() })}
-                    >
-                      Analyze & Create EAD
-                    </Button>
-                  </Show>
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    disabled={!ead.contextMarkdown() && !ead.nodeName() && !ead.sourceName()}
-                    onClick={copyContext}
-                  >
-                    Copy context to composer
-                  </Button>
-                </div>
               </div>
-            </Show>
-
-            <Show when={err()}>
-              <p class="text-12-regular text-text-weak break-words">{err()}</p>
             </Show>
           </div>
         </div>

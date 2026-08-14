@@ -33,6 +33,7 @@ export type BridgeHooks = {
   setProduct?: (id: number, name: string) => void
   setNode?: (id: number, name: string) => void
   setSource?: (id: number, name: string, path?: string) => void
+  setWorkContext?: (id: number) => void
   clearToken?: () => void
   bumpMap?: () => void
   bumpPilot?: () => void
@@ -406,7 +407,16 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
-  if (type === "workContextChanged" || type === "activeNodeChanged" || type === "navigatorPfmMindmapPick") {
+  if (type === "workContextChanged") {
+    const id = num(msg.workContextPfmNodeId ?? msg.pfmNodeId ?? msg.nodeId ?? msg.mapNodeId)
+    if (id) {
+      hooks.setWorkContext?.(id)
+      hooks.bumpMap?.()
+    }
+    return true
+  }
+
+  if (type === "activeNodeChanged" || type === "navigatorPfmMindmapPick") {
     const sourceId = num(msg.sourceCodeNodeId)
     if (sourceId) {
       hooks.setSource?.(
@@ -417,7 +427,7 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
       hooks.bumpMap?.()
       return true
     }
-    const id = num(msg.pfmNodeId ?? msg.nodeId ?? msg.workContextPfmNodeId ?? msg.mapNodeId)
+    const id = num(msg.pfmNodeId ?? msg.nodeId ?? msg.mapNodeId)
     const name = text(msg.nodeName ?? msg.title ?? msg.entityName ?? msg.pfmNodeName)
     if (id) {
       hooks.setNode?.(id, name || `Node ${id}`)

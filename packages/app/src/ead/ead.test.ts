@@ -11,14 +11,17 @@ import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, wri
 import { formatJobCounts } from "./jobs"
 import {
   buildTree,
+  collectIds,
   filterByCount,
   filterByIds,
   filterDisplay,
   filterPfm,
   filterSource,
   parseRows,
+  pathIds,
+  rollupCounts,
 } from "./source-tree"
-import { collectProducts, formatSystemPrompt, authKind, parseFilterIds } from "./api"
+import { collectProducts, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds } from "./api"
 import { queuePilot, takePilot, peekPilot } from "./actions"
 
 describe("ead source-tree", () => {
@@ -54,6 +57,27 @@ describe("ead source-tree", () => {
     expect(filterPfm(nodes, "child")[0]?.children[0]?.name).toBe("Child")
     const source = buildTree(parseRows([{ nodeId: 9, nodePath: "x/y.ts", nodeName: "y.ts", nodeType: "FILE" }]))
     expect(filterSource(source, "y.ts")).toHaveLength(1)
+  })
+
+  test("rollupCounts + pathIds + collectIds", () => {
+    const nodes = [
+      {
+        nodeId: 1,
+        name: "Root",
+        children: [
+          { nodeId: 2, name: "A", children: [{ nodeId: 4, name: "A1", children: [] }] },
+          { nodeId: 3, name: "B", children: [] },
+        ],
+      },
+    ]
+    expect(collectIds(nodes).sort((a, b) => a - b)).toEqual([1, 2, 3, 4])
+    const rolled = rollupCounts(nodes, { "4": 2, "3": 1 })
+    expect(rolled["4"]).toBe(2)
+    expect(rolled["2"]).toBe(2)
+    expect(rolled["1"]).toBe(3)
+    expect(rolled["3"]).toBe(1)
+    expect(pathIds(nodes, 4)).toEqual([1, 2])
+    expect(pathIds(nodes, 99)).toEqual([])
   })
 })
 
@@ -176,6 +200,8 @@ describe("ead context-modal + jobs + filters + actions", () => {
     expect(ownerSummary(readOwner(2))).toContain("a@b.c")
     writePfmFilter([10, 11], true)
     expect(readPfmFilter()).toEqual({ ids: [10, 11], active: true })
+    writePfmFilter([], true)
+    expect(readPfmFilter()).toEqual({ ids: [], active: false })
     clearPfmFilter()
     expect(readPfmFilter().active).toBe(false)
   })
@@ -207,5 +233,11 @@ describe("ead api helpers", () => {
     ])
     expect(parseFilterIds([9, 0, "8"])).toEqual([9, 8])
     expect(parseFilterIds(null)).toEqual([])
+  })
+
+  test("parseOpenIds prefers open list", () => {
+    expect(parseOpenIds({ any: [1, 2], open: [9, 8] }).sort((a, b) => a - b)).toEqual([8, 9])
+    expect(parseOpenIds({ any: [3, 4] }).sort((a, b) => a - b)).toEqual([3, 4])
+    expect(parseOpenIds([5, 6])).toEqual([5, 6])
   })
 })

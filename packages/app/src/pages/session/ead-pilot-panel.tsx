@@ -203,6 +203,9 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             })
           })
         },
+        setWorkContext: (id) => {
+          ead.setWorkContext(id)
+        },
         setSource: (id, name, path) => {
           ead.setSource(id, name, path)
           const token = ead.token()
@@ -394,7 +397,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                   return Number.isFinite(n) && n > 0 ? [n] : []
                 })
               : readPfmFilter().ids
-          const active = raw.active !== undefined ? raw.active === true : true
+          const active = ids.length > 0 && (raw.active !== undefined ? raw.active === true : true)
           const filter = writePfmFilter(ids, active)
           postPfmFilterState(el, { active: filter.active, filterIds: filter.ids, productId: ead.productId() })
           postPfmFilterApplied(el, {
@@ -425,7 +428,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         }}
         style={{ width: panelWidth() }}
       >
-        <div class="size-full flex flex-col border-l border-border-weaker-base">
+        <div class="size-full flex flex-col border-r border-border-weaker-base">
           <div class="shrink-0 px-3 py-2 flex items-center justify-between border-b border-border-weaker-base gap-2">
             <span class="text-14-medium text-text-strong">EAD Pilot</span>
             <div class="flex items-center gap-1">
@@ -463,7 +466,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
           <div onPointerDown={() => props.sizing.start()}>
             <ResizeHandle
               direction="horizontal"
-              edge="start"
+              edge="end"
               size={width()}
               min={EAD_PILOT_MIN}
               max={EAD_PILOT_MAX}

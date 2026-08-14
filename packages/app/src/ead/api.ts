@@ -277,13 +277,18 @@ export async function loadActiveMap(
   const map = (await call(http, `/pfm-maps/product/${productId}/active${q}`, token)) as MapPayload & {
     supportSubSchemas?: boolean | number
     baseMapId?: number | string
+    mapName?: string
   }
   const mapId = Number(map.mapId ?? 0)
+  const base = Number(map.baseMapId ?? 0)
   const root = asNode(map.rootNode)
+  const name = String(map.mapName || "").trim()
   return {
     mapId: Number.isFinite(mapId) && mapId > 0 ? mapId : 0,
     root,
     supportSubSchemas: map.supportSubSchemas === true || map.supportSubSchemas === 1,
+    baseMapId: Number.isFinite(base) && base > 0 ? base : 0,
+    mapName: name,
   }
 }
 
@@ -516,6 +521,103 @@ export function parseFilterIds(data: unknown) {
 export async function loadFilterNodeIds(token: string, mapId: number, http: Http = eadHttp()) {
   const data = await call(http, `/v1/ai-coding-jobs/map/${mapId}/filter-node-ids`, token).catch(() => null)
   return parseFilterIds(data)
+}
+
+/** Prefer `open` ids for Jobs-filtered PFM tree (Cursor jobFilterNodeIds.open). */
+export function parseOpenIds(data: unknown) {
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const open = (data as { open?: number[] }).open
+    if (Array.isArray(open) && open.length) return parseFilterIds(open)
+  }
+  return parseFilterIds(data)
+}
+
+export async function loadOpenFilterNodeIds(token: string, mapId: number, http: Http = eadHttp()) {
+  const data = await call(http, `/v1/ai-coding-jobs/map/${mapId}/filter-node-ids`, token).catch(() => null)
+  return parseOpenIds(data)
+}
+
+function chunk<T>(list: T[], size: number) {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
+}
+
+export async function loadPfmEadCounts(token: string, nodeIds: number[], http: Http = eadHttp()) {
+  const ids = [...new Set(nodeIds.filter((id) => id > 0))]
+  const out: Record<string, number> = {}
+  for (const part of chunk(ids, 200)) {
+    const data = await call(http, `/ead/nodes/ead-counts?pfmNodeIds=${part.join(",")}`, token).catch(() => null)
+    if (!data || typeof data !== "object") continue
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      const n = Number(value)
+      if (Number.isFinite(n) && n > 0) out[String(key)] = n
+    }
+  }
+  return out
+}
+
+export async function loadPfmJobCounts(token: string, nodeIds: number[], http: Http = eadHttp()) {
+  const ids = [...new Set(nodeIds.filter((id) => id > 0))]
+  if (!ids.length) return {} as Record<string, number>
+  const data = await call(http, `/v1/ai-coding-jobs/node-summary?pfmNodeIds=${ids.join(",")}`, token).catch(
+    () => null,
+  )
+  const out: Record<string, number> = {}
+  if (!Array.isArray(data)) return out
+  for (const row of data) {
+    if (!row || typeof row !== "object") continue
+    const id = Number((row as { pfmNodeId?: number }).pfmNodeId)
+    const open = Number((row as { openJobCount?: number }).openJobCount || 0)
+    if (Number.isFinite(id) && id > 0 && open > 0) out[String(id)] = open
+  }
+  return out
+}
+
+export async function loadPfmTestCounts(token: string, nodeIds: number[], http: Http = eadHttp()) {
+  const ids = [...new Set(nodeIds.filter((id) => id > 0))]
+  const out: Record<string, number> = {}
+  for (const part of chunk(ids, 200)) {
+    const data = await call(
+      http,
+      `/ai-test-cases/pfm-node-open-counts?pfmNodeIds=${part.join(",")}`,
+      token,
+    ).catch(() => null)
+    if (!data || typeof data !== "object") continue
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      const n = Number(value)
+      if (Number.isFinite(n) && n > 0) out[String(key)] = n
+    }
+  }
+  return out
+}
+
+export async function suggestProduct(
+  token: string,
+  products: Product[],
+  folder: string,
+  http: Http = eadHttp(),
+) {
+  const name = folder.trim().toLowerCase()
+  if (!name || !products.length) return
+  for (const product of products) {
+    const res = await http(`${EAD_API_URL}/products/${product.productId}/source-code-schema`, {
+      headers: headers(token),
+    }).catch(() => null)
+    if (!res || !res.ok) continue
+    const schema = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    if (!schema) continue
+    const repos = (schema.linkedRepos ?? schema.linked_repos) as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(repos)) continue
+    for (const repo of repos) {
+      const short = String(repo.shortName || "").trim().toLowerCase()
+      const vcs = String(repo.vcsRepo || "").trim().toLowerCase()
+      const base = vcs.split("/").filter(Boolean).pop() || ""
+      const hitShort = short && (name === short || name.includes(short) || short.includes(name))
+      const hitBase = base && (name === base || name.includes(base) || base.includes(name))
+      if (hitShort || hitBase) return product
+    }
+  }
 }
 
 export async function selectSourcePath(token: string, schemaId: number, nodePath: string, http: Http = eadHttp()) {
