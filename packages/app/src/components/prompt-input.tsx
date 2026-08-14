@@ -35,6 +35,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useEad } from "@/ead/settings"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { promptEnabled, promptProbe } from "@/testing/prompt"
@@ -107,6 +108,7 @@ type NodeSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "as
 
 function NodeSelectorPopover(props: {
   current: string
+  items?: string[]
   onSelect: (value: string) => void
   children?: JSX.Element
   triggerAs?: ValidComponent
@@ -167,7 +169,7 @@ function NodeSelectorPopover(props: {
             }}
             emptyMessage="No nodes found"
             key={(x: string) => x}
-            items={[...HARDCODED_NODES]}
+            items={props.items ?? [...HARDCODED_NODES]}
             current={props.current}
             filterKeys={[]}
             onSelect={(x) => {
@@ -1163,8 +1165,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
 
-  const nodes = HARDCODED_NODES
-  const [currentNode, setCurrentNode] = createSignal<string>("Employee Login")
+  const ead = useEad()
+  const nodes = createMemo(() => {
+    const name = (ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName()).trim()
+    if (!name) return [...HARDCODED_NODES]
+    if (HARDCODED_NODES.includes(name as (typeof HARDCODED_NODES)[number])) return [...HARDCODED_NODES]
+    return [name, ...HARDCODED_NODES]
+  })
+  const currentNode = createMemo(() => {
+    const name = (ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName()).trim()
+    if (!name) return { name: "" }
+    return {
+      name,
+      eadScript: ead.eadScript(),
+      aiPrompt: ead.aiPrompt(),
+      markdown: ead.contextMarkdown(),
+    }
+  })
+  const nodeLabel = createMemo(() => currentNode().name || "No PFM node")
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1675,9 +1693,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                   <div data-component="prompt-node-control">
                     <NodeSelectorPopover
-                      current={currentNode()}
+                      current={nodeLabel()}
+                      items={nodes()}
                       onSelect={(value) => {
-                        setCurrentNode(value)
+                        ead.setNode(ead.nodeId() || 0, value)
+                        ead.clearContext()
                         restoreFocus()
                       }}
                       triggerAs={Button}
@@ -1690,7 +1710,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       }}
                       onClose={restoreFocus}
                     >
-                      <span class="truncate">{currentNode()}</span>
+                      <span class="truncate">{nodeLabel()}</span>
                       <Icon name="chevron-down" size="small" class="shrink-0" />
                     </NodeSelectorPopover>
                   </div>

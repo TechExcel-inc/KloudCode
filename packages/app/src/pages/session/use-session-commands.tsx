@@ -17,6 +17,11 @@ import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { openPilot, togglePilot } from "@/ead/bridge"
+import { queuePilot } from "@/ead/actions"
+import { draftComposer } from "@/ead/composer"
+import { ensureEadMcp } from "@/ead/ensure-mcp"
+import { useEad } from "@/ead/settings"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -38,6 +43,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const file = useFile()
   const language = useLanguage()
   const local = useLocal()
+  const ead = useEad()
   const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
@@ -471,13 +477,90 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     viewCommand({
       id: "ead.pilot.toggle",
       title: language.t("command.ead.pilot.toggle"),
-      onSelect: () => layout.pluginPanel.toggle("ead:pilot", 420),
+      onSelect: () => togglePilot(layout.pluginPanel, () => ead.bumpPilot()),
     }),
     viewCommand({
       id: "ead.pilot.open",
       title: language.t("command.ead.pilot.open"),
+      onSelect: () => openPilot(layout.pluginPanel, () => ead.bumpPilot()),
+    }),
+    viewCommand({
+      id: "ead.context.copy",
+      title: language.t("command.ead.context.copy"),
       onSelect: () => {
-        layout.pluginPanel.open("ead:pilot", 420)
+        const markdown = ead.contextMarkdown().trim()
+        const name = (ead.sourceId() > 0 ? ead.sourceName() : ead.nodeName()).trim()
+        const text = markdown || (name ? `Active EAD context: ${name}` : "")
+        if (!text) {
+          showToast({ title: "EAD", description: "No active context to copy.", variant: "error" })
+          return
+        }
+        draftComposer((next) => prompt.set(next), text)
+        showToast({ title: "EAD", description: "Context drafted in composer.", variant: "success" })
+      },
+    }),
+    viewCommand({
+      id: "ead.source.find",
+      title: language.t("command.ead.source.find"),
+      onSelect: () => {
+        queuePilot({
+          kind: "find",
+          sourceId: ead.sourceId() || undefined,
+          sourcePath: ead.sourcePath() || undefined,
+          sourceName: ead.sourceName() || undefined,
+        })
+        openPilot(layout.pluginPanel, () => ead.bumpPilot())
+      },
+    }),
+    viewCommand({
+      id: "ead.source.create",
+      title: language.t("command.ead.source.create"),
+      onSelect: () => {
+        queuePilot({
+          kind: "create",
+          sourceId: ead.sourceId() || undefined,
+          sourcePath: ead.sourcePath() || undefined,
+          sourceName: ead.sourceName() || undefined,
+        })
+        openPilot(layout.pluginPanel, () => ead.bumpPilot())
+      },
+    }),
+    viewCommand({
+      id: "ead.map.setup",
+      title: language.t("command.ead.map.setup"),
+      onSelect: () => {
+        queuePilot({ kind: "setup" })
+        openPilot(layout.pluginPanel, () => ead.bumpPilot())
+      },
+    }),
+    viewCommand({
+      id: "ead.mcp.repair",
+      title: language.t("command.ead.mcp.repair"),
+      onSelect: async () => {
+        try {
+          const path = await ensureEadMcp({
+            client: sdk.client,
+            token: ead.token(),
+            entry: ead.mcpEntry(),
+            worktree: sdk.directory,
+          })
+          if (path) ead.setMcpEntry(path)
+          showToast({ title: "EAD MCP", description: "MCP eadpfm applied.", variant: "success" })
+        } catch (e) {
+          showToast({
+            title: "EAD MCP",
+            description: e instanceof Error ? e.message : String(e),
+            variant: "error",
+          })
+        }
+      },
+    }),
+    viewCommand({
+      id: "ead.map.mindmap",
+      title: language.t("command.ead.map.mindmap"),
+      onSelect: () => {
+        queuePilot({ kind: "mindmap" })
+        openPilot(layout.pluginPanel, () => ead.bumpPilot())
       },
     }),
     viewCommand({

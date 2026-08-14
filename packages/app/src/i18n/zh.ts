@@ -68,6 +68,12 @@ export const dict = {
   "command.ead.map.toggle": "切换 EAD Map",
   "command.ead.pilot.toggle": "切换 EAD Pilot",
   "command.ead.pilot.open": "打开 EAD AI 领航",
+  "command.ead.context.copy": "复制 EAD 活动上下文到输入框",
+  "command.ead.source.find": "EAD AI Find / Create",
+  "command.ead.source.create": "从源码 Analyze & Create EAD",
+  "command.ead.map.setup": "Setup EAD Map",
+  "command.ead.mcp.repair": "修复 EAD MCP 配置",
+  "command.ead.map.mindmap": "打开 EAD PFM Mindmap 过滤",
 
   "command.review.toggle": "切换审查",
 

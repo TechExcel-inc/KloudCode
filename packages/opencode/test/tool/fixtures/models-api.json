@@ -11436,7 +11436,7 @@
         "open_weights": false,
         "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
         "limit": { "context": 200000, "output": 128000 },
-        "provider": { "npm": "@ai-sdk/anthropic" }
+        "provider": { "npm": "@ai-sdk/openai-compatible" }
       },
       "gpt-5.4-mini": {
         "id": "gpt-5.4-mini",

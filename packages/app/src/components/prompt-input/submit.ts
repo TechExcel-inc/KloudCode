@@ -19,6 +19,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
+import { formatSystemPrompt } from "@/ead/api"
 
 type PendingPrompt = {
   abort: AbortController
@@ -38,49 +39,17 @@ export type FollowupDraft = {
   system?: string
 }
 
-// TODO: Replace hardcoded content with real PFM node data from EAD system.
-// When PFM data is available, replace STUB_NODE_CONTEXT[nodeName] with actual
-// eadScript and aiPrompt from the node's PFM definition.
-function formatNodeSystemPrompt(nodeName: string): string | undefined {
-  const STUB_NODE_CONTEXT: Record<string, { eadScript: string; aiPrompt: string }> = {
-    "Admin Top Toolbar": {
-      eadScript: "Admin Top Toolbar is the primary navigation bar component. It contains global menu items: Dashboard, Users, Settings, Reports.",
-      aiPrompt: "When working on Admin Top Toolbar, focus on navigation structure, menu item ordering, and global access patterns.",
-    },
-    "Employee Portal": {
-      eadScript: "Employee Portal is the main dashboard for employees. Shows leave balance, payslips, team calendar.",
-      aiPrompt: "When working on Employee Portal, focus on employee self-service features and data display widgets.",
-    },
-    "Team Portal": {
-      eadScript: "Team Portal shows team management features: team members, project assignments, sprint boards.",
-      aiPrompt: "When working on Team Portal, focus on team collaboration features and project management workflows.",
-    },
-    "User Manager": {
-      eadScript: "User Manager handles CRUD operations for user accounts: create, read, update, delete users and roles.",
-      aiPrompt: "When working on User Manager, focus on user CRUD operations, role-based access control, and form validation.",
-    },
-    "System Setting": {
-      eadScript: "System Setting provides configuration management: global settings, feature flags, integrations.",
-      aiPrompt: "When working on System Setting, focus on configuration validation, default values, and system-wide impact.",
-    },
-    "Introduction": {
-      eadScript: "Introduction is the onboarding/landing page. Shows product overview, quick start guide, recent activity.",
-      aiPrompt: "When working on Introduction, focus on onboarding flow, first-time user experience, and guided tours.",
-    },
-    "Employee Login": {
-      eadScript: "Employee Login handles authentication: login form, SSO integration, password recovery, MFA.",
-      aiPrompt: "When working on Employee Login, focus on authentication security, form validation, and error handling.",
-    },
-  }
-  const ctx = STUB_NODE_CONTEXT[nodeName]
-  if (!ctx) return undefined
-  return [
-    `<pfm-node-context>`,
-    `You are currently working on the PFM node: ${nodeName}`,
-    `<ead-script>${ctx.eadScript}</ead-script>`,
-    `<ai-prompt>${ctx.aiPrompt}</ai-prompt>`,
-    `</pfm-node-context>`,
-  ].join("\n")
+export type NodeContext = {
+  name: string
+  eadScript?: string
+  aiPrompt?: string
+  markdown?: string
+}
+
+function formatNodeSystemPrompt(ctx: NodeContext | string | undefined): string | undefined {
+  if (!ctx) return
+  if (typeof ctx === "string") return formatSystemPrompt({ name: ctx })
+  return formatSystemPrompt(ctx)
 }
 
 type FollowupSendInput = {
@@ -226,7 +195,7 @@ type PromptSubmitInput = {
   resetHistoryNavigation: () => void
   setMode: (mode: "normal" | "shell") => void
   setPopover: (popover: "at" | "slash" | null) => void
-  currentNode: Accessor<string>
+  currentNode: Accessor<NodeContext | string>
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>

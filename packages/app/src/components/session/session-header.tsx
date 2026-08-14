@@ -23,6 +23,8 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
+import { togglePilot } from "@/ead/bridge"
+import { useEad } from "@/ead/settings"
 import { StatusPopover } from "../status-popover"
 
 const OPEN_APPS = [
@@ -136,6 +138,7 @@ export function SessionHeader() {
   const language = useLanguage()
   const sync = useSync()
   const terminal = useTerminal()
+  const ead = useEad()
   const { params, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
@@ -501,7 +504,7 @@ export function SessionHeader() {
                     <Button
                       variant="ghost"
                       class="titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => layout.pluginPanel.toggle("ead:pilot", 420)}
+                      onClick={() => togglePilot(layout.pluginPanel, () => ead.bumpPilot())}
                       aria-label="Toggle EAD Pilot"
                       aria-expanded={layout.pluginPanel.opened("ead:pilot")()}
                     >

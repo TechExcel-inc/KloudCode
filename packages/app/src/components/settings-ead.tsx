@@ -1,9 +1,12 @@
 import { Show, createSignal, type JSX } from "solid-js"
+import { useParams } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLayout } from "@/context/layout"
+import { useServer } from "@/context/server"
+import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { useEad } from "@/ead/settings"
 import { EAD_API_URL, EAD_SERVER_URL } from "@/ead/urls"
@@ -27,14 +30,24 @@ export function SettingsEad() {
   const ead = useEad()
   const globalSDK = useGlobalSDK()
   const layout = useLayout()
+  const server = useServer()
+  const params = useParams()
   const [token, setToken] = createSignal(ead.token())
   const [entry, setEntry] = createSignal(ead.mcpEntry())
   const [copied, setCopied] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
 
+  const worktree = () => {
+    const fromUrl = params.dir ? decode64(params.dir) : ""
+    if (fromUrl) return fromUrl
+    const last = server.projects.last()
+    if (last) return last
+    return layout.projects.list()[0]?.worktree || "/"
+  }
+
   const client = () =>
     globalSDK.createClient({
-      directory: layout.projects.list()[0]?.worktree || "/",
+      directory: worktree(),
       throwOnError: true,
     })
 
@@ -69,7 +82,7 @@ export function SettingsEad() {
                 size="small"
                 variant="ghost"
                 onClick={() => {
-                  ead.clearToken()
+                  ead.signOut()
                   setToken("")
                 }}
               >
@@ -85,6 +98,19 @@ export function SettingsEad() {
             </Show>
           </span>
         </Row>
+        <Row title="Pilot mode" description="opencode (default) or cursor compatibility">
+          <select
+            class="h-8 text-12-regular rounded-md border border-border-weak-base bg-background-base px-2"
+            value={ead.pilotMode()}
+            onChange={(e) => {
+              ead.setPilotMode(e.currentTarget.value === "cursor" ? "cursor" : "opencode")
+              ead.bumpPilot()
+            }}
+          >
+            <option value="opencode">opencode</option>
+            <option value="cursor">cursor</option>
+          </select>
+        </Row>
         <Row title={language.t("settings.ead.mcpEntry.title")} description={language.t("settings.ead.mcpEntry.description")}>
           <div class="flex flex-col gap-2 w-full max-w-[360px]">
             <input
@@ -98,51 +124,62 @@ export function SettingsEad() {
           </div>
         </Row>
         <Row title={language.t("settings.ead.mcp.title")} description={language.t("settings.ead.mcp.description")}>
-          <div class="flex gap-2">
-            <Button
-              size="small"
-              variant="primary"
-              disabled={busy()}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  ead.setMcpEntry(entry())
-                  ead.setToken(token())
-                  await ensureEadMcp({
-                    client: client(),
-                    token: token() || ead.token(),
-                    entry: entry() || ead.mcpEntry(),
-                  })
-                  showToast({
-                    title: language.t("settings.ead.mcp.ok.title"),
-                    description: language.t("settings.ead.mcp.ok.description"),
-                    variant: "success",
-                  })
-                } catch (e) {
-                  showToast({
-                    title: language.t("settings.ead.mcp.fail.title"),
-                    description: e instanceof Error ? e.message : String(e),
-                    variant: "error",
-                  })
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              {language.t("settings.ead.mcp.apply")}
-            </Button>
-            <Button
-              size="small"
-              variant="secondary"
-              onClick={async () => {
-                const text = JSON.stringify(mcpSnippet(ead.token(), ead.mcpEntry()), null, 2)
-                await navigator.clipboard.writeText(text)
-                setCopied(true)
-                window.setTimeout(() => setCopied(false), 2000)
-              }}
-            >
-              {copied() ? language.t("settings.ead.mcp.copied") : language.t("settings.ead.mcp.copy")}
-            </Button>
+          <div class="flex flex-col gap-2 items-end">
+            <span class="text-11-regular text-text-weak truncate max-w-[360px]" title={worktree()}>
+              Worktree: {worktree()}
+            </span>
+            <div class="flex gap-2">
+              <Button
+                size="small"
+                variant="primary"
+                disabled={busy()}
+                onClick={async () => {
+                  setBusy(true)
+                  try {
+                    ead.setMcpEntry(entry())
+                    ead.setToken(token())
+                    await ensureEadMcp({
+                      client: client(),
+                      token: token() || ead.token(),
+                      entry: entry() || ead.mcpEntry(),
+                      worktree: worktree(),
+                    }).then((path) => {
+                      if (path) {
+                        ead.setMcpEntry(path)
+                        setEntry(path)
+                      }
+                    })
+                    showToast({
+                      title: language.t("settings.ead.mcp.ok.title"),
+                      description: language.t("settings.ead.mcp.ok.description"),
+                      variant: "success",
+                    })
+                  } catch (e) {
+                    showToast({
+                      title: language.t("settings.ead.mcp.fail.title"),
+                      description: e instanceof Error ? e.message : String(e),
+                      variant: "error",
+                    })
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                {language.t("settings.ead.mcp.apply")}
+              </Button>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={async () => {
+                  const text = JSON.stringify(mcpSnippet(ead.token(), ead.mcpEntry()), null, 2)
+                  await navigator.clipboard.writeText(text)
+                  setCopied(true)
+                  window.setTimeout(() => setCopied(false), 2000)
+                }}
+              >
+                {copied() ? language.t("settings.ead.mcp.copied") : language.t("settings.ead.mcp.copy")}
+              </Button>
+            </div>
           </div>
         </Row>
       </SettingsList>

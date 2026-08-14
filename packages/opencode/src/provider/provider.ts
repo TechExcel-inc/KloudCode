@@ -960,7 +960,14 @@ export namespace Provider {
       api: {
         id: model.id,
         url: model.provider?.api ?? provider.api!,
-        npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
+        // Zen docs: big-pickle uses chat/completions + openai-compatible, not /messages.
+        npm: iife(() => {
+          const npm = model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible"
+          if (provider.id === "opencode" && model.id === "big-pickle" && npm.includes("anthropic")) {
+            return "@ai-sdk/openai-compatible"
+          }
+          return npm
+        }),
       },
       status: model.status ?? "active",
       headers: {},
@@ -1115,12 +1122,18 @@ export namespace Provider {
                   id: ModelID.make(modelID),
                   api: {
                     id: model.id ?? existingModel?.api.id ?? modelID,
-                    npm:
-                      model.provider?.npm ??
-                      provider.npm ??
-                      existingModel?.api.npm ??
-                      modelsDev[providerID]?.npm ??
-                      "@ai-sdk/openai-compatible",
+                    npm: iife(() => {
+                      const npm =
+                        model.provider?.npm ??
+                        provider.npm ??
+                        existingModel?.api.npm ??
+                        modelsDev[providerID]?.npm ??
+                        "@ai-sdk/openai-compatible"
+                      if (providerID === "opencode" && modelID === "big-pickle" && npm.includes("anthropic")) {
+                        return "@ai-sdk/openai-compatible"
+                      }
+                      return npm
+                    }),
                     url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
                   },
                   status: model.status ?? existingModel?.status ?? "active",
