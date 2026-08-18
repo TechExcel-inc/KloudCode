@@ -1,5 +1,6 @@
-import { EAD_ORIGIN, EAD_SERVER_URL, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "./urls"
+import { eadOrigin, eadServer, EAD_PILOT_ID, EAD_PILOT_WIDTH, isEadHost } from "./urls"
 import type { PilotAction } from "./actions"
+import type { Lang } from "./i18n"
 
 export type PilotContext = {
   productId?: number
@@ -15,7 +16,7 @@ export type PilotContext = {
   openSetup?: boolean
   openSetupEadMap?: boolean
   openPfmFilter?: boolean
-  language?: "en" | "zh"
+  language?: Lang
   mode?: "opencode" | "cursor"
   bust?: number
 }
@@ -62,14 +63,15 @@ type Panel = {
   toggle: (id: string, width?: number) => void
 }
 
-/** Open Pilot and always bump so iframe remounts with fresh query params. */
-export function openPilot(panel: Panel, bump: () => void) {
+/** Open Pilot without remounting a live iframe (keep-alive). */
+export function openPilot(panel: Panel, bump?: () => void) {
+  const first = !panel.opened(EAD_PILOT_ID)()
   panel.open(EAD_PILOT_ID, EAD_PILOT_WIDTH)
-  bump()
+  if (first) bump?.()
 }
 
-/** Toggle Pilot; bump only when opening. */
-export function togglePilot(panel: Panel, bump: () => void) {
+/** Toggle Pilot; never remount on close. */
+export function togglePilot(panel: Panel, bump?: () => void) {
   if (panel.opened(EAD_PILOT_ID)()) {
     panel.close(EAD_PILOT_ID)
     return
@@ -78,7 +80,7 @@ export function togglePilot(panel: Panel, bump: () => void) {
 }
 
 export function buildPilotUrl(ctx: PilotContext) {
-  const url = new URL(`${EAD_SERVER_URL}/plugin/ai-code`)
+  const url = new URL(`${eadServer()}/plugin/ai-code`)
   url.searchParams.set("mode", ctx.mode === "cursor" ? "cursor" : "opencode")
   if (ctx.productId && ctx.productId > 0) url.searchParams.set("productId", String(ctx.productId))
   if (ctx.productName) url.searchParams.set("productName", ctx.productName)
@@ -117,7 +119,7 @@ export function flagsFromAction(action: PilotAction | undefined): Pick<
 
 export function postToFrame(frame: HTMLIFrameElement | undefined, payload: Record<string, unknown>) {
   if (!frame?.contentWindow) return
-  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, EAD_ORIGIN)
+  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, eadOrigin())
 }
 
 /** Match Cursor shell: iframe listens for authTokenSync / authSyncComplete. */
@@ -300,7 +302,7 @@ export function applyPilotAction(
   openPilotDashboard(frame, product)
 }
 
-export function setUiLanguage(frame: HTMLIFrameElement | undefined, language: "en" | "zh") {
+export function setUiLanguage(frame: HTMLIFrameElement | undefined, language: Lang) {
   postToFrame(frame, { type: "setUiLanguage", language })
 }
 
@@ -341,7 +343,7 @@ export function replyTeamMembers(
 }
 
 export function isEadOrigin(origin: string) {
-  return origin === EAD_ORIGIN
+  return isEadHost(origin)
 }
 
 function num(value: unknown) {

@@ -1,3 +1,5 @@
+import { t, type Lang } from "./i18n"
+
 export type ContextKind = "jobs" | "prompt" | "skills" | "api" | "source"
 
 export type ModalPayload = {
@@ -8,12 +10,12 @@ export type ModalPayload = {
   payload: unknown
 }
 
-export function kindLabel(kind: ContextKind) {
-  if (kind === "jobs") return "AI Jobs"
-  if (kind === "prompt") return "AI Prompt"
-  if (kind === "skills") return "Linked Skills"
-  if (kind === "api") return "AI API"
-  return "Linked Source Code"
+export function kindLabel(kind: ContextKind, lang: Lang = "en") {
+  if (kind === "jobs") return t(lang, "kindJobs")
+  if (kind === "prompt") return t(lang, "kindPrompt")
+  if (kind === "skills") return t(lang, "kindSkills")
+  if (kind === "api") return t(lang, "kindApi")
+  return t(lang, "kindSource")
 }
 
 type Active = {

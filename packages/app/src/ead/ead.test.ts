@@ -15,14 +15,20 @@ import {
   filterByCount,
   filterByIds,
   filterDisplay,
+  filterLinked,
+  filterLinkedTree,
   filterPfm,
   filterSource,
   parseRows,
   pathIds,
+  pathMatches,
   rollupCounts,
 } from "./source-tree"
-import { collectProducts, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds } from "./api"
+import { collectProducts, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
 import { queuePilot, takePilot, peekPilot } from "./actions"
+import { t } from "./i18n"
+import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, isEadHost } from "./urls"
+import { mcpCandidates } from "./mcp"
 
 describe("ead source-tree", () => {
   test("parseRows + buildTree + hide index", () => {
@@ -78,6 +84,20 @@ describe("ead source-tree", () => {
     expect(rolled["3"]).toBe(1)
     expect(pathIds(nodes, 4)).toEqual([1, 2])
     expect(pathIds(nodes, 99)).toEqual([])
+  })
+
+  test("filterLinked keeps ancestors of matched files", () => {
+    const rows = parseRows([
+      { nodeId: 1, nodePath: "src", nodeName: "src", nodeType: "FOLDER" },
+      { nodeId: 2, nodePath: "src/auth/login.ts", nodeName: "login.ts", nodeType: "FILE", parentNodeId: 1 },
+      { nodeId: 3, nodePath: "src/other.ts", nodeName: "other.ts", nodeType: "FILE", parentNodeId: 1 },
+    ])
+    expect(pathMatches("src/auth/login.ts", ["src/auth/login.ts"])).toBe(true)
+    const kept = filterLinked(rows, ["src/auth/login.ts"])
+    expect(kept.map((r) => r.nodeId).sort((a, b) => a - b)).toEqual([1, 2])
+    const tree = filterLinkedTree(buildTree(rows), ["src/auth/login.ts"])
+    expect(tree[0]?.children.map((c) => c.nodeName)).toEqual(["login.ts"])
+    expect(filterLinked(rows, [])).toEqual([])
   })
 })
 
@@ -195,15 +215,18 @@ describe("ead context-modal + jobs + filters + actions", () => {
     expect(formatJobCounts({ created: 1, updated: 2, linked: 3, deleted: 0, warnings: 1 })).toContain("1 note")
   })
 
-  test("owner + pfm filters", () => {
+  test("owner + pfm filters persist per product and keep paths", () => {
     writeOwner(2, { enabled: true, active: true, memberEmail: "a@b.c" })
     expect(ownerSummary(readOwner(2))).toContain("a@b.c")
-    writePfmFilter([10, 11], true)
-    expect(readPfmFilter()).toEqual({ ids: [10, 11], active: true })
-    writePfmFilter([], true)
-    expect(readPfmFilter()).toEqual({ ids: [], active: false })
-    clearPfmFilter()
-    expect(readPfmFilter().active).toBe(false)
+    writePfmFilter([10, 11], true, ["src/a.ts"], 2)
+    expect(readPfmFilter(2)).toEqual({ ids: [10, 11], active: true, paths: ["src/a.ts"] })
+    writePfmFilter([10, 11], false, undefined, 2)
+    expect(readPfmFilter(2).active).toBe(false)
+    expect(readPfmFilter(2).paths).toEqual(["src/a.ts"])
+    writePfmFilter([], true, ["x"], 2)
+    expect(readPfmFilter(2)).toEqual({ ids: [], active: false, paths: ["x"] })
+    clearPfmFilter(2)
+    expect(readPfmFilter(2).active).toBe(false)
   })
 
   test("queuePilot take/peek", () => {
@@ -239,5 +262,37 @@ describe("ead api helpers", () => {
     expect(parseOpenIds({ any: [1, 2], open: [9, 8] }).sort((a, b) => a - b)).toEqual([8, 9])
     expect(parseOpenIds({ any: [3, 4] }).sort((a, b) => a - b)).toEqual([3, 4])
     expect(parseOpenIds([5, 6])).toEqual([5, 6])
+  })
+
+  test("parseFiles accepts json array and csv", () => {
+    expect(parseFiles('["a.ts","b.ts"]')).toEqual(["a.ts", "b.ts"])
+    expect(parseFiles("a.ts, b.ts")).toEqual(["a.ts", "b.ts"])
+    expect(parseFiles("")).toEqual([])
+  })
+})
+
+describe("ead i18n + env + mcp", () => {
+  test("map i18n covers ja and ko", () => {
+    expect(t("ja", "title")).toContain("マップ")
+    expect(t("ko", "title")).toContain("맵")
+    expect(t("zh", "aiPilot")).toBe("AI 领航")
+    expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
+  })
+
+  test("applyEnv switches api and origin", () => {
+    applyEnv("localhost")
+    expect(eadEnv()).toBe("localhost")
+    expect(eadServer()).toContain("127.0.0.1")
+    expect(eadApi()).toContain("8081")
+    expect(isEadHost(eadOrigin())).toBe(true)
+    applyEnv("production")
+    expect(eadApi()).toContain("eadfm.com")
+    expect(isEadHost("https://eadfm.com")).toBe(true)
+    expect(isEadHost("http://localhost:5173")).toBe(true)
+  })
+
+  test("mcpCandidates walks to sibling EAD_PFM-Editor", () => {
+    const list = mcpCandidates("/Users/me/Projects/TX/KloudCode", "")
+    expect(list.some((p) => p.includes("EAD_PFM-Editor/mcp-eadpfm/dist/index.js"))).toBe(true)
   })
 })

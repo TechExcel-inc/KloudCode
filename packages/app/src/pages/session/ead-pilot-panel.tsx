@@ -10,11 +10,10 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
 import { peekPilot, queuePilot, takePilot, type PilotAction } from "@/ead/actions"
-import { loadContext, loadTeamMembers, reconcileJobs } from "@/ead/api"
+import { loadContext, loadSubtreePaths, loadTeamMembers, reconcileJobs } from "@/ead/api"
 import {
   applyPilotAction,
   buildPilotUrl,
-  flagsFromAction,
   handlePluginMessage,
   isEadOrigin,
   openPilot,
@@ -35,7 +34,7 @@ import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
 import { useEad } from "@/ead/settings"
-import { EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, EAD_SERVER_URL } from "@/ead/urls"
+import { EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer } from "@/ead/urls"
 
 const PING_MS = 30_000
 const STALE_MS = 90_000
@@ -63,27 +62,25 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const [beat, setBeat] = createSignal(0)
   const [reloadAt, setReloadAt] = createSignal(0)
   const [action, setAction] = createSignal<PilotAction | undefined>()
+  const [alive, setAlive] = createSignal(false)
 
   const opened = layout.pluginPanel.opened(EAD_PILOT_ID)
   const width = layout.pluginPanel.width(EAD_PILOT_ID)
   const panelOpen = createMemo(() => isDesktop() && opened())
   const panelWidth = createMemo(() => (panelOpen() ? `${width()}px` : "0px"))
 
+  createEffect(() => {
+    if (panelOpen()) setAlive(true)
+  })
+
   const src = createMemo(() => {
-    const pending = action() ?? peekPilot()
     return buildPilotUrl({
       productId: ead.productId(),
       productName: ead.productName(),
-      nodeId: ead.nodeId(),
-      nodeName: ead.nodeName(),
-      sourceId: pending?.sourceId || ead.sourceId(),
-      sourceName: pending?.sourceName || ead.sourceName(),
-      sourcePath: pending?.sourcePath || ead.sourcePath(),
-      mapId: ead.mapId(),
       language: ead.language(),
       mode: ead.pilotMode(),
       bust: ead.pilotBust(),
-      ...flagsFromAction(pending),
+      openAiPilot: true,
     })
   })
 
@@ -96,7 +93,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const launch = (next: PilotAction) => {
     queuePilot(next)
     setAction(next)
-    openPilot(layout.pluginPanel, () => ead.bumpPilot())
+    openPilot(layout.pluginPanel)
+    applyPilotAction(frame(), next, product())
   }
 
   const chat = async (text: string, auto = true) =>
@@ -121,8 +119,16 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     if (pid > 0) {
       const owner = readOwner(pid)
       postOwnerState(el, { ...owner, summary: ownerSummary(owner), productId: pid })
-      const filter = readPfmFilter()
-      postPfmFilterState(el, { active: filter.active, filterIds: filter.ids, productId: pid })
+      const filter = readPfmFilter(pid)
+      postPfmFilterState(el, {
+        active: filter.active,
+        filterIds: filter.ids,
+        pfmNodeFilterIds: filter.active ? filter.ids : [],
+        pfmNodeFilterSelectionIds: filter.ids,
+        pfmNodeFilterActive: filter.active,
+        pfmFilterLinkedPaths: filter.paths,
+        productId: pid,
+      })
     }
   }
 
@@ -146,19 +152,25 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   }
 
   createEffect(() => {
-    if (!panelOpen()) return
+    if (!alive()) return
     const queued = peekPilot()
     if (queued) setAction(queued)
     const el = frame()
     const token = ead.token()
     const lang = ead.language()
-    const bust = ead.pilotBust()
     void token
     void lang
-    void bust
     setBeat(Date.now())
     const timers = [400, 1200, 2500].map((ms) => window.setTimeout(() => push(el), ms))
     onCleanup(() => timers.forEach((t) => window.clearTimeout(t)))
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const queued = takePilot()
+    if (!queued) return
+    setAction(queued)
+    applyPilotAction(frame(), queued, product())
   })
 
   createEffect(() => {
@@ -379,9 +391,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
           ead.bumpMap()
         },
         pfmFilter: (raw) => {
+          const pid = positive(raw.productId) || ead.productId()
           const type = String(raw.type || "")
           if (type === "clearPfmNodeFilter") {
-            clearPfmFilter()
+            clearPfmFilter(pid)
             postPfmFilterCleared(el)
             ead.bumpMap()
             return
@@ -396,17 +409,36 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                   const n = Number(id)
                   return Number.isFinite(n) && n > 0 ? [n] : []
                 })
-              : readPfmFilter().ids
+              : readPfmFilter(pid).ids
           const active = ids.length > 0 && (raw.active !== undefined ? raw.active === true : true)
-          const filter = writePfmFilter(ids, active)
-          postPfmFilterState(el, { active: filter.active, filterIds: filter.ids, productId: ead.productId() })
-          postPfmFilterApplied(el, {
-            active: filter.active,
-            filterIds: filter.ids,
-            selectionIds: filter.ids,
-            linkedPaths: Array.isArray(raw.linkedPaths) ? raw.linkedPaths : [],
-          })
-          ead.bumpMap()
+          const given = Array.isArray(raw.linkedPaths)
+            ? raw.linkedPaths.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+            : []
+          const filter = writePfmFilter(ids, active, given.length ? given : undefined, pid)
+          const publish = (next: ReturnType<typeof writePfmFilter>, paths: string[]) => {
+            postPfmFilterState(el, {
+              active: next.active,
+              filterIds: next.ids,
+              pfmNodeFilterIds: next.active ? next.ids : [],
+              pfmNodeFilterSelectionIds: next.ids,
+              pfmNodeFilterActive: next.active,
+              pfmFilterLinkedPaths: paths,
+              productId: pid,
+            })
+            postPfmFilterApplied(el, {
+              active: next.active,
+              filterIds: next.ids,
+              selectionIds: next.ids,
+              linkedPaths: paths,
+            })
+            ead.bumpMap()
+          }
+          publish(filter, filter.paths)
+          if (filter.active && !filter.paths.length && ead.token()) {
+            void loadSubtreePaths(ead.token(), filter.ids).then((paths) => {
+              publish(writePfmFilter(filter.ids, true, paths, pid), paths)
+            })
+          }
         },
       })
     }
@@ -436,7 +468,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                 icon="link"
                 variant="ghost"
                 class="h-5 w-5"
-                onClick={() => window.open(`${EAD_SERVER_URL}/plugin/ai-code`, "_blank", "noopener,noreferrer")}
+                onClick={() => window.open(`${eadServer()}/plugin/ai-code`, "_blank", "noopener,noreferrer")}
                 aria-label="Open EAD Pilot web"
               />
               <IconButton
@@ -449,7 +481,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             </div>
           </div>
           <div class="flex-1 min-h-0 overflow-hidden">
-            <Show when={panelOpen()}>
+            <Show when={alive()}>
               <iframe
                 ref={setFrame}
                 src={src()}

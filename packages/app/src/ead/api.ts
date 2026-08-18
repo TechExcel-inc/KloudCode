@@ -1,5 +1,5 @@
 import { eadHttp } from "./http"
-import { EAD_API_URL } from "./urls"
+import { eadApi } from "./urls"
 
 export type Product = {
   productId: number
@@ -87,7 +87,7 @@ function headers(token: string) {
 }
 
 async function call(http: Http, path: string, token: string, init?: RequestInit) {
-  const res = await http(`${EAD_API_URL}${path}`, {
+  const res = await http(`${eadApi()}${path}`, {
     ...init,
     headers: {
       ...headers(token),
@@ -248,7 +248,7 @@ export async function login(identifier: string, password: string, http: Http = e
     identifier: identifier.trim(),
     password: btoa(password),
   }
-  const res = await http(`${EAD_API_URL}/auth/login`, {
+  const res = await http(`${eadApi()}/auth/login`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -333,7 +333,7 @@ export async function loadLinkedBundle(
     linkedFilePaths: [],
   }
   if (sync) {
-    await http(`${EAD_API_URL}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
+    await http(`${eadApi()}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
       method: "POST",
       headers: { ...headers(token), "Content-Type": "application/json" },
       body: JSON.stringify({ productId }),
@@ -404,6 +404,45 @@ export async function loadJobsForNode(token: string, nodeId: number, http: Http 
   return Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []
 }
 
+export function parseFiles(raw: string | null | undefined) {
+  if (!raw?.trim()) return [] as string[]
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (!Array.isArray(parsed)) return []
+      return parsed.flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : []))
+    } catch {
+      return []
+    }
+  }
+  return trimmed
+    .split(/[,\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+export async function loadLinkPaths(token: string, nodeId: number, http: Http = eadHttp()) {
+  if (!(nodeId > 0)) return [] as string[]
+  const node = (await call(http, `/nodes/${nodeId}`, token).catch(() => null)) as
+    | { sourceCodeFiles?: string | null }
+    | null
+  return parseFiles(node?.sourceCodeFiles)
+}
+
+export async function loadSubtreePaths(token: string, ids: number[], http: Http = eadHttp()) {
+  const unique = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))]
+  if (!unique.length) return [] as string[]
+  const batches = await Promise.all(unique.map((id) => loadLinkPaths(token, id, http)))
+  const merged = new Set<string>()
+  for (const paths of batches) {
+    for (const path of paths) {
+      if (path) merged.add(path)
+    }
+  }
+  return [...merged]
+}
+
 export async function createJob(
   token: string,
   input: { pfmNodeId: number; title: string; description?: string; projectId?: number },
@@ -427,7 +466,7 @@ export async function createJob(
     jobStatus: 0,
   }
   if (projectId > 0) body.projectId = projectId
-  const res = await http(`${EAD_API_URL}/v1/ai-coding-jobs`, {
+  const res = await http(`${eadApi()}/v1/ai-coding-jobs`, {
     method: "POST",
     headers: { ...headers(token), "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -461,7 +500,7 @@ export async function reconcileJobs(
   },
   http: Http = eadHttp(),
 ) {
-  const res = await http(`${EAD_API_URL}/v1/ai-coding-jobs/generate-jobs`, {
+  const res = await http(`${eadApi()}/v1/ai-coding-jobs/generate-jobs`, {
     method: "POST",
     headers: { ...headers(token), "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -601,7 +640,7 @@ export async function suggestProduct(
   const name = folder.trim().toLowerCase()
   if (!name || !products.length) return
   for (const product of products) {
-    const res = await http(`${EAD_API_URL}/products/${product.productId}/source-code-schema`, {
+    const res = await http(`${eadApi()}/products/${product.productId}/source-code-schema`, {
       headers: headers(token),
     }).catch(() => null)
     if (!res || !res.ok) continue
@@ -622,7 +661,7 @@ export async function suggestProduct(
 
 export async function selectSourcePath(token: string, schemaId: number, nodePath: string, http: Http = eadHttp()) {
   if (!nodePath.trim()) return
-  await http(`${EAD_API_URL}/source-code-pfm-node-tree/schema/${schemaId}/select`, {
+  await http(`${eadApi()}/source-code-pfm-node-tree/schema/${schemaId}/select`, {
     method: "POST",
     headers: { ...headers(token), "Content-Type": "application/json" },
     body: JSON.stringify({ nodePath: nodePath.trim() }),
@@ -657,7 +696,7 @@ export type SourceSchema = {
 }
 
 export async function loadSourceSchema(token: string, productId: number, http: Http = eadHttp()): Promise<SourceSchema | undefined> {
-  const res = await http(`${EAD_API_URL}/products/${productId}/source-code-schema`, {
+  const res = await http(`${eadApi()}/products/${productId}/source-code-schema`, {
     headers: headers(token),
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
@@ -687,7 +726,7 @@ export async function loadLinkedSource(
   sync = false,
 ) {
   if (sync) {
-    await http(`${EAD_API_URL}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
+    await http(`${eadApi()}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
       method: "POST",
       headers: { ...headers(token), "Content-Type": "application/json" },
       body: JSON.stringify({ productId }),
@@ -729,7 +768,7 @@ export function authKind(target: string): "email" | "phone" {
 }
 
 async function authPost(path: string, body: Record<string, unknown>, http: Http) {
-  const res = await http(`${EAD_API_URL}${path}`, {
+  const res = await http(`${eadApi()}${path}`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),

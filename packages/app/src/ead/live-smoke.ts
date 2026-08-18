@@ -4,13 +4,14 @@ import {
   loadLinkedBundle,
   loadProducts,
   loadSourceSchema,
+  loadSubtreePaths,
   login,
   formatSystemPrompt,
   loadJobsForNode,
   loadRawContext,
   reconcileJobs,
 } from "./api"
-import { buildTree, filterByCount, filterDisplay, parseRows } from "./source-tree"
+import { buildTree, filterByCount, filterDisplay, filterLinked, parseRows } from "./source-tree"
 import { buildPilotUrl, flagsFromAction, handlePluginMessage } from "./bridge"
 import { formatModal, buildModal } from "./context-modal"
 
@@ -37,7 +38,10 @@ async function main() {
   const bundle = await loadLinkedBundle(token, 2, schema!.schemaId)
   const tree = buildTree(filterDisplay(parseRows(bundle.nodes)))
   const filtered = filterByCount(tree, bundle.eadCountByNodeId, bundle.pendingEadByNodePath, true)
+  const paths = await loadSubtreePaths(token, [128])
+  const linked = filterLinked(filterDisplay(parseRows(bundle.nodes)), paths.length ? paths : ["src"])
   console.log("5 source", tree.length >= 1, filtered.length >= 1, filtered.map((n) => n.nodeName).join(","))
+  console.log("5b linkedPaths", paths.length, linked.length <= filterDisplay(parseRows(bundle.nodes)).length)
 
   const url = buildPilotUrl({
     productId: 2,

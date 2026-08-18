@@ -9,7 +9,7 @@ import { useServer } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { useEad } from "@/ead/settings"
-import { EAD_API_URL, EAD_SERVER_URL } from "@/ead/urls"
+import { eadApi, eadServer } from "@/ead/urls"
 import { mcpSnippet } from "@/ead/mcp"
 import { ensureEadMcp } from "@/ead/ensure-mcp"
 
@@ -60,10 +60,22 @@ export function SettingsEad() {
 
       <SettingsList>
         <Row title={language.t("settings.ead.serverUrl.title")} description={language.t("settings.ead.serverUrl.description")}>
-          <span class="text-12-regular text-text-base truncate max-w-[280px]">{EAD_SERVER_URL}</span>
+          <span class="text-12-regular text-text-base truncate max-w-[280px]">{eadServer()}</span>
         </Row>
         <Row title={language.t("settings.ead.apiUrl.title")} description={language.t("settings.ead.apiUrl.description")}>
-          <span class="text-12-regular text-text-base truncate max-w-[280px]">{EAD_API_URL}</span>
+          <span class="text-12-regular text-text-base truncate max-w-[280px]">{eadApi()}</span>
+        </Row>
+        <Row title={language.t("settings.ead.env.title")} description={language.t("settings.ead.env.description")}>
+          <select
+            class="h-8 text-12-regular rounded-md border border-border-weak-base bg-background-base px-2"
+            value={ead.env()}
+            onChange={(e) => {
+              ead.setEnv(e.currentTarget.value === "localhost" ? "localhost" : "production")
+            }}
+          >
+            <option value="production">eadfm.com</option>
+            <option value="localhost">localhost</option>
+          </select>
         </Row>
         <Row title={language.t("settings.ead.token.title")} description={language.t("settings.ead.token.description")}>
           <div class="flex flex-col gap-2 w-full max-w-[320px]">

@@ -34,6 +34,7 @@
     "active": true,
     "targets": ["deb", "rpm", "dmg", "nsis", "app"],
     "externalBin": ["sidecars/opencode-cli"],
+    "resources": ["resources/mcp-eadpfm/package.json", "resources/mcp-eadpfm/dist"],
     "linux": {
       "rpm": {
         "compression": {

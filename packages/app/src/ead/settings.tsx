@@ -1,9 +1,13 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createEffect } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
+import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
+import type { Lang } from "./i18n"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
+import { applyEnv, type Env } from "./urls"
 
 type View = "pfm" | "source"
 type Mode = "opencode" | "cursor"
@@ -24,7 +28,8 @@ type State = {
   sourcePath: string
   view: View
   pilotMode: Mode
-  language: "en" | "zh"
+  language: Lang
+  env: Env
   mcpEntry: string
   pilotBust: number
   eadScript: string
@@ -36,6 +41,8 @@ type State = {
   expanded: Record<string, string[]>
   jobsOnly: boolean
   workContextId: number
+  owners: Record<string, OwnerFilter>
+  pfm: Record<string, PfmFilter>
 }
 
 const empty: State = {
@@ -54,6 +61,7 @@ const empty: State = {
   view: "pfm",
   pilotMode: "opencode",
   language: "zh",
+  env: "production",
   mcpEntry: DEFAULT_MCP_ENTRY,
   pilotBust: 0,
   eadScript: "",
@@ -65,6 +73,8 @@ const empty: State = {
   expanded: {},
   jobsOnly: false,
   workContextId: 0,
+  owners: {},
+  pfm: {},
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
@@ -72,6 +82,22 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
   init: () => {
     bindEadHttp(usePlatform())
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
+
+    const flushFilters = () => {
+      bindFilters(
+        { owners: store.owners ?? {}, pfm: store.pfm ?? {} },
+        (next) => {
+          setStore("owners", next.owners)
+          setStore("pfm", next.pfm)
+        },
+      )
+    }
+
+    createEffect(() => {
+      if (!ready()) return
+      applyEnv(store.env === "localhost" ? "localhost" : "production")
+      flushFilters()
+    })
 
     const clearSession = () => {
       setStore("productId", 0)
@@ -107,7 +133,12 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       sourcePath: () => store.sourcePath ?? "",
       view: () => (store.view === "source" ? "source" : "pfm"),
       pilotMode: () => (store.pilotMode === "cursor" ? "cursor" : "opencode"),
-      language: () => (store.language === "en" ? "en" : "zh"),
+      language: (): Lang => {
+        const lang = store.language
+        if (lang === "en" || lang === "ja" || lang === "ko") return lang
+        return "zh"
+      },
+      env: (): Env => (store.env === "localhost" ? "localhost" : "production"),
       mcpEntry: () => (store.mcpEntry?.trim() ? store.mcpEntry.trim() : DEFAULT_MCP_ENTRY),
       pilotBust: () => store.pilotBust ?? 0,
       eadScript: () => store.eadScript ?? "",
@@ -210,8 +241,39 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setMapId(id: number) {
         setStore("mapId", id)
       },
-      setLanguage(language: "en" | "zh") {
+      setLanguage(language: Lang) {
         setStore("language", language)
+      },
+      setEnv(next: Env) {
+        const env = next === "localhost" ? "localhost" : "production"
+        if (store.env === env) {
+          applyEnv(env)
+          return
+        }
+        setStore("env", env)
+        applyEnv(env)
+        setStore("pilotBust", (n) => (n ?? 0) + 1)
+        setStore("mapTick", (n) => (n ?? 0) + 1)
+      },
+      owner: () => store.owners?.[String(store.productId)] ?? { ...emptyOwner },
+      pfmFilter: () => mergePfm(store.pfm?.[String(store.productId)]),
+      setOwner(next: Partial<OwnerFilter>) {
+        const pid = store.productId
+        if (!(pid > 0)) return { ...emptyOwner }
+        const merged = mergeOwner(store.owners?.[String(pid)] ?? { ...emptyOwner }, next)
+        setStore("owners", String(pid), merged)
+        return merged
+      },
+      setPfmFilter(next: Partial<PfmFilter>) {
+        const pid = store.productId
+        const prev = mergePfm(pid > 0 ? store.pfm?.[String(pid)] : undefined)
+        const merged = mergePfm({
+          ids: next.ids ?? prev.ids,
+          active: next.active ?? prev.active,
+          paths: next.paths ?? prev.paths,
+        })
+        if (pid > 0) setStore("pfm", String(pid), merged)
+        return merged
       },
       setMcpEntry(path: string) {
         setStore("mcpEntry", path.trim())
