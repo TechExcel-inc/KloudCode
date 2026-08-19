@@ -13,6 +13,19 @@ type View = "pfm" | "source"
 type Mode = "opencode" | "cursor"
 type Badge = "ead" | "jobs" | "tests" | "none"
 
+export type Chrome = {
+  view: View
+  badge: Badge
+  eadsOnly: boolean
+  jobsOnly: boolean
+  subSchemaId: number
+}
+
+export type SourcePref = {
+  badge: Badge
+  eadsOnly: boolean
+}
+
 type State = {
   token: string
   productId: number
@@ -43,6 +56,8 @@ type State = {
   workContextId: number
   owners: Record<string, OwnerFilter>
   pfm: Record<string, PfmFilter>
+  chrome: Record<string, Chrome>
+  source: Record<string, SourcePref>
 }
 
 const empty: State = {
@@ -75,6 +90,8 @@ const empty: State = {
   workContextId: 0,
   owners: {},
   pfm: {},
+  chrome: {},
+  source: {},
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
@@ -98,6 +115,38 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       applyEnv(store.env === "localhost" ? "localhost" : "production")
       flushFilters()
     })
+
+    const writeChrome = () => {
+      const pid = store.productId
+      if (!(pid > 0)) return
+      if (!store.chrome) setStore("chrome", {})
+      setStore("chrome", String(pid), {
+        view: store.view === "source" ? "source" : "pfm",
+        badge: store.badge ?? "ead",
+        eadsOnly: store.eadsOnly !== false,
+        jobsOnly: store.jobsOnly === true,
+        subSchemaId: store.subSchemaId ?? 0,
+      })
+    }
+
+    const writeSource = () => {
+      const sid = store.schemaId
+      if (!(sid > 0)) return
+      if (!store.source) setStore("source", {})
+      setStore("source", String(sid), {
+        badge: store.badge ?? "ead",
+        eadsOnly: store.eadsOnly !== false,
+      })
+    }
+
+    const applyChrome = (id: number) => {
+      const chrome = store.chrome?.[String(id)]
+      setStore("view", chrome?.view === "source" ? "source" : "pfm")
+      setStore("badge", chrome?.badge ?? "ead")
+      setStore("eadsOnly", chrome?.eadsOnly !== false)
+      setStore("jobsOnly", chrome?.jobsOnly === true)
+      setStore("subSchemaId", chrome?.subSchemaId ?? 0)
+    }
 
     const clearSession = () => {
       setStore("productId", 0)
@@ -176,13 +225,13 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         setStore("mapId", 0)
         setStore("schemaId", 0)
         setStore("schemaName", "")
-        setStore("subSchemaId", 0)
         setStore("sourceId", 0)
         setStore("sourceName", "")
         setStore("sourcePath", "")
         setStore("eadScript", "")
         setStore("aiPrompt", "")
         setStore("contextMarkdown", "")
+        applyChrome(id)
       },
       setNode(id: number, name: string) {
         setStore("nodeId", id)
@@ -201,24 +250,40 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setSchema(id: number, name: string) {
         setStore("schemaId", id)
         setStore("schemaName", name)
+        const pref = store.source?.[String(id)]
+        if (!pref || store.view !== "source") return
+        setStore("badge", pref.badge ?? "ead")
+        setStore("eadsOnly", pref.eadsOnly !== false)
       },
       setSubSchema(id: number) {
         setStore("subSchemaId", id)
+        writeChrome()
       },
       setView(view: View) {
         setStore("view", view)
+        writeChrome()
+        if (view !== "source") return
+        const pref = store.source?.[String(store.schemaId)]
+        if (!pref) return
+        setStore("badge", pref.badge ?? store.badge)
+        setStore("eadsOnly", pref.eadsOnly !== false)
       },
       setPilotMode(mode: Mode) {
         setStore("pilotMode", mode)
       },
       setEadsOnly(value: boolean) {
         setStore("eadsOnly", value)
+        writeChrome()
+        writeSource()
       },
       setBadge(badge: Badge) {
         setStore("badge", badge)
+        writeChrome()
+        writeSource()
       },
       setJobsOnly(value: boolean) {
         setStore("jobsOnly", value)
+        writeChrome()
       },
       setWorkContext(id: number) {
         setStore("workContextId", Number.isFinite(id) && id > 0 ? id : 0)
@@ -274,6 +339,16 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         })
         if (pid > 0) setStore("pfm", String(pid), merged)
         return merged
+      },
+      sourcePref: (schemaId: number) => store.source?.[String(schemaId)],
+      setSourcePref(schemaId: number, next: Partial<SourcePref>) {
+        if (!(schemaId > 0)) return
+        if (!store.source) setStore("source", {})
+        const prev = store.source?.[String(schemaId)]
+        setStore("source", String(schemaId), {
+          badge: next.badge ?? prev?.badge ?? "ead",
+          eadsOnly: next.eadsOnly ?? prev?.eadsOnly !== false,
+        })
       },
       setMcpEntry(path: string) {
         setStore("mcpEntry", path.trim())

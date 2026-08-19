@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Button } from "@opencode-ai/ui/button"
@@ -14,27 +15,32 @@ import type { Sizing } from "@/pages/session/helpers"
 import { queuePilot } from "@/ead/actions"
 import {
   loadActiveMap,
+  loadCatalog,
   loadContext,
   loadJobsForNode,
+  loadLinkPaths,
   loadLinkedBundle,
   loadOpenFilterNodeIds,
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
-  loadProducts,
   loadRawContext,
+  loadRunPrefs,
   loadSourceSchema,
   loadSubSchemas,
   loadSubtreePaths,
   loadTeamMembers,
   login,
   me,
+  productRole,
   resetPassword,
+  saveRunPrefs,
   selectSourcePath,
   sendCode,
   signup,
   suggestProduct,
   verifyCode,
+  type Group,
   type PfmNode,
   type Product,
   type SubSchema,
@@ -42,8 +48,9 @@ import {
 } from "@/ead/api"
 import { openPilot } from "@/ead/bridge"
 import { sendChat } from "@/ead/composer"
-import { ConfirmDialog, ContextDialog } from "@/ead/context-dialog"
+import { ConfirmDialog } from "@/ead/context-dialog"
 import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
+import { beginDiag, formatDiag, noteDiag } from "@/ead/diag"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { t, type Lang } from "@/ead/i18n"
@@ -54,9 +61,12 @@ import {
   filterByCount,
   filterByIds,
   filterDisplay,
+  filterLinked,
   filterLinkedTree,
   filterPfm,
   filterSource,
+  filteredCounts,
+  idCounts,
   parseRows,
   pathIds,
   rollupCounts,
@@ -333,11 +343,41 @@ function SourceTree(props: {
   )
 }
 
+function mark(role: ReturnType<typeof productRole>, lang: Lang) {
+  if (role === "sibling") return { cls: "text-sky-400", title: t(lang, "siblingProduct"), glyph: "◇" }
+  if (role === "base") return { cls: "text-violet-400", title: t(lang, "baseSiblings"), glyph: "▣" }
+  return { cls: "text-text-weak", title: "", glyph: "•" }
+}
+
+function Choice(props: {
+  product: Product
+  active: boolean
+  lang: Lang
+  onPick: (product: Product) => void
+}) {
+  const role = () => productRole(props.product)
+  const meta = () => mark(role(), props.lang)
+  return (
+    <button
+      type="button"
+      class={`${item} flex items-center gap-1.5 ${props.active ? itemActive : ""}`}
+      title={meta().title}
+      onClick={() => props.onPick(props.product)}
+    >
+      <span class={`shrink-0 text-11-regular ${meta().cls}`} aria-hidden="true">
+        {meta().glyph}
+      </span>
+      <span class="min-w-0 truncate">{props.product.name}</span>
+    </button>
+  )
+}
+
 export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
   const language = useLanguage()
   const platform = usePlatform()
   const prompt = usePrompt()
+  const params = useParams()
   const ead = useEad()
   const sdk = useSDK()
   const dialog = useDialog()
@@ -352,6 +392,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const panelWidth = createMemo(() => (panelOpen() ? `${width()}px` : "0px"))
 
   const [products, setProducts] = createSignal<Product[]>([])
+  const [groups, setGroups] = createSignal<Group[]>([])
   const [root, setRoot] = createSignal<PfmNode | undefined>()
   const [source, setSource] = createSignal<SourceNode[]>([])
   const [schemas, setSchemas] = createSignal<SubSchema[]>([])
@@ -383,6 +424,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [username, setUsername] = createSignal("")
   const [signupToken, setSignupToken] = createSignal("")
   const [newPass, setNewPass] = createSignal("")
+  const [confirmPass, setConfirmPass] = createSignal("")
+  const [userId, setUserId] = createSignal(0)
+  const [tenantId, setTenantId] = createSignal(0)
+  const [pipeline, setPipeline] = createSignal("")
   const [menu, setMenu] = createSignal<Menu>("")
   const [chip, setChip] = createSignal(0)
   const [members, setMembers] = createSignal<TeamMember[]>([])
@@ -468,6 +513,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     return products().filter((p) => p.name.toLowerCase().includes(q) || String(p.productId).includes(q))
   })
 
+  const grouped = createMemo(() => {
+    const q = pq().trim().toLowerCase()
+    return groups().flatMap((g) => {
+      const list = q
+        ? g.products.filter((p) => p.name.toLowerCase().includes(q) || String(p.productId).includes(q))
+        : g.products
+      if (!list.length) return []
+      return [{ ...g, products: list }]
+    })
+  })
+
   const ownerMembers = createMemo(() => {
     const q = oq().trim().toLowerCase()
     if (!q) return members()
@@ -527,8 +583,28 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPfmTests({})
   }
 
+  const persistRun = () => {
+    const token = ead.token()
+    const sid = ead.schemaId()
+    if (!token || sid <= 0 || userId() <= 0 || tenantId() <= 0) return
+    void saveRunPrefs(
+      token,
+      userId(),
+      tenantId(),
+      sid,
+      {
+        showEadCount: ead.badge() === "ead",
+        showOpenJobs: ead.badge() === "jobs",
+        showOpenTests: ead.badge() === "tests",
+        eadsOnlyFilter: ead.eadsOnly(),
+      },
+      http(),
+    )
+  }
+
   const toggleBadge = (next: "ead" | "jobs" | "tests") => {
     ead.setBadge(ead.badge() === next ? "none" : next)
+    persistRun()
   }
 
   const soon = (name: string) => {
@@ -598,10 +674,53 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
     }
     if (used !== schema.schemaId) ead.setSchema(used, schema.name)
+    const pref = ead.sourcePref(used)
+    if (pref) {
+      ead.setBadge(pref.badge)
+      ead.setEadsOnly(pref.eadsOnly)
+    } else if (userId() > 0 && tenantId() > 0) {
+      const remote = await loadRunPrefs(token, userId(), tenantId(), used, http())
+      if (remote) {
+        const badge = remote.showOpenJobs ? "jobs" : remote.showOpenTests ? "tests" : "ead"
+        const only = remote.eadsOnlyFilter !== false
+        ead.setSourcePref(used, { badge, eadsOnly: only })
+        ead.setBadge(badge)
+        ead.setEadsOnly(only)
+      }
+    }
     const filter = readPfmFilter(pid)
     if (filter.active && filter.ids.length && !filter.paths.length) {
       const paths = await loadSubtreePaths(token, filter.ids, http())
       writePfmFilter(filter.ids, true, paths, pid)
+    }
+    const active = readPfmFilter(pid)
+    if (active.active && active.ids.length) {
+      const parsed = parseRows(rows)
+      const linked = await Promise.all(
+        active.ids.map(async (nid) => ({ nodeId: nid, paths: await loadLinkPaths(token, nid, http()) })),
+      )
+      const raw = await loadPfmEadCounts(token, active.ids, http())
+      const byPfm: Record<number, number> = {}
+      for (const [key, value] of Object.entries(raw)) {
+        const n = Number(key)
+        if (Number.isFinite(n) && n > 0) byPfm[n] = value
+      }
+      const byPath = filteredCounts(
+        parsed.map((row) => row.nodePath),
+        linked.filter((n) => n.paths.length),
+        byPfm,
+      )
+      if (Object.keys(byPath).length) {
+        eads = idCounts(parsed, byPath)
+      } else {
+        const kept = filterLinked(parsed, active.paths)
+        const fallback: Record<string, number> = {}
+        for (const row of kept) {
+          const n = eads[String(row.nodeId)]
+          if (n > 0) fallback[row.nodePath] = n
+        }
+        eads = idCounts(kept, fallback)
+      }
     }
     setEadCounts(eads)
     setJobCounts(jobs)
@@ -616,12 +735,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   let gen = 0
-  const refresh = async () => {
+  const refresh = async (opts?: { soft?: boolean }) => {
     const run = ++gen
     const live = () => run === gen
+    const soft = opts?.soft === true
     const token = ead.token()
+    beginDiag()
+    noteDiag("Startup", true, soft ? "Soft refresh" : "Loading product list from API")
     if (!token) {
       setProducts([])
+      setGroups([])
       setRoot(undefined)
       setSource([])
       setSchemas([])
@@ -631,22 +754,32 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       clearCounts()
       setUser("")
       setEmail("")
+      setUserId(0)
+      setTenantId(0)
       setHint(undefined)
       setBanner(null)
+      setPipeline(formatDiag())
       return
     }
-    setBusy(true)
-    setErr("")
-    flash("loading", tx("refreshing"))
+    if (!soft) {
+      setBusy(true)
+      setErr("")
+      flash("loading", tx("refreshing"))
+    }
     try {
       const fetcher = http()
       const profile = await me(token, fetcher)
       if (!live()) return
       setEmail(String(profile?.email || ""))
       setUser(String(profile?.name || profile?.userName || profile?.email || tx("signedIn")))
-      const list = await loadProducts(token, fetcher)
+      setUserId(profile.userId)
+      setTenantId(profile.tenantId)
+      noteDiag("Auth", true, profile.email || profile.userName || "ok")
+      const catalog = await loadCatalog(token, fetcher)
       if (!live()) return
-      setProducts(list)
+      setProducts(catalog.products)
+      setGroups(catalog.groups)
+      noteDiag("Products", true, `${catalog.products.length} products, ${catalog.groups.length} groups`)
       const pid = ead.productId()
       if (pid <= 0) {
         setRoot(undefined)
@@ -656,14 +789,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setBaseMapId(0)
         setMapName("")
         clearCounts()
-        const hit = await suggestProduct(token, list, folder(), fetcher)
+        const hit = await suggestProduct(token, catalog.products, folder(), fetcher)
         if (!live()) return
         setHint(hit ? { productId: hit.productId, name: hit.name } : undefined)
-        flash("ok", tx("refreshed"))
+        noteDiag("Load complete", true, "No product selected")
+        setPipeline(formatDiag())
+        if (!soft) flash("ok", tx("refreshed"))
         return
       }
       setHint(undefined)
-      const selected = list.find((p) => p.productId === pid)
+      const selected = catalog.products.find((p) => p.productId === pid)
       if (!selected) {
         setRoot(undefined)
         setSource([])
@@ -672,7 +807,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setBaseMapId(0)
         setMapName("")
         clearCounts()
-        flash("ok", tx("refreshed"))
+        noteDiag("Load complete", true, "Selected product missing")
+        setPipeline(formatDiag())
+        if (!soft) flash("ok", tx("refreshed"))
         return
       }
       if (selected.name && selected.name !== ead.productName()) {
@@ -685,6 +822,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setRoot(map.root)
       setBaseMapId(map.baseMapId)
       setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
+      noteDiag("Map", true, `mapId=${map.mapId} name=${map.mapName || map.root?.name || "-"}`)
       if (map.supportSubSchemas && map.mapId > 0) {
         const next = await loadSubSchemas(token, map.mapId, fetcher)
         if (!live()) return
@@ -717,13 +855,22 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
       if (ead.view() === "source") await loadSource()
       if (!live()) return
-      flash("ok", tx("refreshed"))
+      noteDiag(
+        "Load complete",
+        true,
+        `PFM nodes: ${map.root ? collectIds([map.root]).length : 0}, view: ${ead.view()}`,
+      )
+      setPipeline(formatDiag())
+      if (!soft) flash("ok", tx("refreshed"))
     } catch (e) {
       if (!live()) return
       const msg = e instanceof Error ? e.message : String(e)
+      noteDiag("Error", false, msg)
+      setPipeline(formatDiag())
       if (msg === "AUTH_EXPIRED") {
         ead.signOut()
         setProducts([])
+        setGroups([])
         setRoot(undefined)
         setSource([])
         setSchemas([])
@@ -733,13 +880,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         clearCounts()
         setUser("")
         setEmail("")
+        setUserId(0)
+        setTenantId(0)
         setHint(undefined)
         setErr(tx("expired"))
-        flash("error", tx("expired"))
+        if (!soft) flash("error", tx("expired"))
         return
       }
       setErr(msg)
-      flash("error", msg)
+      if (!soft) flash("error", msg)
       setRoot(undefined)
       setSource([])
       setSchemas([])
@@ -748,7 +897,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setMapName("")
       clearCounts()
     } finally {
-      if (live()) setBusy(false)
+      if (live() && !soft) setBusy(false)
     }
   }
 
@@ -758,6 +907,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void ead.productId()
     void ead.subSchemaId()
     void refresh()
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const timer = window.setInterval(() => {
+      if (!ead.token()) return
+      void refresh({ soft: true })
+    }, 8_000)
+    onCleanup(() => window.clearInterval(timer))
   })
 
   createEffect(() => {
@@ -834,6 +992,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     ead.setToken(token)
     setPass("")
     setNewPass("")
+    setConfirmPass("")
     setCode("")
     setSignupToken("")
     await refresh()
@@ -895,6 +1054,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const onSignup = async () => {
+    if (pass() !== confirmPass()) {
+      setErr(tx("mismatch"))
+      return
+    }
     setBusy(true)
     setErr("")
     try {
@@ -917,6 +1080,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const onReset = async () => {
+    if (newPass() !== confirmPass()) {
+      setErr(tx("mismatch"))
+      return
+    }
     setBusy(true)
     setErr("")
     try {
@@ -947,6 +1114,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     ead.signOut()
     ead.bumpPilot()
     setProducts([])
+    setGroups([])
     setRoot(undefined)
     setSource([])
     setSchemas([])
@@ -985,32 +1153,25 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const inject = async (kind: ContextKind, nodeId: number, name: string, type: "pfm" | "source") => {
     const token = ead.token()
     if (!token || nodeId <= 0) return
+    flash("loading", t(lang(), "sendingToChat", { kind: kindLabel(kind, lang()) }))
     setBusy(true)
     setErr("")
     try {
       const raw = await loadRawContext(token, nodeId, http(), type)
-      const jobs =
-        kind === "jobs"
-          ? ((await loadJobsForNode(token, nodeId, http())) as Array<{
-              jobId?: number
-              title?: string
-              description?: string
-              jobStatus?: number
-            }>)
-          : []
-      const text = formatModal(buildModal(kind, nodeId, name, raw, jobs))
-      dialog.show(() => (
-        <ContextDialog
-          title={`${kindLabel(kind, lang())} · ${name}`}
-          text={text}
-          lang={lang()}
-          onInject={async (next) => {
-            await sendChat({ text: next, set: (value) => prompt.set(value) })
-          }}
-        />
-      ))
+      const jobs = kind === "jobs" ? await loadJobsForNode(token, nodeId, http()) : []
+      const text = formatModal(buildModal(kind, nodeId, name, raw, jobs as never))
+      const ok = await sendChat({
+        text,
+        set: (value) => prompt.set(value),
+        client: sdk.client,
+        sessionID: params.id,
+        auto: true,
+      })
+      flash("ok", tx(ok ? "sent" : "injected"))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setErr(msg)
+      flash("error", msg)
     } finally {
       setBusy(false)
     }
@@ -1258,6 +1419,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={pass()}
                       onInput={(e) => setPass(e.currentTarget.value)}
                     />
+                    <input
+                      type="password"
+                      class={field}
+                      placeholder={tx("confirmPassword")}
+                      value={confirmPass()}
+                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
+                    />
                     <Button size="small" variant="primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
                       {tx("create")}
                     </Button>
@@ -1293,6 +1461,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       placeholder={tx("newPassword")}
                       value={newPass()}
                       onInput={(e) => setNewPass(e.currentTarget.value)}
+                    />
+                    <input
+                      type="password"
+                      class={field}
+                      placeholder={tx("confirmPassword")}
+                      value={confirmPass()}
+                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
                     />
                     <Button size="small" variant="primary" disabled={busy()} onClick={() => void onReset()}>
                       {tx("resetPassword")}
@@ -1423,17 +1598,41 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           />
                         </div>
                         <div class="max-h-56 overflow-y-auto">
-                          <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">{tx("noProducts")}</div>}>
-                            {(p) => (
-                              <button
-                                type="button"
-                                class={`${item} ${ead.productId() === p.productId ? itemActive : ""}`}
-                                onClick={() => pickProduct(p)}
-                              >
-                                {p.name}
-                              </button>
-                            )}
-                          </For>
+                          <Show
+                            when={grouped().length}
+                            fallback={
+                              <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">{tx("noProducts")}</div>}>
+                                {(p) => (
+                                  <Choice
+                                    product={p}
+                                    active={ead.productId() === p.productId}
+                                    lang={lang()}
+                                    onPick={pickProduct}
+                                  />
+                                )}
+                              </For>
+                            }
+                          >
+                            <For each={grouped()}>
+                              {(g) => (
+                                <div>
+                                  <div class="px-2.5 py-1 text-11-regular text-text-weak truncate">
+                                    {g.name || tx("teamFallback")}
+                                  </div>
+                                  <For each={g.products}>
+                                    {(p) => (
+                                      <Choice
+                                        product={p}
+                                        active={ead.productId() === p.productId}
+                                        lang={lang()}
+                                        onPick={pickProduct}
+                                      />
+                                    )}
+                                  </For>
+                                </div>
+                              )}
+                            </For>
+                          </Show>
                         </div>
                       </div>
                     </Show>
@@ -1816,7 +2015,8 @@ view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}
 workContextId=${ead.workContextId()}
 pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}
 owner=${owner().enabled ? ownerSummary(owner()) : "off"}
-err=${err() || "-"}`}
+err=${err() || "-"}
+${pipeline()}`}
                   </pre>
                 </Show>
 
@@ -1955,14 +2155,20 @@ err=${err() || "-"}`}
                           <button
                             type="button"
                             class={`${item} ${!ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => ead.setEadsOnly(false)}
+                            onClick={() => {
+                              ead.setEadsOnly(false)
+                              persistRun()
+                            }}
                           >
                             {tx("showAll")}
                           </button>
                           <button
                             type="button"
                             class={`${item} ${ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => ead.setEadsOnly(true)}
+                            onClick={() => {
+                              ead.setEadsOnly(true)
+                              persistRun()
+                            }}
                           >
                             {tx("withEads")}
                           </button>
@@ -2012,7 +2218,10 @@ err=${err() || "-"}`}
                       type="button"
                       class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
                       classList={{ "bg-surface-base-active text-text-strong": !ead.eadsOnly() }}
-                      onClick={() => ead.setEadsOnly(false)}
+                      onClick={() => {
+                        ead.setEadsOnly(false)
+                        persistRun()
+                      }}
                     >
                       {tx("showAllSource")}
                     </button>
@@ -2020,7 +2229,10 @@ err=${err() || "-"}`}
                       type="button"
                       class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
                       classList={{ "bg-surface-base-active text-text-strong": ead.eadsOnly() }}
-                      onClick={() => ead.setEadsOnly(true)}
+                      onClick={() => {
+                        ead.setEadsOnly(true)
+                        persistRun()
+                      }}
                     >
                       {tx("showWithEads")}
                     </button>

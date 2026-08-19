@@ -19,14 +19,18 @@ import {
   filterLinkedTree,
   filterPfm,
   filterSource,
+  filteredCounts,
+  hits,
   parseRows,
   pathIds,
   pathMatches,
   rollupCounts,
+  underFolder,
 } from "./source-tree"
-import { collectProducts, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
 import { queuePilot, takePilot, peekPilot } from "./actions"
 import { t } from "./i18n"
+import { beginDiag, formatDiag, noteDiag } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, isEadHost } from "./urls"
 import { mcpCandidates } from "./mcp"
 
@@ -98,6 +102,19 @@ describe("ead source-tree", () => {
     const tree = filterLinkedTree(buildTree(rows), ["src/auth/login.ts"])
     expect(tree[0]?.children.map((c) => c.nodeName)).toEqual(["login.ts"])
     expect(filterLinked(rows, [])).toEqual([])
+  })
+
+  test("filteredCounts remaps PFM eads onto linked source paths", () => {
+    expect(hits("src/auth/login.ts", "src/auth/login.ts")).toBe(true)
+    expect(underFolder("src/auth/login.ts", "src/auth")).toBe(true)
+    const counts = filteredCounts(
+      ["src/auth", "src/auth/login.ts", "src/other.ts"],
+      [{ nodeId: 128, paths: ["src/auth/login.ts"] }],
+      { 128: 3 },
+    )
+    expect(counts["src/auth/login.ts"]).toBe(3)
+    expect(counts["src/auth"]).toBe(3)
+    expect(counts["src/other.ts"]).toBeUndefined()
   })
 })
 
@@ -245,6 +262,28 @@ describe("ead api helpers", () => {
       { productId: 2, name: "SW Admin", children: [{ productId: 2, name: "dup" }] },
     ])
     expect(products).toEqual([{ productId: 2, name: "SW Admin" }])
+    const groups = collectGroups([
+      {
+        id: "team-1",
+        name: "Ops",
+        children: [
+          { type: "product", productId: 2, name: "SW Admin", supportsSiblingProducts: true },
+          { type: "product", productId: 3, name: "SW Twin", baseProductId: 2 },
+        ],
+      },
+    ])
+    expect(groups).toEqual([
+      {
+        id: "team-1",
+        name: "Ops",
+        products: [
+          { productId: 2, name: "SW Admin", siblings: true },
+          { productId: 3, name: "SW Twin", baseId: 2 },
+        ],
+      },
+    ])
+    expect(productRole(groups[0]!.products[0]!)).toBe("base")
+    expect(productRole(groups[0]!.products[1]!)).toBe("sibling")
     const sys = formatSystemPrompt({ name: "Node", aiPrompt: "p", eadScript: "s" })
     expect(sys).toContain("<pfm-node-context>")
     expect(sys).toContain("<ai-prompt>p</ai-prompt>")
@@ -277,6 +316,8 @@ describe("ead i18n + env + mcp", () => {
     expect(t("ko", "title")).toContain("맵")
     expect(t("zh", "aiPilot")).toBe("AI 领航")
     expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
+    expect(t("zh", "confirmPassword")).toBe("确认密码")
+    expect(t("en", "createTask")).toContain("task")
   })
 
   test("applyEnv switches api and origin", () => {
@@ -294,5 +335,12 @@ describe("ead i18n + env + mcp", () => {
   test("mcpCandidates walks to sibling EAD_PFM-Editor", () => {
     const list = mcpCandidates("/Users/me/Projects/TX/KloudCode", "")
     expect(list.some((p) => p.includes("EAD_PFM-Editor/mcp-eadpfm/dist/index.js"))).toBe(true)
+  })
+
+  test("diag pipeline records ok and fail steps", () => {
+    beginDiag()
+    noteDiag("Auth", true, "ok")
+    noteDiag("Map", false, "timeout")
+    expect(formatDiag()).toBe("ok Auth: ok\nfail Map: timeout")
   })
 })

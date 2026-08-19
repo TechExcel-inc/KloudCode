@@ -9,7 +9,14 @@
     localStorage.removeItem("opencode-theme-css-dark")
   }
 
-  var scheme = localStorage.getItem("opencode-color-scheme") || "system"
+  var schemeKey = "opencode-color-scheme"
+  var schemeFlag = "opencode-color-scheme-kloud-v1"
+  if (!localStorage.getItem(schemeFlag)) {
+    localStorage.setItem(schemeKey, "dark")
+    localStorage.setItem(schemeFlag, "1")
+  }
+
+  var scheme = localStorage.getItem(schemeKey) || "dark"
   var isDark = scheme === "dark" || (scheme === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
   var mode = isDark ? "dark" : "light"
 
