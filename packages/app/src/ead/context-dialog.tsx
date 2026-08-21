@@ -56,14 +56,23 @@ export function ContextDialog(props: {
   }
   const inject = async () => {
     setBusy(true)
-    const ok = await props.onInject(props.text)
-    setBusy(false)
-    dialog.close()
-    showToast({
-      title: "EAD",
-      description: t(props.lang, ok === false ? "injected" : "sent"),
-      variant: "success",
-    })
+    try {
+      const ok = await props.onInject(props.text)
+      dialog.close()
+      showToast({
+        title: "EAD",
+        description: t(props.lang, ok === false ? "injected" : "sent"),
+        variant: "success",
+      })
+    } catch (e) {
+      showToast({
+        title: "EAD",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    } finally {
+      setBusy(false)
+    }
   }
   const create = async () => {
     const title = name().trim()
@@ -73,9 +82,18 @@ export function ContextDialog(props: {
     }
     if (!props.onCreate) return
     setBusy(true)
-    await props.onCreate(title, desc().trim())
-    setBusy(false)
-    dialog.close()
+    try {
+      await props.onCreate(title, desc().trim())
+      dialog.close()
+    } catch (e) {
+      showToast({
+        title: "EAD",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    } finally {
+      setBusy(false)
+    }
   }
   const jobs = () => asJobs(props.payload.payload)
   const prompt = () => asPrompt(props.payload.payload)

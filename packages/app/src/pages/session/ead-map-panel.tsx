@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -14,6 +14,7 @@ import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
 import { queuePilot } from "@/ead/actions"
 import {
+  createJob,
   loadActiveMap,
   loadCatalog,
   loadContext,
@@ -48,13 +49,14 @@ import {
 } from "@/ead/api"
 import { openPilot } from "@/ead/bridge"
 import { sendChat } from "@/ead/composer"
-import { ConfirmDialog } from "@/ead/context-dialog"
+import { ConfirmDialog, ContextDialog } from "@/ead/context-dialog"
 import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
 import { beginDiag, formatDiag, noteDiag } from "@/ead/diag"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
+import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
-import { useEad } from "@/ead/settings"
+import { expandKey, useEad } from "@/ead/settings"
 import {
   buildTree,
   collectIds,
@@ -69,6 +71,7 @@ import {
   idCounts,
   parseRows,
   pathIds,
+  pathTrail,
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
@@ -107,6 +110,13 @@ const item =
   "w-full px-2.5 py-1.5 text-left text-12-regular hover:bg-surface-base-hover text-text-base disabled:opacity-40"
 const itemActive = "bg-surface-base-active text-text-strong"
 
+function seedOpen(nodes: PfmNode[], depth = 0): number[] {
+  return nodes.flatMap((node) => {
+    if (depth >= 2) return []
+    return [node.nodeId, ...seedOpen(node.children, depth + 1)]
+  })
+}
+
 function Tree(props: {
   nodes: PfmNode[]
   selected: number
@@ -117,7 +127,10 @@ function Tree(props: {
   work?: number
   force?: number[]
   chip?: number
+  pulse?: number
   lang: Lang
+  expanded?: number[]
+  onToggle?: (id: number, open: boolean) => void
   onChip: (id: number) => void
   onInject: (kind: ContextKind, node: PfmNode) => void
 }) {
@@ -125,11 +138,14 @@ function Tree(props: {
   return (
     <For each={props.nodes}>
       {(node) => {
-        const [open, setOpen] = createSignal(depth() < 2)
+        const controlled = () => Array.isArray(props.expanded)
+        const [local, setLocal] = createSignal(depth() < 2)
+        const open = () => (controlled() ? props.expanded!.includes(node.nodeId) : local())
         const kids = () => node.children.length > 0
         const on = () => props.selected === node.nodeId
         const work = () => !!props.work && props.work === node.nodeId && !on()
         const shown = () => !!props.force?.includes(node.nodeId) || open()
+        const flash = () => !!props.pulse && props.pulse === node.nodeId
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const label = () => {
           const n = count()
@@ -137,6 +153,15 @@ function Tree(props: {
           if (props.badge === "ead") return `EAD ${n}`
           if (props.badge === "jobs") return `Jobs ${n}`
           return `Tests ${n}`
+        }
+        const toggle = (e: MouseEvent) => {
+          e.stopPropagation()
+          const next = !open()
+          if (controlled() && props.onToggle) {
+            props.onToggle(node.nodeId, next)
+            return
+          }
+          setLocal(next)
         }
         return (
           <div>
@@ -146,18 +171,13 @@ function Tree(props: {
                 "bg-surface-base-active text-text-strong": on(),
                 "text-sky-400": work(),
                 "text-text-base": !on() && !work(),
+                "ring-1 ring-sky-400/80": flash(),
               }}
               style={{ "padding-left": `${6 + depth() * 12}px` }}
+              data-ead-node={node.nodeId}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <button
-                  type="button"
-                  class="w-3 shrink-0 text-text-weak"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setOpen((v) => !v)
-                  }}
-                >
+                <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
                   {shown() ? "▾" : "▸"}
                 </button>
               </Show>
@@ -215,7 +235,10 @@ function Tree(props: {
                 work={props.work}
                 force={props.force}
                 chip={props.chip}
+                pulse={props.pulse}
                 lang={props.lang}
+                expanded={props.expanded}
+                onToggle={props.onToggle}
                 onChip={props.onChip}
                 onInject={props.onInject}
               />
@@ -237,6 +260,7 @@ function SourceTree(props: {
   expanded?: string[]
   onExpand?: (path: string, open: boolean) => void
   chip?: number
+  pulse?: number
   lang: Lang
   onChip: (id: number) => void
   onInject: (kind: ContextKind, node: SourceNode) => void
@@ -252,6 +276,7 @@ function SourceTree(props: {
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const pending = () => !!props.pending?.[node.nodePath]
         const on = () => props.selected === node.nodeId
+        const flash = () => !!props.pulse && props.pulse === node.nodeId
         const toggle = (e: MouseEvent) => {
           e.stopPropagation()
           const next = !open()
@@ -268,9 +293,11 @@ function SourceTree(props: {
               classList={{
                 "bg-surface-base-active text-text-strong": on(),
                 "text-text-base": !on(),
+                "ring-1 ring-sky-400/80": flash(),
               }}
               style={{ "padding-left": `${6 + depth() * 12}px` }}
               title={node.nodePath}
+              data-ead-source={node.nodeId}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
                 <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
@@ -331,6 +358,7 @@ function SourceTree(props: {
                 expanded={props.expanded}
                 onExpand={props.onExpand}
                 chip={props.chip}
+                pulse={props.pulse}
                 lang={props.lang}
                 onChip={props.onChip}
                 onInject={props.onInject}
@@ -435,8 +463,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [draftEmails, setDraftEmails] = createSignal<string[]>([])
   const [draftMe, setDraftMe] = createSignal(false)
   const [oq, setOq] = createSignal("")
+  const [pulse, setPulse] = createSignal(0)
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined
 
   const badgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -735,7 +765,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   let gen = 0
-  const refresh = async (opts?: { soft?: boolean }) => {
+  const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
     const run = ++gen
     const live = () => run === gen
     const soft = opts?.soft === true
@@ -853,7 +883,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setPfmJobs({})
         setPfmTests({})
       }
-      if (ead.view() === "source") await loadSource()
+      if (ead.view() === "source" || opts?.syncLinked === true) await loadSource(opts?.syncLinked === true)
       if (!live()) return
       noteDiag(
         "Load complete",
@@ -934,6 +964,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   onCleanup(() => {
     if (flashTimer) clearTimeout(flashTimer)
+    if (pulseTimer) clearTimeout(pulseTimer)
   })
 
   const applyContext = async (nodeId: number, nodeName: string, type: "pfm" | "source") => {
@@ -960,6 +991,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const selectNode = (node: PfmNode) => {
     closeMenus()
     ead.setNode(node.nodeId, node.name)
+    if (layout.pluginPanel.opened(EAD_PILOT_ID)()) {
+      queuePilot({
+        kind: "pfm",
+        nodeId: node.nodeId,
+        nodeName: node.name,
+      })
+    }
     void applyContext(node.nodeId, node.name, "pfm")
   }
 
@@ -986,6 +1024,77 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     const prev = ead.expanded(sid)
     const next = open ? [...new Set([...prev, path])] : prev.filter((p) => p !== path)
     ead.setExpanded(sid, next)
+  }
+
+  const pfmExpandKey = () => expandKey(ead.productId(), ead.mapId(), ead.subSchemaId())
+
+  const pfmExpandedIds = createMemo(() => {
+    const key = pfmExpandKey()
+    const saved = ead.pfmExpanded(key)
+    if (saved !== undefined) return saved
+    const nodes = pfmVisible()
+    return nodes.length ? seedOpen(nodes) : []
+  })
+
+  const onPfmToggle = (id: number, open: boolean) => {
+    const key = pfmExpandKey()
+    const prev = ead.pfmExpanded(key) ?? seedOpen(pfmVisible())
+    const next = open ? [...new Set([...prev, id])] : prev.filter((n) => n !== id)
+    ead.setPfmExpanded(key, next)
+  }
+
+  const ring = (id: number) => {
+    setPulse(id)
+    if (pulseTimer) clearTimeout(pulseTimer)
+    pulseTimer = setTimeout(() => {
+      setPulse((cur) => (cur === id ? 0 : cur))
+    }, 1600)
+  }
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const tick = ead.mapTick()
+    if (!(tick > 0)) return
+    const nid = ead.nodeId()
+    const sid = ead.sourceId()
+    untrack(() => {
+      if (nid > 0) {
+        if (ead.view() !== "pfm") ead.setView("pfm")
+        const nodes = pfmVisible()
+        const trail = pathIds(nodes, nid)
+        const key = pfmExpandKey()
+        const prev = ead.pfmExpanded(key) ?? seedOpen(nodes)
+        const next = [...new Set([...prev, ...trail, nid])]
+        if (next.length !== prev.length || next.some((id) => !prev.includes(id))) {
+          ead.setPfmExpanded(key, next)
+        }
+        ring(nid)
+        queueMicrotask(() => {
+          document.querySelector(`[data-ead-node="${nid}"]`)?.scrollIntoView({ block: "nearest" })
+        })
+        return
+      }
+      if (!(sid > 0)) return
+      if (ead.view() !== "source") ead.setView("source")
+      const schema = ead.schemaId()
+      const trail = pathTrail(sourceVisible(), sid)
+      if (schema > 0 && trail.length) {
+        const prev = ead.expanded(schema)
+        const next = [...new Set([...prev, ...trail])]
+        if (next.length !== prev.length || next.some((path) => !prev.includes(path))) {
+          ead.setExpanded(schema, next)
+        }
+      }
+      ring(sid)
+      queueMicrotask(() => {
+        document.querySelector(`[data-ead-source="${sid}"]`)?.scrollIntoView({ block: "nearest" })
+      })
+    })
+  })
+
+  const openHelp = (tipId: TipId) => {
+    closeMenus()
+    launch({ kind: "help", tipId })
   }
 
   const afterAuth = async (token: string) => {
@@ -1153,21 +1262,49 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const inject = async (kind: ContextKind, nodeId: number, name: string, type: "pfm" | "source") => {
     const token = ead.token()
     if (!token || nodeId <= 0) return
-    flash("loading", t(lang(), "sendingToChat", { kind: kindLabel(kind, lang()) }))
+    closeMenus()
     setBusy(true)
     setErr("")
     try {
       const raw = await loadRawContext(token, nodeId, http(), type)
       const jobs = kind === "jobs" ? await loadJobsForNode(token, nodeId, http()) : []
-      const text = formatModal(buildModal(kind, nodeId, name, raw, jobs as never))
-      const ok = await sendChat({
-        text,
-        set: (value) => prompt.set(value),
-        client: sdk.client,
-        sessionID: params.id,
-        auto: true,
-      })
-      flash("ok", tx(ok ? "sent" : "injected"))
+      const payload = buildModal(kind, nodeId, name, raw, jobs as never)
+      const text = formatModal(payload)
+      dialog.show(() => (
+        <ContextDialog
+          title={kindLabel(kind, lang())}
+          payload={payload}
+          text={text}
+          lang={lang()}
+          onInject={async (body) =>
+            sendChat({
+              text: body,
+              set: (value) => prompt.set(value),
+              client: sdk.client,
+              sessionID: params.id,
+              auto: true,
+            })
+          }
+          onCreate={
+            kind === "jobs" && type === "pfm"
+              ? async (title, desc) => {
+                  await createJob(token, { pfmNodeId: nodeId, title, description: desc }, http())
+                  const next = await loadJobsForNode(token, nodeId, http())
+                  const body = formatModal(buildModal("jobs", nodeId, name, raw, next as never))
+                  await sendChat({
+                    text: body,
+                    set: (value) => prompt.set(value),
+                    client: sdk.client,
+                    sessionID: params.id,
+                    auto: true,
+                  })
+                  showToast({ title: "EAD", description: tx("sent"), variant: "success" })
+                  void refresh({ soft: true, syncLinked: false })
+                }
+              : undefined
+          }
+        />
+      ))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setErr(msg)
@@ -1285,7 +1422,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
           <div class="shrink-0 px-3 py-2 flex items-center justify-between border-b border-border-weaker-base gap-2">
             <span class="text-14-medium text-text-strong truncate">{tx("title")}</span>
             <div class="flex items-center gap-1">
-              <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh()} aria-label={tx("refresh")} />
+              <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh({ syncLinked: true })} aria-label={tx("refresh")} />
               <IconButton
                 icon="close-small"
                 variant="ghost"
@@ -1725,6 +1862,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             </button>
                           )}
                         </For>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("pfm-schema-filter")}
+                        >
+                          {tx("help")}
+                        </button>
                       </div>
                     </Show>
                   </div>
@@ -1774,6 +1919,18 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("setupFilter")}
                         </button>
+                        <button
+                          type="button"
+                          class={item}
+                          disabled={ead.productId() <= 0}
+                          onClick={() => {
+                            closeMenus()
+                            launch({ kind: "crawl" })
+                          }}
+                          title={tx("crawlVisionHint")}
+                        >
+                          {tx("crawlVision")}
+                        </button>
                         <label class={`${item} flex items-center gap-2 cursor-pointer`}>
                           <input
                             type="checkbox"
@@ -1797,6 +1954,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           <span>{tx("showDebug")}</span>
                           <span class="text-11-regular text-text-weak">{diag() ? tx("on") : tx("off")}</span>
+                        </button>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("ead-map-search-setup")}
+                        >
+                          {tx("help")}
                         </button>
                       </div>
                     </Show>
@@ -1981,6 +2146,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             )}
                           </For>
                         </Show>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("job-owner-filter")}
+                        >
+                          {tx("help")}
+                        </button>
                       </div>
                     </Show>
                   </div>
@@ -2044,6 +2217,14 @@ ${pipeline()}`}
                           onClick={() => void switchView("source")}
                         >
                           {tx("aiCode")}
+                        </button>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("navigator-view-mode")}
+                        >
+                          {tx("help")}
                         </button>
                       </div>
                     </Show>
@@ -2110,6 +2291,14 @@ ${pipeline()}`}
                             }}
                           >
                             {tx("filtered")}
+                          </button>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <button
+                            type="button"
+                            class={`${item} text-text-weak`}
+                            onClick={() => openHelp("pfm-tree-filter")}
+                          >
+                            {tx("help")}
                           </button>
                         </div>
                       </Show>
@@ -2255,7 +2444,10 @@ ${pipeline()}`}
                         work={ead.workContextId()}
                         force={openPath()}
                         chip={chip()}
+                        pulse={pulse()}
                         lang={lang()}
+                        expanded={pfmExpandedIds()}
+                        onToggle={onPfmToggle}
                         onChip={setChip}
                         onInject={(kind, node) => void inject(kind, node.nodeId, node.name, "pfm")}
                       />
@@ -2263,6 +2455,29 @@ ${pipeline()}`}
                   </Show>
                   <Show when={!busy() && ead.productId() > 0 && !root()}>
                     <span class="text-12-regular text-text-weak">{tx("noMap")}</span>
+                  </Show>
+                  <Show
+                    when={
+                      !busy() &&
+                      !!root() &&
+                      pfmVisible().length === 0 &&
+                      !query().trim() &&
+                      !ead.jobsOnly() &&
+                      !pfmFilter().active &&
+                      schemas().length > 0
+                    }
+                  >
+                    <div class="flex flex-col gap-2">
+                      <span class="text-12-regular text-text-weak">{tx("emptyDynamic")}</span>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => launch({ kind: "crawl" })}
+                        title={tx("crawlVisionHint")}
+                      >
+                        {tx("crawlVision")}
+                      </Button>
+                    </div>
                   </Show>
                   <Show when={!busy() && root() && pfmVisible().length === 0 && (query().trim() || ead.jobsOnly() || pfmFilter().active)}>
                     <span class="text-12-regular text-text-weak">{tx("noMatch")}</span>
@@ -2281,6 +2496,7 @@ ${pipeline()}`}
                         expanded={ead.expanded(ead.schemaId())}
                         onExpand={onExpand}
                         chip={chip()}
+                        pulse={pulse()}
                         lang={lang()}
                         onChip={setChip}
                         onInject={(kind, node) => void inject(kind, node.nodeId, node.nodeName, "source")}

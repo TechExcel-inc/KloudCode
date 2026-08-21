@@ -7,7 +7,7 @@ import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type P
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
-import { applyEnv, type Env } from "./urls"
+import { applyEnv, eadApi, type Env } from "./urls"
 
 type View = "pfm" | "source"
 type Mode = "opencode" | "cursor"
@@ -28,6 +28,7 @@ export type SourcePref = {
 
 type State = {
   token: string
+  tokenApiUrl: string
   productId: number
   productName: string
   nodeId: number
@@ -52,6 +53,7 @@ type State = {
   eadsOnly: boolean
   badge: Badge
   expanded: Record<string, string[]>
+  pfmExpanded: Record<string, number[]>
   jobsOnly: boolean
   workContextId: number
   owners: Record<string, OwnerFilter>
@@ -62,6 +64,7 @@ type State = {
 
 const empty: State = {
   token: "",
+  tokenApiUrl: "",
   productId: 0,
   productName: "",
   nodeId: 0,
@@ -86,12 +89,23 @@ const empty: State = {
   eadsOnly: true,
   badge: "ead",
   expanded: {},
+  pfmExpanded: {},
   jobsOnly: false,
   workContextId: 0,
   owners: {},
   pfm: {},
   chrome: {},
   source: {},
+}
+
+export function expandKey(productId: number, mapId = 0, subSchemaId = 0) {
+  const map = Number.isFinite(mapId) && mapId > 0 ? mapId : 0
+  const sub = Number.isFinite(subSchemaId) && subSchemaId > 0 ? subSchemaId : 0
+  return `${productId > 0 ? productId : 0}:${map}:${sub}`
+}
+
+function normalizeApi(url: string) {
+  return url.trim().replace(/\/+$/, "").toLowerCase()
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
@@ -114,6 +128,9 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       if (!ready()) return
       applyEnv(store.env === "localhost" ? "localhost" : "production")
       flushFilters()
+      if ((store.token ?? "").trim() && !(store.tokenApiUrl ?? "").trim()) {
+        setStore("tokenApiUrl", eadApi())
+      }
     })
 
     const writeChrome = () => {
@@ -168,7 +185,16 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
 
     return {
       ready,
-      token: () => store.token ?? "",
+      token: () => {
+        const raw = (store.token ?? "").trim()
+        if (!raw) return ""
+        const saved = normalizeApi(store.tokenApiUrl ?? "")
+        const current = normalizeApi(eadApi())
+        if (saved && saved !== current) return ""
+        // Unbound leftover tokens must not hit production (parity with Cursor authTokenApiUrl).
+        if (!saved && current.includes("eadfm.com")) return ""
+        return raw
+      },
       productId: () => store.productId ?? 0,
       productName: () => store.productName ?? "",
       nodeId: () => store.nodeId ?? 0,
@@ -197,19 +223,28 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       eadsOnly: () => store.eadsOnly !== false,
       badge: () => store.badge ?? "ead",
       expanded: (schemaId: number) => store.expanded?.[String(schemaId)] ?? [],
+      pfmExpanded: (key: string) => {
+        if (!key) return undefined as number[] | undefined
+        const hit = store.pfmExpanded?.[key]
+        return Array.isArray(hit) ? hit : undefined
+      },
       jobsOnly: () => store.jobsOnly === true,
       workContextId: () => store.workContextId ?? 0,
       setToken(token: string) {
-        setStore("token", token.trim())
+        const next = token.trim()
+        setStore("token", next)
+        setStore("tokenApiUrl", next ? eadApi() : "")
       },
       clearToken() {
         setStore("token", "")
+        setStore("tokenApiUrl", "")
         setStore("eadScript", "")
         setStore("aiPrompt", "")
         setStore("contextMarkdown", "")
       },
       signOut() {
         setStore("token", "")
+        setStore("tokenApiUrl", "")
         clearSession()
         setStore("pilotBust", (n) => (n ?? 0) + 1)
       },
@@ -291,6 +326,11 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setExpanded(schemaId: number, paths: string[]) {
         setStore("expanded", String(schemaId), paths)
       },
+      setPfmExpanded(key: string, ids: number[]) {
+        if (!key) return
+        if (!store.pfmExpanded) setStore("pfmExpanded", {})
+        setStore("pfmExpanded", key, ids.filter((id) => Number.isFinite(id) && id > 0))
+      },
       setContext(input: { eadScript?: string; aiPrompt?: string; markdown?: string; nodeName?: string }) {
         // Keep tree selection labels; context payload may carry an EAD entity title.
         void input.nodeName
@@ -317,6 +357,12 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         }
         setStore("env", env)
         applyEnv(env)
+        const saved = normalizeApi(store.tokenApiUrl ?? "")
+        const current = normalizeApi(eadApi())
+        if (saved && saved !== current) {
+          setStore("token", "")
+          setStore("tokenApiUrl", "")
+        }
         setStore("pilotBust", (n) => (n ?? 0) + 1)
         setStore("mapTick", (n) => (n ?? 0) + 1)
       },

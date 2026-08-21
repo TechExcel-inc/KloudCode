@@ -18,6 +18,8 @@ export type PfmNode = {
   nodeId: number
   name: string
   children: PfmNode[]
+  isDynamicTopLevel?: boolean
+  subSchemaId?: number | null
 }
 
 export type ActiveContext = {
@@ -51,6 +53,8 @@ type TreeNode = {
 type MapPayload = {
   mapId?: number | string
   rootNode?: unknown
+  dynamicTopLevelNodeId?: number | string | null
+  dynamicTopLevelDisplayName?: string | null
 }
 
 type ContextPayload = {
@@ -170,17 +174,31 @@ export function productRole(product: Product) {
   return "plain" as const
 }
 
-function asNode(raw: unknown): PfmNode | undefined {
+function asNode(
+  raw: unknown,
+  meta?: { dynId?: number; dynName?: string },
+): PfmNode | undefined {
   if (!raw || typeof raw !== "object") return
   const row = raw as Record<string, unknown>
   const id = Number(row.nodeId ?? row.id ?? 0)
   if (!Number.isFinite(id) || id <= 0) return
   const kids = Array.isArray(row.children) ? row.children : []
+  const dyn =
+    row.isDynamicTopLevel === true ||
+    row.isDynamicTopLevel === 1 ||
+    (!!meta?.dynId && meta.dynId === id)
+  const sub = Number(row.subSchemaId)
+  const name =
+    dyn && meta?.dynName
+      ? meta.dynName
+      : String(row.dynamicTopLevelDisplayName || row.name || row.nodeName || `Node ${id}`)
   return {
     nodeId: id,
-    name: String(row.name ?? row.nodeName ?? `Node ${id}`),
+    name,
+    isDynamicTopLevel: dyn || undefined,
+    subSchemaId: Number.isFinite(sub) && sub > 0 ? sub : null,
     children: kids.flatMap((child) => {
-      const next = asNode(child)
+      const next = asNode(child, meta)
       return next ? [next] : []
     }),
   }
@@ -332,7 +350,12 @@ export async function loadActiveMap(
   }
   const mapId = Number(map.mapId ?? 0)
   const base = Number(map.baseMapId ?? 0)
-  const root = asNode(map.rootNode)
+  const dynId = Number(map.dynamicTopLevelNodeId ?? 0)
+  const dynName = String(map.dynamicTopLevelDisplayName || "").trim()
+  const root = asNode(map.rootNode, {
+    dynId: Number.isFinite(dynId) && dynId > 0 ? dynId : undefined,
+    dynName: dynName || undefined,
+  })
   const name = String(map.mapName || "").trim()
   return {
     mapId: Number.isFinite(mapId) && mapId > 0 ? mapId : 0,

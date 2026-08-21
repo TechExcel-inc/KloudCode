@@ -2223,12 +2223,16 @@ export default function Layout(props: ParentProps) {
                       </Button>
                     </div>
                     <div class="flex-1 min-h-0">
-                      <LocalWorkspace
-                        ctx={workspaceSidebarCtx}
-                        project={project()!}
-                        sortNow={sortNow}
-                        mobile={panelProps.mobile}
-                      />
+                      <Show when={project()}>
+                        {(item) => (
+                          <LocalWorkspace
+                            ctx={workspaceSidebarCtx}
+                            project={item()}
+                            sortNow={sortNow}
+                            mobile={panelProps.mobile}
+                          />
+                        )}
+                      </Show>
                     </div>
                   </>
                 }

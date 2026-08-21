@@ -1,14 +1,40 @@
 export type PilotAction = {
-  kind: "dashboard" | "find" | "create" | "setup" | "setupSource" | "editProduct" | "source" | "mindmap"
+  kind:
+    | "dashboard"
+    | "find"
+    | "create"
+    | "setup"
+    | "setupSource"
+    | "editProduct"
+    | "source"
+    | "mindmap"
+    | "pfm"
+    | "crawl"
+    | "help"
   sourceId?: number
   sourcePath?: string
   sourceName?: string
+  nodeId?: number
+  nodeName?: string
+  tipId?: string
 }
 
+type Listener = (action: PilotAction) => void
+
 let pending: PilotAction | undefined
+const listeners = new Set<Listener>()
 
 export function queuePilot(next: PilotAction) {
   pending = next
+  for (const fn of listeners) fn(next)
+}
+
+/** Pilot panel: apply Map-queued actions while iframe is already open. */
+export function watchPilot(fn: Listener) {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
 }
 
 export function takePilot() {

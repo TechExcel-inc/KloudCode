@@ -183,6 +183,21 @@ export function pathIds<T extends { nodeId: number; children: T[] }>(nodes: T[],
   return walk(nodes, []) ?? []
 }
 
+/** Ancestor nodePaths of target (root → parent), for source expand-to-highlight. */
+export function pathTrail<T extends { nodeId: number; nodePath: string; children: T[] }>(
+  nodes: T[],
+  target: number,
+): string[] {
+  const walk = (list: T[], trail: string[]): string[] | undefined => {
+    for (const node of list) {
+      if (node.nodeId === target) return trail
+      const hit = walk(node.children, [...trail, node.nodePath])
+      if (hit) return hit
+    }
+  }
+  return walk(nodes, []) ?? []
+}
+
 export function normalizePath(path: string | null | undefined) {
   const raw = String(path || "").trim()
   if (!raw) return ""
