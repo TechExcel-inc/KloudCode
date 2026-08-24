@@ -71,24 +71,18 @@ struct SidecarReady(futures::future::Shared<oneshot::Receiver<ServerReadyData>>)
 #[tauri::command]
 #[specta::specta]
 fn kill_sidecar(app: AppHandle) {
-    let Some(server_state) = app.try_state::<ServerState>() else {
-        tracing::info!("Server not running");
-        return;
-    };
-
-    let Some(server_state) = server_state
-        .child
-        .lock()
-        .expect("Failed to acquire mutex lock")
-        .take()
-    else {
-        tracing::info!("Server state missing");
-        return;
-    };
-
-    let _ = server_state.kill();
-
-    tracing::info!("Killed server");
+    if let Some(server_state) = app.try_state::<ServerState>() {
+        if let Some(child) = server_state
+            .child
+            .lock()
+            .expect("Failed to acquire mutex lock")
+            .take()
+        {
+            let _ = child.kill();
+            tracing::info!("Killed server");
+        }
+    }
+    cli::sweep_sidecar_processes();
 }
 
 #[tauri::command]
@@ -305,10 +299,7 @@ pub fn run() {
     #[cfg(debug_assertions)] // <- Only export on non-release builds
     export_types(&builder);
 
-    #[cfg(all(target_os = "macos", not(debug_assertions)))]
-    let _ = std::process::Command::new("killall")
-        .arg("opencode-cli")
-        .output();
+    cli::sweep_sidecar_processes();
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -362,10 +353,21 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
-            if let RunEvent::Exit = event {
-                tracing::info!("Received Exit");
-
-                kill_sidecar(app.clone());
+            match event {
+                RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+                    tracing::info!("Received Exit");
+                    kill_sidecar(app.clone());
+                }
+                RunEvent::WindowEvent { label, event, .. } if label == MainWindow::LABEL => {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::CloseRequested { .. }
+                            | tauri::WindowEvent::Destroyed
+                    ) {
+                        kill_sidecar(app.clone());
+                    }
+                }
+                _ => {}
             }
         });
 }

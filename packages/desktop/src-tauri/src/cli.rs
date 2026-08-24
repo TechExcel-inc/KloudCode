@@ -72,13 +72,64 @@ pub struct TerminatedPayload {
 #[derive(Clone, Debug)]
 pub struct CommandChild {
     kill: mpsc::Sender<()>,
+    pid: u32,
 }
 
 impl CommandChild {
     pub fn kill(&self) -> std::io::Result<()> {
-        self.kill
-            .try_send(())
-            .map_err(|e| std::io::Error::other(e.to_string()))
+        let _ = self.kill.try_send(());
+        kill_pid_tree(self.pid);
+        Ok(())
+    }
+}
+
+fn kill_pid_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+/// Kill leftover sidecar processes so the next launch can overwrite the exe.
+pub fn sweep_sidecar_processes() {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/IM", "opencode-cli.exe"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("killall")
+            .arg("opencode-cli")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-x", "opencode-cli"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 
@@ -478,6 +529,7 @@ pub fn spawn_command(
     }
 
     let mut child = wrap.spawn()?;
+    let pid = child.id().unwrap_or(0);
     let guard = Arc::new(tokio::sync::RwLock::new(()));
     let (tx, rx) = mpsc::channel(256);
     let (kill_tx, mut kill_rx) = mpsc::channel(1);
@@ -535,7 +587,7 @@ pub fn spawn_command(
     let event_stream = ReceiverStream::new(rx);
     let event_stream = sqlite_migration::logs_middleware(app.clone(), event_stream);
 
-    Ok((event_stream, CommandChild { kill: kill_tx }))
+    Ok((event_stream, CommandChild { kill: kill_tx, pid }))
 }
 
 fn signal_from_status(status: std::process::ExitStatus) -> Option<i32> {
