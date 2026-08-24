@@ -7,14 +7,28 @@ import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type P
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
-import { applyEnv, type Env } from "./urls"
+import { applyEnv, eadApi, type Env } from "./urls"
 
 type View = "pfm" | "source"
 type Mode = "opencode" | "cursor"
 type Badge = "ead" | "jobs" | "tests" | "none"
 
+export type Chrome = {
+  view: View
+  badge: Badge
+  eadsOnly: boolean
+  jobsOnly: boolean
+  subSchemaId: number
+}
+
+export type SourcePref = {
+  badge: Badge
+  eadsOnly: boolean
+}
+
 type State = {
   token: string
+  tokenApiUrl: string
   productId: number
   productName: string
   nodeId: number
@@ -39,14 +53,18 @@ type State = {
   eadsOnly: boolean
   badge: Badge
   expanded: Record<string, string[]>
+  pfmExpanded: Record<string, number[]>
   jobsOnly: boolean
   workContextId: number
   owners: Record<string, OwnerFilter>
   pfm: Record<string, PfmFilter>
+  chrome: Record<string, Chrome>
+  source: Record<string, SourcePref>
 }
 
 const empty: State = {
   token: "",
+  tokenApiUrl: "",
   productId: 0,
   productName: "",
   nodeId: 0,
@@ -71,10 +89,23 @@ const empty: State = {
   eadsOnly: true,
   badge: "ead",
   expanded: {},
+  pfmExpanded: {},
   jobsOnly: false,
   workContextId: 0,
   owners: {},
   pfm: {},
+  chrome: {},
+  source: {},
+}
+
+export function expandKey(productId: number, mapId = 0, subSchemaId = 0) {
+  const map = Number.isFinite(mapId) && mapId > 0 ? mapId : 0
+  const sub = Number.isFinite(subSchemaId) && subSchemaId > 0 ? subSchemaId : 0
+  return `${productId > 0 ? productId : 0}:${map}:${sub}`
+}
+
+function normalizeApi(url: string) {
+  return url.trim().replace(/\/+$/, "").toLowerCase()
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({
@@ -97,7 +128,42 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       if (!ready()) return
       applyEnv(store.env === "localhost" ? "localhost" : "production")
       flushFilters()
+      if ((store.token ?? "").trim() && !(store.tokenApiUrl ?? "").trim()) {
+        setStore("tokenApiUrl", eadApi())
+      }
     })
+
+    const writeChrome = () => {
+      const pid = store.productId
+      if (!(pid > 0)) return
+      if (!store.chrome) setStore("chrome", {})
+      setStore("chrome", String(pid), {
+        view: store.view === "source" ? "source" : "pfm",
+        badge: store.badge ?? "ead",
+        eadsOnly: store.eadsOnly !== false,
+        jobsOnly: store.jobsOnly === true,
+        subSchemaId: store.subSchemaId ?? 0,
+      })
+    }
+
+    const writeSource = () => {
+      const sid = store.schemaId
+      if (!(sid > 0)) return
+      if (!store.source) setStore("source", {})
+      setStore("source", String(sid), {
+        badge: store.badge ?? "ead",
+        eadsOnly: store.eadsOnly !== false,
+      })
+    }
+
+    const applyChrome = (id: number) => {
+      const chrome = store.chrome?.[String(id)]
+      setStore("view", chrome?.view === "source" ? "source" : "pfm")
+      setStore("badge", chrome?.badge ?? "ead")
+      setStore("eadsOnly", chrome?.eadsOnly !== false)
+      setStore("jobsOnly", chrome?.jobsOnly === true)
+      setStore("subSchemaId", chrome?.subSchemaId ?? 0)
+    }
 
     const clearSession = () => {
       setStore("productId", 0)
@@ -119,7 +185,16 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
 
     return {
       ready,
-      token: () => store.token ?? "",
+      token: () => {
+        const raw = (store.token ?? "").trim()
+        if (!raw) return ""
+        const saved = normalizeApi(store.tokenApiUrl ?? "")
+        const current = normalizeApi(eadApi())
+        if (saved && saved !== current) return ""
+        // Unbound leftover tokens must not hit production (parity with Cursor authTokenApiUrl).
+        if (!saved && current.includes("eadfm.com")) return ""
+        return raw
+      },
       productId: () => store.productId ?? 0,
       productName: () => store.productName ?? "",
       nodeId: () => store.nodeId ?? 0,
@@ -148,19 +223,28 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       eadsOnly: () => store.eadsOnly !== false,
       badge: () => store.badge ?? "ead",
       expanded: (schemaId: number) => store.expanded?.[String(schemaId)] ?? [],
+      pfmExpanded: (key: string) => {
+        if (!key) return undefined as number[] | undefined
+        const hit = store.pfmExpanded?.[key]
+        return Array.isArray(hit) ? hit : undefined
+      },
       jobsOnly: () => store.jobsOnly === true,
       workContextId: () => store.workContextId ?? 0,
       setToken(token: string) {
-        setStore("token", token.trim())
+        const next = token.trim()
+        setStore("token", next)
+        setStore("tokenApiUrl", next ? eadApi() : "")
       },
       clearToken() {
         setStore("token", "")
+        setStore("tokenApiUrl", "")
         setStore("eadScript", "")
         setStore("aiPrompt", "")
         setStore("contextMarkdown", "")
       },
       signOut() {
         setStore("token", "")
+        setStore("tokenApiUrl", "")
         clearSession()
         setStore("pilotBust", (n) => (n ?? 0) + 1)
       },
@@ -176,13 +260,13 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         setStore("mapId", 0)
         setStore("schemaId", 0)
         setStore("schemaName", "")
-        setStore("subSchemaId", 0)
         setStore("sourceId", 0)
         setStore("sourceName", "")
         setStore("sourcePath", "")
         setStore("eadScript", "")
         setStore("aiPrompt", "")
         setStore("contextMarkdown", "")
+        applyChrome(id)
       },
       setNode(id: number, name: string) {
         setStore("nodeId", id)
@@ -201,30 +285,51 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setSchema(id: number, name: string) {
         setStore("schemaId", id)
         setStore("schemaName", name)
+        const pref = store.source?.[String(id)]
+        if (!pref || store.view !== "source") return
+        setStore("badge", pref.badge ?? "ead")
+        setStore("eadsOnly", pref.eadsOnly !== false)
       },
       setSubSchema(id: number) {
         setStore("subSchemaId", id)
+        writeChrome()
       },
       setView(view: View) {
         setStore("view", view)
+        writeChrome()
+        if (view !== "source") return
+        const pref = store.source?.[String(store.schemaId)]
+        if (!pref) return
+        setStore("badge", pref.badge ?? store.badge)
+        setStore("eadsOnly", pref.eadsOnly !== false)
       },
       setPilotMode(mode: Mode) {
         setStore("pilotMode", mode)
       },
       setEadsOnly(value: boolean) {
         setStore("eadsOnly", value)
+        writeChrome()
+        writeSource()
       },
       setBadge(badge: Badge) {
         setStore("badge", badge)
+        writeChrome()
+        writeSource()
       },
       setJobsOnly(value: boolean) {
         setStore("jobsOnly", value)
+        writeChrome()
       },
       setWorkContext(id: number) {
         setStore("workContextId", Number.isFinite(id) && id > 0 ? id : 0)
       },
       setExpanded(schemaId: number, paths: string[]) {
         setStore("expanded", String(schemaId), paths)
+      },
+      setPfmExpanded(key: string, ids: number[]) {
+        if (!key) return
+        if (!store.pfmExpanded) setStore("pfmExpanded", {})
+        setStore("pfmExpanded", key, ids.filter((id) => Number.isFinite(id) && id > 0))
       },
       setContext(input: { eadScript?: string; aiPrompt?: string; markdown?: string; nodeName?: string }) {
         // Keep tree selection labels; context payload may carry an EAD entity title.
@@ -252,6 +357,12 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         }
         setStore("env", env)
         applyEnv(env)
+        const saved = normalizeApi(store.tokenApiUrl ?? "")
+        const current = normalizeApi(eadApi())
+        if (saved && saved !== current) {
+          setStore("token", "")
+          setStore("tokenApiUrl", "")
+        }
         setStore("pilotBust", (n) => (n ?? 0) + 1)
         setStore("mapTick", (n) => (n ?? 0) + 1)
       },
@@ -274,6 +385,16 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         })
         if (pid > 0) setStore("pfm", String(pid), merged)
         return merged
+      },
+      sourcePref: (schemaId: number) => store.source?.[String(schemaId)],
+      setSourcePref(schemaId: number, next: Partial<SourcePref>) {
+        if (!(schemaId > 0)) return
+        if (!store.source) setStore("source", {})
+        const prev = store.source?.[String(schemaId)]
+        setStore("source", String(schemaId), {
+          badge: next.badge ?? prev?.badge ?? "ead",
+          eadsOnly: next.eadsOnly ?? prev?.eadsOnly !== false,
+        })
       },
       setMcpEntry(path: string) {
         setStore("mcpEntry", path.trim())

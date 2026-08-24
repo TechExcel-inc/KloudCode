@@ -1,4 +1,5 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Button } from "@opencode-ai/ui/button"
@@ -13,28 +14,34 @@ import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
 import { queuePilot } from "@/ead/actions"
 import {
+  createJob,
   loadActiveMap,
+  loadCatalog,
   loadContext,
   loadJobsForNode,
+  loadLinkPaths,
   loadLinkedBundle,
   loadOpenFilterNodeIds,
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
-  loadProducts,
   loadRawContext,
+  loadRunPrefs,
   loadSourceSchema,
   loadSubSchemas,
   loadSubtreePaths,
   loadTeamMembers,
   login,
   me,
+  productRole,
   resetPassword,
+  saveRunPrefs,
   selectSourcePath,
   sendCode,
   signup,
   suggestProduct,
   verifyCode,
+  type Group,
   type PfmNode,
   type Product,
   type SubSchema,
@@ -44,21 +51,27 @@ import { openPilot } from "@/ead/bridge"
 import { sendChat } from "@/ead/composer"
 import { ConfirmDialog, ContextDialog } from "@/ead/context-dialog"
 import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
+import { beginDiag, formatDiag, noteDiag } from "@/ead/diag"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
+import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
-import { useEad } from "@/ead/settings"
+import { expandKey, useEad } from "@/ead/settings"
 import {
   buildTree,
   collectIds,
   filterByCount,
   filterByIds,
   filterDisplay,
+  filterLinked,
   filterLinkedTree,
   filterPfm,
   filterSource,
+  filteredCounts,
+  idCounts,
   parseRows,
   pathIds,
+  pathTrail,
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
@@ -97,6 +110,13 @@ const item =
   "w-full px-2.5 py-1.5 text-left text-12-regular hover:bg-surface-base-hover text-text-base disabled:opacity-40"
 const itemActive = "bg-surface-base-active text-text-strong"
 
+function seedOpen(nodes: PfmNode[], depth = 0): number[] {
+  return nodes.flatMap((node) => {
+    if (depth >= 2) return []
+    return [node.nodeId, ...seedOpen(node.children, depth + 1)]
+  })
+}
+
 function Tree(props: {
   nodes: PfmNode[]
   selected: number
@@ -107,7 +127,10 @@ function Tree(props: {
   work?: number
   force?: number[]
   chip?: number
+  pulse?: number
   lang: Lang
+  expanded?: number[]
+  onToggle?: (id: number, open: boolean) => void
   onChip: (id: number) => void
   onInject: (kind: ContextKind, node: PfmNode) => void
 }) {
@@ -115,11 +138,14 @@ function Tree(props: {
   return (
     <For each={props.nodes}>
       {(node) => {
-        const [open, setOpen] = createSignal(depth() < 2)
+        const controlled = () => Array.isArray(props.expanded)
+        const [local, setLocal] = createSignal(depth() < 2)
+        const open = () => (controlled() ? props.expanded!.includes(node.nodeId) : local())
         const kids = () => node.children.length > 0
         const on = () => props.selected === node.nodeId
         const work = () => !!props.work && props.work === node.nodeId && !on()
         const shown = () => !!props.force?.includes(node.nodeId) || open()
+        const flash = () => !!props.pulse && props.pulse === node.nodeId
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const label = () => {
           const n = count()
@@ -127,6 +153,15 @@ function Tree(props: {
           if (props.badge === "ead") return `EAD ${n}`
           if (props.badge === "jobs") return `Jobs ${n}`
           return `Tests ${n}`
+        }
+        const toggle = (e: MouseEvent) => {
+          e.stopPropagation()
+          const next = !open()
+          if (controlled() && props.onToggle) {
+            props.onToggle(node.nodeId, next)
+            return
+          }
+          setLocal(next)
         }
         return (
           <div>
@@ -136,18 +171,13 @@ function Tree(props: {
                 "bg-surface-base-active text-text-strong": on(),
                 "text-sky-400": work(),
                 "text-text-base": !on() && !work(),
+                "ring-1 ring-sky-400/80": flash(),
               }}
               style={{ "padding-left": `${6 + depth() * 12}px` }}
+              data-ead-node={node.nodeId}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <button
-                  type="button"
-                  class="w-3 shrink-0 text-text-weak"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setOpen((v) => !v)
-                  }}
-                >
+                <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
                   {shown() ? "▾" : "▸"}
                 </button>
               </Show>
@@ -205,7 +235,10 @@ function Tree(props: {
                 work={props.work}
                 force={props.force}
                 chip={props.chip}
+                pulse={props.pulse}
                 lang={props.lang}
+                expanded={props.expanded}
+                onToggle={props.onToggle}
                 onChip={props.onChip}
                 onInject={props.onInject}
               />
@@ -227,6 +260,7 @@ function SourceTree(props: {
   expanded?: string[]
   onExpand?: (path: string, open: boolean) => void
   chip?: number
+  pulse?: number
   lang: Lang
   onChip: (id: number) => void
   onInject: (kind: ContextKind, node: SourceNode) => void
@@ -242,6 +276,7 @@ function SourceTree(props: {
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const pending = () => !!props.pending?.[node.nodePath]
         const on = () => props.selected === node.nodeId
+        const flash = () => !!props.pulse && props.pulse === node.nodeId
         const toggle = (e: MouseEvent) => {
           e.stopPropagation()
           const next = !open()
@@ -258,9 +293,11 @@ function SourceTree(props: {
               classList={{
                 "bg-surface-base-active text-text-strong": on(),
                 "text-text-base": !on(),
+                "ring-1 ring-sky-400/80": flash(),
               }}
               style={{ "padding-left": `${6 + depth() * 12}px` }}
               title={node.nodePath}
+              data-ead-source={node.nodeId}
             >
               <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
                 <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
@@ -321,6 +358,7 @@ function SourceTree(props: {
                 expanded={props.expanded}
                 onExpand={props.onExpand}
                 chip={props.chip}
+                pulse={props.pulse}
                 lang={props.lang}
                 onChip={props.onChip}
                 onInject={props.onInject}
@@ -333,11 +371,41 @@ function SourceTree(props: {
   )
 }
 
+function mark(role: ReturnType<typeof productRole>, lang: Lang) {
+  if (role === "sibling") return { cls: "text-sky-400", title: t(lang, "siblingProduct"), glyph: "◇" }
+  if (role === "base") return { cls: "text-violet-400", title: t(lang, "baseSiblings"), glyph: "▣" }
+  return { cls: "text-text-weak", title: "", glyph: "•" }
+}
+
+function Choice(props: {
+  product: Product
+  active: boolean
+  lang: Lang
+  onPick: (product: Product) => void
+}) {
+  const role = () => productRole(props.product)
+  const meta = () => mark(role(), props.lang)
+  return (
+    <button
+      type="button"
+      class={`${item} flex items-center gap-1.5 ${props.active ? itemActive : ""}`}
+      title={meta().title}
+      onClick={() => props.onPick(props.product)}
+    >
+      <span class={`shrink-0 text-11-regular ${meta().cls}`} aria-hidden="true">
+        {meta().glyph}
+      </span>
+      <span class="min-w-0 truncate">{props.product.name}</span>
+    </button>
+  )
+}
+
 export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
   const language = useLanguage()
   const platform = usePlatform()
   const prompt = usePrompt()
+  const params = useParams()
   const ead = useEad()
   const sdk = useSDK()
   const dialog = useDialog()
@@ -352,6 +420,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const panelWidth = createMemo(() => (panelOpen() ? `${width()}px` : "0px"))
 
   const [products, setProducts] = createSignal<Product[]>([])
+  const [groups, setGroups] = createSignal<Group[]>([])
   const [root, setRoot] = createSignal<PfmNode | undefined>()
   const [source, setSource] = createSignal<SourceNode[]>([])
   const [schemas, setSchemas] = createSignal<SubSchema[]>([])
@@ -383,6 +452,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [username, setUsername] = createSignal("")
   const [signupToken, setSignupToken] = createSignal("")
   const [newPass, setNewPass] = createSignal("")
+  const [confirmPass, setConfirmPass] = createSignal("")
+  const [userId, setUserId] = createSignal(0)
+  const [tenantId, setTenantId] = createSignal(0)
+  const [pipeline, setPipeline] = createSignal("")
   const [menu, setMenu] = createSignal<Menu>("")
   const [chip, setChip] = createSignal(0)
   const [members, setMembers] = createSignal<TeamMember[]>([])
@@ -390,8 +463,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [draftEmails, setDraftEmails] = createSignal<string[]>([])
   const [draftMe, setDraftMe] = createSignal(false)
   const [oq, setOq] = createSignal("")
+  const [pulse, setPulse] = createSignal(0)
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined
 
   const badgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -468,6 +543,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     return products().filter((p) => p.name.toLowerCase().includes(q) || String(p.productId).includes(q))
   })
 
+  const grouped = createMemo(() => {
+    const q = pq().trim().toLowerCase()
+    return groups().flatMap((g) => {
+      const list = q
+        ? g.products.filter((p) => p.name.toLowerCase().includes(q) || String(p.productId).includes(q))
+        : g.products
+      if (!list.length) return []
+      return [{ ...g, products: list }]
+    })
+  })
+
   const ownerMembers = createMemo(() => {
     const q = oq().trim().toLowerCase()
     if (!q) return members()
@@ -527,8 +613,28 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPfmTests({})
   }
 
+  const persistRun = () => {
+    const token = ead.token()
+    const sid = ead.schemaId()
+    if (!token || sid <= 0 || userId() <= 0 || tenantId() <= 0) return
+    void saveRunPrefs(
+      token,
+      userId(),
+      tenantId(),
+      sid,
+      {
+        showEadCount: ead.badge() === "ead",
+        showOpenJobs: ead.badge() === "jobs",
+        showOpenTests: ead.badge() === "tests",
+        eadsOnlyFilter: ead.eadsOnly(),
+      },
+      http(),
+    )
+  }
+
   const toggleBadge = (next: "ead" | "jobs" | "tests") => {
     ead.setBadge(ead.badge() === next ? "none" : next)
+    persistRun()
   }
 
   const soon = (name: string) => {
@@ -598,10 +704,53 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
     }
     if (used !== schema.schemaId) ead.setSchema(used, schema.name)
+    const pref = ead.sourcePref(used)
+    if (pref) {
+      ead.setBadge(pref.badge)
+      ead.setEadsOnly(pref.eadsOnly)
+    } else if (userId() > 0 && tenantId() > 0) {
+      const remote = await loadRunPrefs(token, userId(), tenantId(), used, http())
+      if (remote) {
+        const badge = remote.showOpenJobs ? "jobs" : remote.showOpenTests ? "tests" : "ead"
+        const only = remote.eadsOnlyFilter !== false
+        ead.setSourcePref(used, { badge, eadsOnly: only })
+        ead.setBadge(badge)
+        ead.setEadsOnly(only)
+      }
+    }
     const filter = readPfmFilter(pid)
     if (filter.active && filter.ids.length && !filter.paths.length) {
       const paths = await loadSubtreePaths(token, filter.ids, http())
       writePfmFilter(filter.ids, true, paths, pid)
+    }
+    const active = readPfmFilter(pid)
+    if (active.active && active.ids.length) {
+      const parsed = parseRows(rows)
+      const linked = await Promise.all(
+        active.ids.map(async (nid) => ({ nodeId: nid, paths: await loadLinkPaths(token, nid, http()) })),
+      )
+      const raw = await loadPfmEadCounts(token, active.ids, http())
+      const byPfm: Record<number, number> = {}
+      for (const [key, value] of Object.entries(raw)) {
+        const n = Number(key)
+        if (Number.isFinite(n) && n > 0) byPfm[n] = value
+      }
+      const byPath = filteredCounts(
+        parsed.map((row) => row.nodePath),
+        linked.filter((n) => n.paths.length),
+        byPfm,
+      )
+      if (Object.keys(byPath).length) {
+        eads = idCounts(parsed, byPath)
+      } else {
+        const kept = filterLinked(parsed, active.paths)
+        const fallback: Record<string, number> = {}
+        for (const row of kept) {
+          const n = eads[String(row.nodeId)]
+          if (n > 0) fallback[row.nodePath] = n
+        }
+        eads = idCounts(kept, fallback)
+      }
     }
     setEadCounts(eads)
     setJobCounts(jobs)
@@ -616,12 +765,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   let gen = 0
-  const refresh = async () => {
+  const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
     const run = ++gen
     const live = () => run === gen
+    const soft = opts?.soft === true
     const token = ead.token()
+    beginDiag()
+    noteDiag("Startup", true, soft ? "Soft refresh" : "Loading product list from API")
     if (!token) {
       setProducts([])
+      setGroups([])
       setRoot(undefined)
       setSource([])
       setSchemas([])
@@ -631,22 +784,32 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       clearCounts()
       setUser("")
       setEmail("")
+      setUserId(0)
+      setTenantId(0)
       setHint(undefined)
       setBanner(null)
+      setPipeline(formatDiag())
       return
     }
-    setBusy(true)
-    setErr("")
-    flash("loading", tx("refreshing"))
+    if (!soft) {
+      setBusy(true)
+      setErr("")
+      flash("loading", tx("refreshing"))
+    }
     try {
       const fetcher = http()
       const profile = await me(token, fetcher)
       if (!live()) return
       setEmail(String(profile?.email || ""))
       setUser(String(profile?.name || profile?.userName || profile?.email || tx("signedIn")))
-      const list = await loadProducts(token, fetcher)
+      setUserId(profile.userId)
+      setTenantId(profile.tenantId)
+      noteDiag("Auth", true, profile.email || profile.userName || "ok")
+      const catalog = await loadCatalog(token, fetcher)
       if (!live()) return
-      setProducts(list)
+      setProducts(catalog.products)
+      setGroups(catalog.groups)
+      noteDiag("Products", true, `${catalog.products.length} products, ${catalog.groups.length} groups`)
       const pid = ead.productId()
       if (pid <= 0) {
         setRoot(undefined)
@@ -656,14 +819,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setBaseMapId(0)
         setMapName("")
         clearCounts()
-        const hit = await suggestProduct(token, list, folder(), fetcher)
+        const hit = await suggestProduct(token, catalog.products, folder(), fetcher)
         if (!live()) return
         setHint(hit ? { productId: hit.productId, name: hit.name } : undefined)
-        flash("ok", tx("refreshed"))
+        noteDiag("Load complete", true, "No product selected")
+        setPipeline(formatDiag())
+        if (!soft) flash("ok", tx("refreshed"))
         return
       }
       setHint(undefined)
-      const selected = list.find((p) => p.productId === pid)
+      const selected = catalog.products.find((p) => p.productId === pid)
       if (!selected) {
         setRoot(undefined)
         setSource([])
@@ -672,7 +837,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setBaseMapId(0)
         setMapName("")
         clearCounts()
-        flash("ok", tx("refreshed"))
+        noteDiag("Load complete", true, "Selected product missing")
+        setPipeline(formatDiag())
+        if (!soft) flash("ok", tx("refreshed"))
         return
       }
       if (selected.name && selected.name !== ead.productName()) {
@@ -685,6 +852,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setRoot(map.root)
       setBaseMapId(map.baseMapId)
       setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
+      noteDiag("Map", true, `mapId=${map.mapId} name=${map.mapName || map.root?.name || "-"}`)
       if (map.supportSubSchemas && map.mapId > 0) {
         const next = await loadSubSchemas(token, map.mapId, fetcher)
         if (!live()) return
@@ -715,15 +883,24 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setPfmJobs({})
         setPfmTests({})
       }
-      if (ead.view() === "source") await loadSource()
+      if (ead.view() === "source" || opts?.syncLinked === true) await loadSource(opts?.syncLinked === true)
       if (!live()) return
-      flash("ok", tx("refreshed"))
+      noteDiag(
+        "Load complete",
+        true,
+        `PFM nodes: ${map.root ? collectIds([map.root]).length : 0}, view: ${ead.view()}`,
+      )
+      setPipeline(formatDiag())
+      if (!soft) flash("ok", tx("refreshed"))
     } catch (e) {
       if (!live()) return
       const msg = e instanceof Error ? e.message : String(e)
+      noteDiag("Error", false, msg)
+      setPipeline(formatDiag())
       if (msg === "AUTH_EXPIRED") {
         ead.signOut()
         setProducts([])
+        setGroups([])
         setRoot(undefined)
         setSource([])
         setSchemas([])
@@ -733,13 +910,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         clearCounts()
         setUser("")
         setEmail("")
+        setUserId(0)
+        setTenantId(0)
         setHint(undefined)
         setErr(tx("expired"))
-        flash("error", tx("expired"))
+        if (!soft) flash("error", tx("expired"))
         return
       }
       setErr(msg)
-      flash("error", msg)
+      if (!soft) flash("error", msg)
       setRoot(undefined)
       setSource([])
       setSchemas([])
@@ -748,7 +927,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setMapName("")
       clearCounts()
     } finally {
-      if (live()) setBusy(false)
+      if (live() && !soft) setBusy(false)
     }
   }
 
@@ -758,6 +937,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void ead.productId()
     void ead.subSchemaId()
     void refresh()
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const timer = window.setInterval(() => {
+      if (!ead.token()) return
+      void refresh({ soft: true })
+    }, 8_000)
+    onCleanup(() => window.clearInterval(timer))
   })
 
   createEffect(() => {
@@ -776,6 +964,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   onCleanup(() => {
     if (flashTimer) clearTimeout(flashTimer)
+    if (pulseTimer) clearTimeout(pulseTimer)
   })
 
   const applyContext = async (nodeId: number, nodeName: string, type: "pfm" | "source") => {
@@ -802,6 +991,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const selectNode = (node: PfmNode) => {
     closeMenus()
     ead.setNode(node.nodeId, node.name)
+    if (layout.pluginPanel.opened(EAD_PILOT_ID)()) {
+      queuePilot({
+        kind: "pfm",
+        nodeId: node.nodeId,
+        nodeName: node.name,
+      })
+    }
     void applyContext(node.nodeId, node.name, "pfm")
   }
 
@@ -830,10 +1026,82 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     ead.setExpanded(sid, next)
   }
 
+  const pfmExpandKey = () => expandKey(ead.productId(), ead.mapId(), ead.subSchemaId())
+
+  const pfmExpandedIds = createMemo(() => {
+    const key = pfmExpandKey()
+    const saved = ead.pfmExpanded(key)
+    if (saved !== undefined) return saved
+    const nodes = pfmVisible()
+    return nodes.length ? seedOpen(nodes) : []
+  })
+
+  const onPfmToggle = (id: number, open: boolean) => {
+    const key = pfmExpandKey()
+    const prev = ead.pfmExpanded(key) ?? seedOpen(pfmVisible())
+    const next = open ? [...new Set([...prev, id])] : prev.filter((n) => n !== id)
+    ead.setPfmExpanded(key, next)
+  }
+
+  const ring = (id: number) => {
+    setPulse(id)
+    if (pulseTimer) clearTimeout(pulseTimer)
+    pulseTimer = setTimeout(() => {
+      setPulse((cur) => (cur === id ? 0 : cur))
+    }, 1600)
+  }
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const tick = ead.mapTick()
+    if (!(tick > 0)) return
+    const nid = ead.nodeId()
+    const sid = ead.sourceId()
+    untrack(() => {
+      if (nid > 0) {
+        if (ead.view() !== "pfm") ead.setView("pfm")
+        const nodes = pfmVisible()
+        const trail = pathIds(nodes, nid)
+        const key = pfmExpandKey()
+        const prev = ead.pfmExpanded(key) ?? seedOpen(nodes)
+        const next = [...new Set([...prev, ...trail, nid])]
+        if (next.length !== prev.length || next.some((id) => !prev.includes(id))) {
+          ead.setPfmExpanded(key, next)
+        }
+        ring(nid)
+        queueMicrotask(() => {
+          document.querySelector(`[data-ead-node="${nid}"]`)?.scrollIntoView({ block: "nearest" })
+        })
+        return
+      }
+      if (!(sid > 0)) return
+      if (ead.view() !== "source") ead.setView("source")
+      const schema = ead.schemaId()
+      const trail = pathTrail(sourceVisible(), sid)
+      if (schema > 0 && trail.length) {
+        const prev = ead.expanded(schema)
+        const next = [...new Set([...prev, ...trail])]
+        if (next.length !== prev.length || next.some((path) => !prev.includes(path))) {
+          ead.setExpanded(schema, next)
+        }
+      }
+      ring(sid)
+      queueMicrotask(() => {
+        document.querySelector(`[data-ead-source="${sid}"]`)?.scrollIntoView({ block: "nearest" })
+      })
+    })
+  })
+
+  const openHelp = (tipId: TipId) => {
+    closeMenus()
+    launch({ kind: "help", tipId })
+  }
+
   const afterAuth = async (token: string) => {
     ead.setToken(token)
     setPass("")
     setNewPass("")
+    setConfirmPass("")
     setCode("")
     setSignupToken("")
     await refresh()
@@ -895,6 +1163,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const onSignup = async () => {
+    if (pass() !== confirmPass()) {
+      setErr(tx("mismatch"))
+      return
+    }
     setBusy(true)
     setErr("")
     try {
@@ -917,6 +1189,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const onReset = async () => {
+    if (newPass() !== confirmPass()) {
+      setErr(tx("mismatch"))
+      return
+    }
     setBusy(true)
     setErr("")
     try {
@@ -947,6 +1223,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     ead.signOut()
     ead.bumpPilot()
     setProducts([])
+    setGroups([])
     setRoot(undefined)
     setSource([])
     setSchemas([])
@@ -985,32 +1262,53 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const inject = async (kind: ContextKind, nodeId: number, name: string, type: "pfm" | "source") => {
     const token = ead.token()
     if (!token || nodeId <= 0) return
+    closeMenus()
     setBusy(true)
     setErr("")
     try {
       const raw = await loadRawContext(token, nodeId, http(), type)
-      const jobs =
-        kind === "jobs"
-          ? ((await loadJobsForNode(token, nodeId, http())) as Array<{
-              jobId?: number
-              title?: string
-              description?: string
-              jobStatus?: number
-            }>)
-          : []
-      const text = formatModal(buildModal(kind, nodeId, name, raw, jobs))
+      const jobs = kind === "jobs" ? await loadJobsForNode(token, nodeId, http()) : []
+      const payload = buildModal(kind, nodeId, name, raw, jobs as never)
+      const text = formatModal(payload)
       dialog.show(() => (
         <ContextDialog
-          title={`${kindLabel(kind, lang())} · ${name}`}
+          title={kindLabel(kind, lang())}
+          payload={payload}
           text={text}
           lang={lang()}
-          onInject={async (next) => {
-            await sendChat({ text: next, set: (value) => prompt.set(value) })
-          }}
+          onInject={async (body) =>
+            sendChat({
+              text: body,
+              set: (value) => prompt.set(value),
+              client: sdk.client,
+              sessionID: params.id,
+              auto: true,
+            })
+          }
+          onCreate={
+            kind === "jobs" && type === "pfm"
+              ? async (title, desc) => {
+                  await createJob(token, { pfmNodeId: nodeId, title, description: desc }, http())
+                  const next = await loadJobsForNode(token, nodeId, http())
+                  const body = formatModal(buildModal("jobs", nodeId, name, raw, next as never))
+                  await sendChat({
+                    text: body,
+                    set: (value) => prompt.set(value),
+                    client: sdk.client,
+                    sessionID: params.id,
+                    auto: true,
+                  })
+                  showToast({ title: "EAD", description: tx("sent"), variant: "success" })
+                  void refresh({ soft: true, syncLinked: false })
+                }
+              : undefined
+          }
         />
       ))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      setErr(msg)
+      flash("error", msg)
     } finally {
       setBusy(false)
     }
@@ -1124,7 +1422,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
           <div class="shrink-0 px-3 py-2 flex items-center justify-between border-b border-border-weaker-base gap-2">
             <span class="text-14-medium text-text-strong truncate">{tx("title")}</span>
             <div class="flex items-center gap-1">
-              <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh()} aria-label={tx("refresh")} />
+              <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh({ syncLinked: true })} aria-label={tx("refresh")} />
               <IconButton
                 icon="close-small"
                 variant="ghost"
@@ -1258,6 +1556,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={pass()}
                       onInput={(e) => setPass(e.currentTarget.value)}
                     />
+                    <input
+                      type="password"
+                      class={field}
+                      placeholder={tx("confirmPassword")}
+                      value={confirmPass()}
+                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
+                    />
                     <Button size="small" variant="primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
                       {tx("create")}
                     </Button>
@@ -1293,6 +1598,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       placeholder={tx("newPassword")}
                       value={newPass()}
                       onInput={(e) => setNewPass(e.currentTarget.value)}
+                    />
+                    <input
+                      type="password"
+                      class={field}
+                      placeholder={tx("confirmPassword")}
+                      value={confirmPass()}
+                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
                     />
                     <Button size="small" variant="primary" disabled={busy()} onClick={() => void onReset()}>
                       {tx("resetPassword")}
@@ -1423,17 +1735,41 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           />
                         </div>
                         <div class="max-h-56 overflow-y-auto">
-                          <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">{tx("noProducts")}</div>}>
-                            {(p) => (
-                              <button
-                                type="button"
-                                class={`${item} ${ead.productId() === p.productId ? itemActive : ""}`}
-                                onClick={() => pickProduct(p)}
-                              >
-                                {p.name}
-                              </button>
-                            )}
-                          </For>
+                          <Show
+                            when={grouped().length}
+                            fallback={
+                              <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">{tx("noProducts")}</div>}>
+                                {(p) => (
+                                  <Choice
+                                    product={p}
+                                    active={ead.productId() === p.productId}
+                                    lang={lang()}
+                                    onPick={pickProduct}
+                                  />
+                                )}
+                              </For>
+                            }
+                          >
+                            <For each={grouped()}>
+                              {(g) => (
+                                <div>
+                                  <div class="px-2.5 py-1 text-11-regular text-text-weak truncate">
+                                    {g.name || tx("teamFallback")}
+                                  </div>
+                                  <For each={g.products}>
+                                    {(p) => (
+                                      <Choice
+                                        product={p}
+                                        active={ead.productId() === p.productId}
+                                        lang={lang()}
+                                        onPick={pickProduct}
+                                      />
+                                    )}
+                                  </For>
+                                </div>
+                              )}
+                            </For>
+                          </Show>
                         </div>
                       </div>
                     </Show>
@@ -1526,6 +1862,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             </button>
                           )}
                         </For>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("pfm-schema-filter")}
+                        >
+                          {tx("help")}
+                        </button>
                       </div>
                     </Show>
                   </div>
@@ -1575,6 +1919,18 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("setupFilter")}
                         </button>
+                        <button
+                          type="button"
+                          class={item}
+                          disabled={ead.productId() <= 0}
+                          onClick={() => {
+                            closeMenus()
+                            launch({ kind: "crawl" })
+                          }}
+                          title={tx("crawlVisionHint")}
+                        >
+                          {tx("crawlVision")}
+                        </button>
                         <label class={`${item} flex items-center gap-2 cursor-pointer`}>
                           <input
                             type="checkbox"
@@ -1598,6 +1954,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           <span>{tx("showDebug")}</span>
                           <span class="text-11-regular text-text-weak">{diag() ? tx("on") : tx("off")}</span>
+                        </button>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("ead-map-search-setup")}
+                        >
+                          {tx("help")}
                         </button>
                       </div>
                     </Show>
@@ -1782,6 +2146,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             )}
                           </For>
                         </Show>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("job-owner-filter")}
+                        >
+                          {tx("help")}
+                        </button>
                       </div>
                     </Show>
                   </div>
@@ -1816,7 +2188,8 @@ view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}
 workContextId=${ead.workContextId()}
 pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}
 owner=${owner().enabled ? ownerSummary(owner()) : "off"}
-err=${err() || "-"}`}
+err=${err() || "-"}
+${pipeline()}`}
                   </pre>
                 </Show>
 
@@ -1844,6 +2217,14 @@ err=${err() || "-"}`}
                           onClick={() => void switchView("source")}
                         >
                           {tx("aiCode")}
+                        </button>
+                        <div class="my-1 border-t border-border-weaker-base" />
+                        <button
+                          type="button"
+                          class={`${item} text-text-weak`}
+                          onClick={() => openHelp("navigator-view-mode")}
+                        >
+                          {tx("help")}
                         </button>
                       </div>
                     </Show>
@@ -1911,6 +2292,14 @@ err=${err() || "-"}`}
                           >
                             {tx("filtered")}
                           </button>
+                          <div class="my-1 border-t border-border-weaker-base" />
+                          <button
+                            type="button"
+                            class={`${item} text-text-weak`}
+                            onClick={() => openHelp("pfm-tree-filter")}
+                          >
+                            {tx("help")}
+                          </button>
                         </div>
                       </Show>
                     </div>
@@ -1955,14 +2344,20 @@ err=${err() || "-"}`}
                           <button
                             type="button"
                             class={`${item} ${!ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => ead.setEadsOnly(false)}
+                            onClick={() => {
+                              ead.setEadsOnly(false)
+                              persistRun()
+                            }}
                           >
                             {tx("showAll")}
                           </button>
                           <button
                             type="button"
                             class={`${item} ${ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => ead.setEadsOnly(true)}
+                            onClick={() => {
+                              ead.setEadsOnly(true)
+                              persistRun()
+                            }}
                           >
                             {tx("withEads")}
                           </button>
@@ -2012,7 +2407,10 @@ err=${err() || "-"}`}
                       type="button"
                       class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
                       classList={{ "bg-surface-base-active text-text-strong": !ead.eadsOnly() }}
-                      onClick={() => ead.setEadsOnly(false)}
+                      onClick={() => {
+                        ead.setEadsOnly(false)
+                        persistRun()
+                      }}
                     >
                       {tx("showAllSource")}
                     </button>
@@ -2020,7 +2418,10 @@ err=${err() || "-"}`}
                       type="button"
                       class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
                       classList={{ "bg-surface-base-active text-text-strong": ead.eadsOnly() }}
-                      onClick={() => ead.setEadsOnly(true)}
+                      onClick={() => {
+                        ead.setEadsOnly(true)
+                        persistRun()
+                      }}
                     >
                       {tx("showWithEads")}
                     </button>
@@ -2043,7 +2444,10 @@ err=${err() || "-"}`}
                         work={ead.workContextId()}
                         force={openPath()}
                         chip={chip()}
+                        pulse={pulse()}
                         lang={lang()}
+                        expanded={pfmExpandedIds()}
+                        onToggle={onPfmToggle}
                         onChip={setChip}
                         onInject={(kind, node) => void inject(kind, node.nodeId, node.name, "pfm")}
                       />
@@ -2051,6 +2455,29 @@ err=${err() || "-"}`}
                   </Show>
                   <Show when={!busy() && ead.productId() > 0 && !root()}>
                     <span class="text-12-regular text-text-weak">{tx("noMap")}</span>
+                  </Show>
+                  <Show
+                    when={
+                      !busy() &&
+                      !!root() &&
+                      pfmVisible().length === 0 &&
+                      !query().trim() &&
+                      !ead.jobsOnly() &&
+                      !pfmFilter().active &&
+                      schemas().length > 0
+                    }
+                  >
+                    <div class="flex flex-col gap-2">
+                      <span class="text-12-regular text-text-weak">{tx("emptyDynamic")}</span>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() => launch({ kind: "crawl" })}
+                        title={tx("crawlVisionHint")}
+                      >
+                        {tx("crawlVision")}
+                      </Button>
+                    </div>
                   </Show>
                   <Show when={!busy() && root() && pfmVisible().length === 0 && (query().trim() || ead.jobsOnly() || pfmFilter().active)}>
                     <span class="text-12-regular text-text-weak">{tx("noMatch")}</span>
@@ -2069,6 +2496,7 @@ err=${err() || "-"}`}
                         expanded={ead.expanded(ead.schemaId())}
                         onExpand={onExpand}
                         chip={chip()}
+                        pulse={pulse()}
                         lang={lang()}
                         onChip={setChip}
                         onInject={(kind, node) => void inject(kind, node.nodeId, node.nodeName, "source")}

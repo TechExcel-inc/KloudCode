@@ -183,6 +183,21 @@ export function pathIds<T extends { nodeId: number; children: T[] }>(nodes: T[],
   return walk(nodes, []) ?? []
 }
 
+/** Ancestor nodePaths of target (root → parent), for source expand-to-highlight. */
+export function pathTrail<T extends { nodeId: number; nodePath: string; children: T[] }>(
+  nodes: T[],
+  target: number,
+): string[] {
+  const walk = (list: T[], trail: string[]): string[] | undefined => {
+    for (const node of list) {
+      if (node.nodeId === target) return trail
+      const hit = walk(node.children, [...trail, node.nodePath])
+      if (hit) return hit
+    }
+  }
+  return walk(nodes, []) ?? []
+}
+
 export function normalizePath(path: string | null | undefined) {
   const raw = String(path || "").trim()
   if (!raw) return ""
@@ -248,4 +263,96 @@ export function filterLinkedTree(nodes: SourceNode[], linked: string[] | null | 
     if (pathMatches(node.nodePath, paths) || kids.length) return [{ ...node, children: kids }]
     return []
   })
+}
+
+function isFile(path: string) {
+  const n = path.trim().replace(/\\/g, "/")
+  if (n.includes("@") && !n.includes("/", n.indexOf("@"))) return false
+  const base = n.split("/").filter(Boolean).pop() || ""
+  if (!base || base.includes("@")) return false
+  const dot = base.lastIndexOf(".")
+  return dot > 0 && dot < base.length - 1
+}
+
+function rel(path: string) {
+  const n = path.trim().replace(/\\/g, "/")
+  const at = n.indexOf("@")
+  if (at < 0) return n.replace(/^\/+|\/+$/g, "")
+  const slash = n.indexOf("/", at)
+  if (slash < 0 || slash >= n.length - 1) return ""
+  return n.slice(slash + 1).trim()
+}
+
+export function repoOf(path: string) {
+  const n = path.trim()
+  const at = n.indexOf("@")
+  if (at <= 0) return ""
+  return n.slice(0, at).trim()
+}
+
+/** Linked file sits under a source-tree folder (Cursor linkedSourceFileUnderSelectedFolder). */
+export function underFolder(file: string, folder: string) {
+  if (!file.trim() || !folder.trim() || !isFile(file)) return false
+  let next = file.trim().replace(/\\/g, "/")
+  const root = repoOf(folder)
+  if (!next.includes("@") && root) next = `${root}/${next.replace(/^\/+/, "")}`
+  const fileRel = next.includes("@") ? rel(next) : next.replace(/^\/+|\/+$/g, "")
+  if (!fileRel) return false
+  const folderRel = folder.includes("@") ? rel(folder) : folder.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+  if (!folderRel) {
+    if (!root) return false
+    return repoOf(next).toLowerCase() === root.toLowerCase()
+  }
+  return fileRel === folderRel || fileRel.startsWith(`${folderRel}/`)
+}
+
+export function hits(linked: string, node: string) {
+  const a = linked.trim()
+  const b = node.trim()
+  if (!a || !b) return false
+  for (const left of pathCandidates(a)) {
+    for (const right of pathCandidates(b)) {
+      if (left === right) return true
+      if (left.endsWith(`/${right}`) || right.endsWith(`/${left}`)) return true
+    }
+  }
+  return pathMatches(b, [a])
+}
+
+/** Recompute Source EAD badges from filtered PFM nodes (Cursor computeFilteredEadCountsByPath). */
+export function filteredCounts(
+  paths: string[],
+  nodes: Array<{ nodeId: number; paths: string[] }>,
+  eads: Record<number, number>,
+) {
+  const out: Record<string, number> = {}
+  if (!paths.length || !nodes.length) return out
+  for (const path of paths) {
+    const trimmed = path.trim()
+    if (!trimmed) continue
+    const seen = new Set<number>()
+    let total = 0
+    for (const node of nodes) {
+      if (!(node.nodeId > 0) || seen.has(node.nodeId)) continue
+      const match = node.paths.some((raw) => {
+        const p = raw.trim()
+        if (!p) return false
+        return hits(p, trimmed) || underFolder(p, trimmed)
+      })
+      if (!match) continue
+      seen.add(node.nodeId)
+      total += eads[node.nodeId] ?? 0
+    }
+    if (total > 0) out[trimmed] = total
+  }
+  return out
+}
+
+export function idCounts(rows: SourceRow[], byPath: Record<string, number>) {
+  const out: Record<string, number> = {}
+  for (const row of rows) {
+    const n = byPath[row.nodePath]
+    if (typeof n === "number" && n > 0) out[String(row.nodeId)] = n
+  }
+  return out
 }

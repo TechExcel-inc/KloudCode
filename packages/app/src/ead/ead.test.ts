@@ -3,9 +3,13 @@ import {
   buildPilotUrl,
   flagsFromAction,
   handlePluginMessage,
+  openCrawlVision,
   openFindWizard,
+  openHelpTip,
   openSetupMap,
+  updatePfmSelection,
 } from "./bridge"
+import { expandKey } from "./settings"
 import { buildModal, formatModal, kindLabel } from "./context-modal"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "./filters"
 import { formatJobCounts } from "./jobs"
@@ -19,14 +23,19 @@ import {
   filterLinkedTree,
   filterPfm,
   filterSource,
+  filteredCounts,
+  hits,
   parseRows,
   pathIds,
   pathMatches,
+  pathTrail,
   rollupCounts,
+  underFolder,
 } from "./source-tree"
-import { collectProducts, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
-import { queuePilot, takePilot, peekPilot } from "./actions"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
+import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
+import { beginDiag, formatDiag, noteDiag } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, isEadHost } from "./urls"
 import { mcpCandidates } from "./mcp"
 
@@ -86,6 +95,22 @@ describe("ead source-tree", () => {
     expect(pathIds(nodes, 99)).toEqual([])
   })
 
+  test("pathTrail returns ancestor source paths", () => {
+    const nodes = buildTree([
+      { nodeId: 1, nodeName: "a", nodePath: "a", parentNodeId: null },
+      { nodeId: 2, nodeName: "b", nodePath: "a/b", parentNodeId: 1 },
+      { nodeId: 3, nodeName: "c", nodePath: "a/b/c", parentNodeId: 2 },
+    ])
+    expect(pathTrail(nodes, 3)).toEqual(["a", "a/b"])
+    expect(pathTrail(nodes, 1)).toEqual([])
+    expect(pathTrail(nodes, 99)).toEqual([])
+  })
+
+  test("expandKey matches product:map:subSchema", () => {
+    expect(expandKey(2, 10, 3)).toBe("2:10:3")
+    expect(expandKey(2, 0, 0)).toBe("2:0:0")
+  })
+
   test("filterLinked keeps ancestors of matched files", () => {
     const rows = parseRows([
       { nodeId: 1, nodePath: "src", nodeName: "src", nodeType: "FOLDER" },
@@ -98,6 +123,19 @@ describe("ead source-tree", () => {
     const tree = filterLinkedTree(buildTree(rows), ["src/auth/login.ts"])
     expect(tree[0]?.children.map((c) => c.nodeName)).toEqual(["login.ts"])
     expect(filterLinked(rows, [])).toEqual([])
+  })
+
+  test("filteredCounts remaps PFM eads onto linked source paths", () => {
+    expect(hits("src/auth/login.ts", "src/auth/login.ts")).toBe(true)
+    expect(underFolder("src/auth/login.ts", "src/auth")).toBe(true)
+    const counts = filteredCounts(
+      ["src/auth", "src/auth/login.ts", "src/other.ts"],
+      [{ nodeId: 128, paths: ["src/auth/login.ts"] }],
+      { 128: 3 },
+    )
+    expect(counts["src/auth/login.ts"]).toBe(3)
+    expect(counts["src/auth"]).toBe(3)
+    expect(counts["src/other.ts"]).toBeUndefined()
   })
 })
 
@@ -173,15 +211,37 @@ describe("ead bridge", () => {
       },
     )
     handlePluginMessage(
-      { type: "eadPfmPersistAuthToken", token: "fresh" },
+      { type: "eadPfmPersistAuthToken", token: "fresh", productId: 9, productName: "X" },
       {
         setToken: (t) => {
           token = t
         },
+        setProduct: (id, name) => calls.push(`product:${id}:${name}`),
       },
     )
-    expect(calls).toEqual(["beat", "find:5", "jobs:r1", "product:2:SW"])
+    expect(calls).toEqual(["beat", "find:5", "jobs:r1"])
     expect(token).toBe("fresh")
+  })
+
+  test("flags include crawl and help", () => {
+    expect(flagsFromAction({ kind: "crawl" }).openCrawlVision).toBe(true)
+    expect(flagsFromAction({ kind: "help", tipId: "pfm-tree-filter" }).helpTipId).toBe("pfm-tree-filter")
+    expect(flagsFromAction({ kind: "pfm" })).toEqual({})
+  })
+
+  test("updatePfmSelection / openCrawlVision post host messages", () => {
+    const posted: unknown[] = []
+    const frame = {
+      contentWindow: {
+        postMessage: (payload: unknown) => posted.push(payload),
+      },
+    } as unknown as HTMLIFrameElement
+    updatePfmSelection(frame, { productId: 2, nodeId: 128, nodeName: "Login" })
+    openCrawlVision(frame, { productId: 2, productName: "SW" })
+    openHelpTip(frame, "ead-map-search-setup")
+    expect((posted[0] as { type: string }).type).toBe("updatePfmSelection")
+    expect((posted[1] as { type: string }).type).toBe("openCrawlVisionWizard")
+    expect((posted[2] as { type: string; helpTipId: string }).helpTipId).toBe("ead-map-search-setup")
   })
 
   test("openFindWizard / openSetupMap post host messages", () => {
@@ -230,10 +290,14 @@ describe("ead context-modal + jobs + filters + actions", () => {
   })
 
   test("queuePilot take/peek", () => {
+    const seen: string[] = []
+    const stop = watchPilot((a) => seen.push(a.kind))
     queuePilot({ kind: "setup" })
     expect(peekPilot()?.kind).toBe("setup")
+    expect(seen).toEqual(["setup"])
     expect(takePilot()?.kind).toBe("setup")
     expect(takePilot()).toBeUndefined()
+    stop()
   })
 })
 
@@ -245,6 +309,28 @@ describe("ead api helpers", () => {
       { productId: 2, name: "SW Admin", children: [{ productId: 2, name: "dup" }] },
     ])
     expect(products).toEqual([{ productId: 2, name: "SW Admin" }])
+    const groups = collectGroups([
+      {
+        id: "team-1",
+        name: "Ops",
+        children: [
+          { type: "product", productId: 2, name: "SW Admin", supportsSiblingProducts: true },
+          { type: "product", productId: 3, name: "SW Twin", baseProductId: 2 },
+        ],
+      },
+    ])
+    expect(groups).toEqual([
+      {
+        id: "team-1",
+        name: "Ops",
+        products: [
+          { productId: 2, name: "SW Admin", siblings: true },
+          { productId: 3, name: "SW Twin", baseId: 2 },
+        ],
+      },
+    ])
+    expect(productRole(groups[0]!.products[0]!)).toBe("base")
+    expect(productRole(groups[0]!.products[1]!)).toBe("sibling")
     const sys = formatSystemPrompt({ name: "Node", aiPrompt: "p", eadScript: "s" })
     expect(sys).toContain("<pfm-node-context>")
     expect(sys).toContain("<ai-prompt>p</ai-prompt>")
@@ -277,6 +363,8 @@ describe("ead i18n + env + mcp", () => {
     expect(t("ko", "title")).toContain("맵")
     expect(t("zh", "aiPilot")).toBe("AI 领航")
     expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
+    expect(t("zh", "confirmPassword")).toBe("确认密码")
+    expect(t("en", "createTask")).toContain("task")
   })
 
   test("applyEnv switches api and origin", () => {
@@ -294,5 +382,12 @@ describe("ead i18n + env + mcp", () => {
   test("mcpCandidates walks to sibling EAD_PFM-Editor", () => {
     const list = mcpCandidates("/Users/me/Projects/TX/KloudCode", "")
     expect(list.some((p) => p.includes("EAD_PFM-Editor/mcp-eadpfm/dist/index.js"))).toBe(true)
+  })
+
+  test("diag pipeline records ok and fail steps", () => {
+    beginDiag()
+    noteDiag("Auth", true, "ok")
+    noteDiag("Map", false, "timeout")
+    expect(formatDiag()).toBe("ok Auth: ok\nfail Map: timeout")
   })
 })

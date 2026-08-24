@@ -11,10 +11,12 @@ export type ColorScheme = "light" | "dark" | "system"
 const STORAGE_KEYS = {
   THEME_ID: "opencode-theme-id",
   COLOR_SCHEME: "opencode-color-scheme",
+  COLOR_SCHEME_FLAG: "opencode-color-scheme-kloud-v1",
   THEME_CSS_LIGHT: "opencode-theme-css-light",
   THEME_CSS_DARK: "opencode-theme-css-dark",
 } as const
 
+const DEFAULT_COLOR_SCHEME: ColorScheme = "dark"
 const THEME_STYLE_ID = "oc-theme"
 let files: Record<string, () => Promise<{ default: DesktopTheme }>> | undefined
 let ids: string[] | undefined
@@ -113,6 +115,15 @@ function clear() {
   drop(STORAGE_KEYS.THEME_CSS_DARK)
 }
 
+function readColorScheme() {
+  if (!read(STORAGE_KEYS.COLOR_SCHEME_FLAG)) {
+    write(STORAGE_KEYS.COLOR_SCHEME, DEFAULT_COLOR_SCHEME)
+    write(STORAGE_KEYS.COLOR_SCHEME_FLAG, "1")
+    return DEFAULT_COLOR_SCHEME
+  }
+  return (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? DEFAULT_COLOR_SCHEME
+}
+
 function ensureThemeStyleElement(): HTMLStyleElement {
   const existing = document.getElementById(THEME_STYLE_ID) as HTMLStyleElement | null
   if (existing) return existing
@@ -164,7 +175,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
   init: (props: { defaultTheme?: string; onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark") => void }) => {
     const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
-    const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
+    const colorScheme = readColorScheme()
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {
@@ -250,7 +261,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
       const rawTheme = read(STORAGE_KEYS.THEME_ID)
       const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
-      const savedScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
+      const savedScheme = readColorScheme()
       if (rawTheme && rawTheme !== savedTheme) {
         write(STORAGE_KEYS.THEME_ID, savedTheme)
         clear()

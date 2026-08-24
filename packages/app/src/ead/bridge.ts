@@ -16,6 +16,8 @@ export type PilotContext = {
   openSetup?: boolean
   openSetupEadMap?: boolean
   openPfmFilter?: boolean
+  openCrawlVision?: boolean
+  helpTipId?: string
   language?: Lang
   mode?: "opencode" | "cursor"
   bust?: number
@@ -44,6 +46,8 @@ export type BridgeHooks = {
   queueSetup?: () => void
   queueSetupSource?: () => void
   queueMindmap?: () => void
+  queueCrawl?: () => void
+  queueHelp?: (tipId: string) => void
   syncAuth?: () => void
   noteHeartbeat?: () => void
   clipboard?: (requestId: string) => void
@@ -100,6 +104,8 @@ export function buildPilotUrl(ctx: PilotContext) {
   if (ctx.openSetup) url.searchParams.set("openSetup", "1")
   if (ctx.openSetupEadMap) url.searchParams.set("openSetupEadMap", "1")
   if (ctx.openPfmFilter) url.searchParams.set("openPfmFilter", "1")
+  if (ctx.openCrawlVision) url.searchParams.set("openCrawlVision", "1")
+  if (ctx.helpTipId) url.searchParams.set("openHelpTip", ctx.helpTipId)
   if (ctx.language) url.searchParams.set("lang", ctx.language)
   if (ctx.bust) url.searchParams.set("_t", String(ctx.bust))
   return url.toString()
@@ -107,13 +113,16 @@ export function buildPilotUrl(ctx: PilotContext) {
 
 export function flagsFromAction(action: PilotAction | undefined): Pick<
   PilotContext,
-  "openAiPilot" | "openAiFind" | "openSetup" | "openSetupEadMap" | "openPfmFilter"
+  "openAiPilot" | "openAiFind" | "openSetup" | "openSetupEadMap" | "openPfmFilter" | "openCrawlVision" | "helpTipId"
 > {
   if (!action || action.kind === "dashboard") return { openAiPilot: true }
   if (action.kind === "find") return { openAiFind: true }
   if (action.kind === "setupSource") return { openSetup: true }
   if (action.kind === "setup") return { openSetupEadMap: true }
   if (action.kind === "mindmap") return { openPfmFilter: true }
+  if (action.kind === "crawl") return { openCrawlVision: true }
+  if (action.kind === "help") return { helpTipId: action.tipId || undefined }
+  if (action.kind === "pfm" || action.kind === "source") return {}
   return { openAiPilot: true }
 }
 
@@ -222,6 +231,38 @@ export function updateSourceSelection(frame: HTMLIFrameElement | undefined, opts
   })
 }
 
+/** Soft-update Pilot PFM selection without remounting the iframe. */
+export function updatePfmSelection(
+  frame: HTMLIFrameElement | undefined,
+  opts?: { productId?: number; productName?: string; nodeId?: number; nodeName?: string },
+) {
+  postToFrame(frame, {
+    type: "updatePfmSelection",
+    productId: opts?.productId,
+    productName: opts?.productName,
+    pfmNodeId: opts?.nodeId,
+    entityName: opts?.nodeName,
+    nodeKey: opts?.nodeName,
+  })
+}
+
+export function openCrawlVision(
+  frame: HTMLIFrameElement | undefined,
+  opts?: { productId?: number; productName?: string },
+) {
+  postToFrame(frame, {
+    type: "openCrawlVisionWizard",
+    productId: opts?.productId,
+    productName: opts?.productName,
+  })
+}
+
+export function openHelpTip(frame: HTMLIFrameElement | undefined, tipId: string) {
+  const id = tipId.trim()
+  if (!id) return
+  postToFrame(frame, { type: "openHelpTip", helpTipId: id })
+}
+
 export function postOwnerState(
   frame: HTMLIFrameElement | undefined,
   state: Record<string, unknown>,
@@ -293,6 +334,23 @@ export function applyPilotAction(
   }
   if (action.kind === "source") {
     updateSourceSelection(frame, opts)
+    return
+  }
+  if (action.kind === "pfm") {
+    updatePfmSelection(frame, {
+      productId: product.productId,
+      productName: product.productName,
+      nodeId: action.nodeId,
+      nodeName: action.nodeName,
+    })
+    return
+  }
+  if (action.kind === "crawl") {
+    openCrawlVision(frame, product)
+    return
+  }
+  if (action.kind === "help") {
+    openHelpTip(frame, action.tipId || "")
     return
   }
   if (action.kind === "mindmap") {
@@ -373,17 +431,30 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     typeof msg.token === "string" &&
     msg.token.trim()
   ) {
+    // Map product is user-controlled — never overwrite from Pilot auth messages.
     hooks.setToken(msg.token)
-    const pid = num(msg.productId)
-    const pname = text(msg.productName)
-    if (pid && pname) hooks.setProduct?.(pid, pname)
     return true
   }
 
   if (type === "pluginSessionSync" || type === "authSyncComplete") {
-    const pid = num(msg.productId)
-    const pname = text(msg.productName)
-    if (pid && pname) hooks.setProduct?.(pid, pname)
+    // Token-only sync; productId from Pilot must not thrash the Map selection.
+    const token = text(msg.token)
+    if (token) hooks.setToken(token)
+    return true
+  }
+
+  if (type === "openCrawlVisionWizard") {
+    hooks.openPilot?.()
+    hooks.queueCrawl?.()
+    return true
+  }
+
+  if (type === "openHelpTip") {
+    const tipId = text(msg.helpTipId ?? msg.tipId)
+    if (tipId) {
+      hooks.openPilot?.()
+      hooks.queueHelp?.(tipId)
+    }
     return true
   }
 

@@ -4,12 +4,22 @@ import { eadApi } from "./urls"
 export type Product = {
   productId: number
   name: string
+  baseId?: number
+  siblings?: boolean
+}
+
+export type Group = {
+  id: string
+  name: string
+  products: Product[]
 }
 
 export type PfmNode = {
   nodeId: number
   name: string
   children: PfmNode[]
+  isDynamicTopLevel?: boolean
+  subSchemaId?: number | null
 }
 
 export type ActiveContext = {
@@ -29,9 +39,13 @@ type AuthResult = {
 type TreeNode = {
   productId?: number | string
   id?: number | string
+  familyId?: number | string
   name?: string
   productName?: string
   label?: string
+  type?: string
+  baseProductId?: number | string
+  supportsSiblingProducts?: boolean | number | string
   children?: TreeNode[]
   products?: TreeNode[]
 }
@@ -39,6 +53,8 @@ type TreeNode = {
 type MapPayload = {
   mapId?: number | string
   rootNode?: unknown
+  dynamicTopLevelNodeId?: number | string | null
+  dynamicTopLevelDisplayName?: string | null
 }
 
 type ContextPayload = {
@@ -101,13 +117,23 @@ async function call(http: Http, path: string, token: string, init?: RequestInit)
   return res.json()
 }
 
+function asProduct(node: TreeNode): Product | undefined {
+  const id = Number(node.productId ?? 0)
+  const name = String(node.name ?? node.productName ?? node.label ?? "").trim()
+  if (!Number.isFinite(id) || id <= 0 || !name) return
+  if (node.type && node.type !== "product") return
+  const base = Number(node.baseProductId ?? 0)
+  const flag = node.supportsSiblingProducts
+  const product: Product = { productId: id, name }
+  if (Number.isFinite(base) && base > 0) product.baseId = base
+  if (flag === true || flag === 1 || flag === "1") product.siblings = true
+  return product
+}
+
 function walk(nodes: TreeNode[], out: Product[]) {
   for (const node of nodes) {
-    const id = Number(node.productId ?? 0)
-    const name = String(node.name ?? node.productName ?? node.label ?? "").trim()
-    if (Number.isFinite(id) && id > 0 && name) {
-      out.push({ productId: id, name })
-    }
+    const product = asProduct(node)
+    if (product) out.push(product)
     if (Array.isArray(node.children)) walk(node.children, out)
     if (Array.isArray(node.products)) walk(node.products, out)
   }
@@ -124,17 +150,55 @@ export function collectProducts(tree: TreeNode[]): Product[] {
   })
 }
 
-function asNode(raw: unknown): PfmNode | undefined {
+export function collectGroups(tree: TreeNode[]): Group[] {
+  const groups: Group[] = []
+  for (const family of tree) {
+    const kids = Array.isArray(family.children) ? family.children : []
+    const products = kids.flatMap((child) => {
+      const product = asProduct(child)
+      return product ? [product] : []
+    })
+    if (!products.length) continue
+    groups.push({
+      id: String(family.id ?? family.familyId ?? `family-${groups.length}`),
+      name: String(family.label || family.name || "Team"),
+      products,
+    })
+  }
+  return groups
+}
+
+export function productRole(product: Product) {
+  if (product.baseId && product.baseId > 0) return "sibling" as const
+  if (product.siblings) return "base" as const
+  return "plain" as const
+}
+
+function asNode(
+  raw: unknown,
+  meta?: { dynId?: number; dynName?: string },
+): PfmNode | undefined {
   if (!raw || typeof raw !== "object") return
   const row = raw as Record<string, unknown>
   const id = Number(row.nodeId ?? row.id ?? 0)
   if (!Number.isFinite(id) || id <= 0) return
   const kids = Array.isArray(row.children) ? row.children : []
+  const dyn =
+    row.isDynamicTopLevel === true ||
+    row.isDynamicTopLevel === 1 ||
+    (!!meta?.dynId && meta.dynId === id)
+  const sub = Number(row.subSchemaId)
+  const name =
+    dyn && meta?.dynName
+      ? meta.dynName
+      : String(row.dynamicTopLevelDisplayName || row.name || row.nodeName || `Node ${id}`)
   return {
     nodeId: id,
-    name: String(row.name ?? row.nodeName ?? `Node ${id}`),
+    name,
+    isDynamicTopLevel: dyn || undefined,
+    subSchemaId: Number.isFinite(sub) && sub > 0 ? sub : null,
     children: kids.flatMap((child) => {
-      const next = asNode(child)
+      const next = asNode(child, meta)
       return next ? [next] : []
     }),
   }
@@ -262,9 +326,14 @@ export async function login(identifier: string, password: string, http: Http = e
   return data.token
 }
 
-export async function loadProducts(token: string, http: Http = eadHttp()) {
+export async function loadCatalog(token: string, http: Http = eadHttp()) {
   const tree = (await call(http, `/products/tree`, token)) as TreeNode[]
-  return collectProducts(Array.isArray(tree) ? tree : [])
+  const rows = Array.isArray(tree) ? tree : []
+  return { products: collectProducts(rows), groups: collectGroups(rows) }
+}
+
+export async function loadProducts(token: string, http: Http = eadHttp()) {
+  return (await loadCatalog(token, http)).products
 }
 
 export async function loadActiveMap(
@@ -281,7 +350,12 @@ export async function loadActiveMap(
   }
   const mapId = Number(map.mapId ?? 0)
   const base = Number(map.baseMapId ?? 0)
-  const root = asNode(map.rootNode)
+  const dynId = Number(map.dynamicTopLevelNodeId ?? 0)
+  const dynName = String(map.dynamicTopLevelDisplayName || "").trim()
+  const root = asNode(map.rootNode, {
+    dynId: Number.isFinite(dynId) && dynId > 0 ? dynId : undefined,
+    dynName: dynName || undefined,
+  })
   const name = String(map.mapName || "").trim()
   return {
     mapId: Number.isFinite(mapId) && mapId > 0 ? mapId : 0,
@@ -742,12 +816,18 @@ export async function loadLinkedSource(
 
 export async function me(token: string, http: Http = eadHttp()) {
   const data = (await call(http, `/auth/me`, token)) as {
+    id?: number | string
+    tenantId?: number | string
+    organizationId?: number | string
     email?: string
     name?: string
     userName?: string
     fullName?: string
     username?: string
     user?: {
+      id?: number | string
+      tenantId?: number | string
+      organizationId?: number | string
       email?: string
       name?: string
       userName?: string
@@ -756,11 +836,69 @@ export async function me(token: string, http: Http = eadHttp()) {
     }
   }
   const row = data.user ?? data
+  const userId = Number(row.id ?? data.id ?? 0)
+  const tenantId = Number(row.tenantId ?? row.organizationId ?? data.tenantId ?? data.organizationId ?? 0)
   return {
     email: row.email,
     name: row.fullName || row.name || row.userName || row.username,
     userName: row.username || row.userName,
+    userId: Number.isFinite(userId) && userId > 0 ? userId : 0,
+    tenantId: Number.isFinite(tenantId) && tenantId > 0 ? tenantId : 0,
   }
+}
+
+export type RunPref = {
+  showEadCount?: boolean
+  eadsOnlyFilter?: boolean
+  showOpenJobs?: boolean
+  showOpenTests?: boolean
+}
+
+export async function loadRunPrefs(
+  token: string,
+  userId: number,
+  tenantId: number,
+  schemaId: number,
+  http: Http = eadHttp(),
+) {
+  if (!(userId > 0) || !(tenantId > 0) || !(schemaId > 0)) return null as RunPref | null
+  const q = new URLSearchParams({
+    userId: String(userId),
+    tenantId: String(tenantId),
+    settingKey: "ead_run_source_tree_prefs",
+    contextType: "ead_run",
+    contextId: String(schemaId),
+  })
+  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as
+    | { value?: string | RunPref }
+    | null
+  if (!data) return null
+  const raw = typeof data.value === "string" ? (JSON.parse(data.value) as unknown) : data.value
+  if (!raw || typeof raw !== "object") return null
+  return raw as RunPref
+}
+
+export async function saveRunPrefs(
+  token: string,
+  userId: number,
+  tenantId: number,
+  schemaId: number,
+  prefs: RunPref,
+  http: Http = eadHttp(),
+) {
+  if (!(userId > 0) || !(tenantId > 0) || !(schemaId > 0)) return
+  await http(`${eadApi()}/settings/save`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      tenantId,
+      settingKey: "ead_run_source_tree_prefs",
+      settingValue: prefs,
+      contextType: "ead_run",
+      contextId: String(schemaId),
+    }),
+  }).catch(() => undefined)
 }
 
 export function authKind(target: string): "email" | "phone" {

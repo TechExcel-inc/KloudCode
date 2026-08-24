@@ -19,6 +19,34 @@ beforeEach(() => {
 })
 
 describe("theme preload", () => {
+  test("defaults to dark scheme before mount", () => {
+    run()
+
+    expect(document.documentElement.dataset.theme).toBe("oc-2")
+    expect(document.documentElement.dataset.colorScheme).toBe("dark")
+    expect(localStorage.getItem("opencode-color-scheme")).toBe("dark")
+    expect(localStorage.getItem("opencode-color-scheme-kloud-v1")).toBe("1")
+  })
+
+  test("migrates legacy light scheme to dark once", () => {
+    localStorage.setItem("opencode-color-scheme", "light")
+
+    run()
+
+    expect(document.documentElement.dataset.colorScheme).toBe("dark")
+    expect(localStorage.getItem("opencode-color-scheme")).toBe("dark")
+    expect(localStorage.getItem("opencode-color-scheme-kloud-v1")).toBe("1")
+  })
+
+  test("keeps explicit light scheme after migration flag", () => {
+    localStorage.setItem("opencode-color-scheme", "light")
+    localStorage.setItem("opencode-color-scheme-kloud-v1", "1")
+
+    run()
+
+    expect(document.documentElement.dataset.colorScheme).toBe("light")
+  })
+
   test("migrates legacy oc-1 to oc-2 before mount", () => {
     localStorage.setItem("opencode-theme-id", "oc-1")
     localStorage.setItem("opencode-theme-css-light", "--background-base:#fff;")
@@ -27,7 +55,7 @@ describe("theme preload", () => {
     run()
 
     expect(document.documentElement.dataset.theme).toBe("oc-2")
-    expect(document.documentElement.dataset.colorScheme).toBe("light")
+    expect(document.documentElement.dataset.colorScheme).toBe("dark")
     expect(localStorage.getItem("opencode-theme-id")).toBe("oc-2")
     expect(localStorage.getItem("opencode-theme-css-light")).toBeNull()
     expect(localStorage.getItem("opencode-theme-css-dark")).toBeNull()
@@ -36,6 +64,8 @@ describe("theme preload", () => {
 
   test("keeps cached css for non-default themes", () => {
     localStorage.setItem("opencode-theme-id", "nightowl")
+    localStorage.setItem("opencode-color-scheme", "light")
+    localStorage.setItem("opencode-color-scheme-kloud-v1", "1")
     localStorage.setItem("opencode-theme-css-light", "--background-base:#fff;")
 
     run()

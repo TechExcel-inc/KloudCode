@@ -12,6 +12,7 @@ import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
+import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_SIDEBAR_WIDTH = 344
@@ -19,6 +20,10 @@ const DEFAULT_FILE_TREE_WIDTH = 200
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
 const DEFAULT_PLUGIN_PANEL_WIDTH = 300
+const DEFAULT_EAD_PANELS = {
+  [EAD_MAP_ID]: { opened: true, width: EAD_MAP_WIDTH },
+  [EAD_PILOT_ID]: { opened: true, width: EAD_PILOT_WIDTH },
+} as const
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
 export function getAvatarColors(key?: string) {
@@ -209,11 +214,31 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return next
       })()
 
+      const panels = value.pluginPanels
+      const eadOpen = value.eadDefaultOpenV1 === true
+      const migratedPanels = (() => {
+        if (eadOpen) return panels
+        const base = isRecord(panels) ? { ...panels } : {}
+        const map = isRecord(base[EAD_MAP_ID]) ? base[EAD_MAP_ID] : {}
+        const pilot = isRecord(base[EAD_PILOT_ID]) ? base[EAD_PILOT_ID] : {}
+        base[EAD_MAP_ID] = {
+          opened: true,
+          width: typeof map.width === "number" ? map.width : EAD_MAP_WIDTH,
+        }
+        base[EAD_PILOT_ID] = {
+          opened: true,
+          width: typeof pilot.width === "number" ? pilot.width : EAD_PILOT_WIDTH,
+        }
+        return base
+      })()
+
       if (
         migratedSidebar === sidebar &&
         migratedReview === review &&
         migratedFileTree === fileTree &&
-        migratedSessionTabs === sessionTabs
+        migratedSessionTabs === sessionTabs &&
+        migratedPanels === panels &&
+        eadOpen
       ) {
         return value
       }
@@ -224,10 +249,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         review: migratedReview,
         fileTree: migratedFileTree,
         sessionTabs: migratedSessionTabs,
+        pluginPanels: migratedPanels,
+        eadDefaultOpenV1: true,
       }
     }
 
-    const target = Persist.global("layout", ["layout.v6"])
+    const target = Persist.global("layout.v7", ["layout", "layout.v6"])
     const [store, setStore, _, ready] = persisted(
       { ...target, migrate },
       createStore({
@@ -253,7 +280,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         session: {
           width: DEFAULT_SESSION_WIDTH,
         },
-        pluginPanels: {} as Record<string, { opened: boolean; width: number }>,
+        pluginPanels: { ...DEFAULT_EAD_PANELS } as Record<string, { opened: boolean; width: number }>,
+        eadDefaultOpenV1: true,
         mobileSidebar: {
           opened: false,
         },

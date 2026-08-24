@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
-import { peekPilot, queuePilot, takePilot, type PilotAction } from "@/ead/actions"
+import { peekPilot, queuePilot, takePilot, watchPilot, type PilotAction } from "@/ead/actions"
 import { loadContext, loadSubtreePaths, loadTeamMembers, reconcileJobs } from "@/ead/api"
 import {
   applyPilotAction,
@@ -96,6 +96,16 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     openPilot(layout.pluginPanel)
     applyPilotAction(frame(), next, product())
   }
+
+  createEffect(() => {
+    const stop = watchPilot((next) => {
+      if (!panelOpen()) return
+      setAction(next)
+      applyPilotAction(frame(), next, product())
+      void takePilot()
+    })
+    onCleanup(stop)
+  })
 
   const chat = async (text: string, auto = true) =>
     sendChat({
@@ -201,8 +211,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
 
       handlePluginMessage(msg, {
         setToken: (token) => ead.setToken(token),
-        setProduct: (id, name) => ead.setProduct(id, name),
         setNode: (id, name) => {
+          ead.setView("pfm")
           ead.setNode(id, name)
           const token = ead.token()
           if (!token) return
@@ -219,6 +229,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
           ead.setWorkContext(id)
         },
         setSource: (id, name, path) => {
+          ead.setView("source")
           ead.setSource(id, name, path)
           const token = ead.token()
           if (!token) return
@@ -252,6 +263,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         queueSetup: () => launch({ kind: "setup" }),
         queueSetupSource: () => launch({ kind: "setupSource" }),
         queueMindmap: () => launch({ kind: "mindmap" }),
+        queueCrawl: () => launch({ kind: "crawl" }),
+        queueHelp: (tipId) => launch({ kind: "help", tipId }),
         syncAuth: () => push(el),
         noteHeartbeat: () => setBeat(Date.now()),
         clipboard: (requestId) => {
