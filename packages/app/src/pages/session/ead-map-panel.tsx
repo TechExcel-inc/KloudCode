@@ -8,7 +8,6 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
@@ -57,6 +56,7 @@ import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } fr
 import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
 import { expandKey, useEad } from "@/ead/settings"
+import { eadHttp } from "@/ead/http"
 import {
   buildTree,
   collectIds,
@@ -403,14 +403,13 @@ function Choice(props: {
 export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
   const language = useLanguage()
-  const platform = usePlatform()
   const prompt = usePrompt()
   const params = useParams()
   const ead = useEad()
   const sdk = useSDK()
   const dialog = useDialog()
   const isDesktop = createMediaQuery("(min-width: 768px)")
-  const http = () => platform.fetch ?? globalThis.fetch
+  const http = () => eadHttp()
   const lang = () => ead.language()
   const tx = (key: Parameters<typeof t>[1], vars?: Record<string, string | number>) => t(lang(), key, vars)
 

@@ -16,6 +16,7 @@ import {
 } from "@opencode-ai/app"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { invoke } from "@tauri-apps/api/core"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link"
 import { open, save } from "@tauri-apps/plugin-dialog"
@@ -60,6 +61,28 @@ const listenForDeepLinks = async () => {
   const startUrls = await getCurrent().catch(() => null)
   if (startUrls?.length) emitDeepLinks(startUrls)
   await onOpenUrl((urls) => emitDeepLinks(urls)).catch(() => undefined)
+}
+
+const EAD_RE = /(^https?:\/\/)?([\w.-]*\.)?eadfm\.com\b|\/\/(127\.0\.0\.1|localhost):8081\b/i
+
+function urlOf(input: RequestInfo | URL) {
+  if (typeof input === "string") return input
+  if (input instanceof URL) return input.href
+  return input.url
+}
+
+async function eadViaRust(url: string, init?: RequestInit) {
+  const rows: [string, string][] = []
+  if (init?.headers) {
+    const map = init.headers instanceof Headers ? init.headers : new Headers(init.headers)
+    for (const [k, v] of map) rows.push([k, v])
+  }
+  const body = typeof init?.body === "string" ? init.body : null
+  const method = (init?.method ?? "GET").toUpperCase()
+  const result = await invoke<{ status: number; body: string }>("ead_fetch", {
+    input: { url, method, headers: rows, body },
+  })
+  return new Response(result.body, { status: result.status })
 }
 
 const createPlatform = (): Platform => {
@@ -336,11 +359,10 @@ const createPlatform = (): Platform => {
     },
 
     fetch: (input, init) => {
-      if (input instanceof Request) {
-        return tauriFetch(input)
-      } else {
-        return tauriFetch(input, init)
-      }
+      const url = urlOf(input)
+      if (EAD_RE.test(url)) return eadViaRust(url, init)
+      if (input instanceof Request) return tauriFetch(input)
+      return tauriFetch(input, init)
     },
 
     getWslEnabled: async () => {

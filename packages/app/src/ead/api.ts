@@ -102,6 +102,16 @@ function headers(token: string) {
   return out
 }
 
+async function readJson(res: Response) {
+  const text = await res.text()
+  if (!text.trim()) throw new Error(`Empty response (HTTP ${res.status})`)
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    throw new Error(`Non-JSON response (HTTP ${res.status}): ${text.slice(0, 160)}`)
+  }
+}
+
 async function call(http: Http, path: string, token: string, init?: RequestInit) {
   const res = await http(`${eadApi()}${path}`, {
     ...init,
@@ -114,7 +124,7 @@ async function call(http: Http, path: string, token: string, init?: RequestInit)
   })
   if (res.status === 401 || res.status === 403) throw new Error("AUTH_EXPIRED")
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  return readJson(res)
 }
 
 function asProduct(node: TreeNode): Product | undefined {
@@ -319,7 +329,7 @@ export async function login(identifier: string, password: string, http: Http = e
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
-  const data = (await res.json()) as AuthResult
+  const data = (await readJson(res)) as AuthResult
   if (!res.ok || !data.success || !data.token) {
     throw new Error(data.message || `Login failed (HTTP ${res.status})`)
   }
@@ -558,7 +568,7 @@ export async function createJob(
     }
     throw new Error(detail || `Failed to create task (HTTP ${res.status}).`)
   }
-  return res.json() as Promise<Record<string, unknown>>
+  return readJson(res) as Promise<Record<string, unknown>>
 }
 
 export async function reconcileJobs(
@@ -591,7 +601,7 @@ export async function reconcileJobs(
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
   if (!res.ok) throw new Error(`Failed to reconcile AI coding jobs (HTTP ${res.status}).`)
-  const data = (await res.json()) as Record<string, unknown>
+  const data = (await readJson(res)) as Record<string, unknown>
   const jobs = Array.isArray(data.jobs) ? data.jobs : []
   return {
     created: jobs.length,
@@ -718,7 +728,7 @@ export async function suggestProduct(
       headers: headers(token),
     }).catch(() => null)
     if (!res || !res.ok) continue
-    const schema = (await res.json().catch(() => null)) as Record<string, unknown> | null
+    const schema = (await readJson(res).catch(() => null)) as Record<string, unknown> | null
     if (!schema) continue
     const repos = (schema.linkedRepos ?? schema.linked_repos) as Array<Record<string, unknown>> | undefined
     if (!Array.isArray(repos)) continue
@@ -777,7 +787,7 @@ export async function loadSourceSchema(token: string, productId: number, http: H
   })
   if (res.status === 404) return
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const schema = (await res.json()) as Record<string, unknown>
+  const schema = (await readJson(res)) as Record<string, unknown>
   const legacy = Number(schema.legacySourceSchemaId ?? schema.legacy_source_schema_id ?? 0)
   const schemaId = Number(schema.schemaId ?? schema.schema_id ?? schema.id ?? 0)
   const candidates: number[] = []
@@ -913,7 +923,7 @@ async function authPost(path: string, body: Record<string, unknown>, http: Http)
   }).catch((err) => {
     throw new Error(err instanceof Error ? err.message : "Load failed")
   })
-  const data = (await res.json()) as AuthResult & {
+  const data = (await readJson(res)) as AuthResult & {
     code?: string
     signupToken?: string
   }
