@@ -15,6 +15,7 @@ import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
+import { findMsg, upsertMsg } from "@/utils/message-order"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -184,16 +185,16 @@ export function applyDirectoryEvent(input: {
         input.setStore("message", info.sessionID, [info])
         break
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (result.found) {
-        input.setStore("message", info.sessionID, result.index, reconcile(info))
+      const at = findMsg(messages, info.id)
+      if (at >= 0) {
+        input.setStore("message", info.sessionID, at, reconcile(info))
         break
       }
       input.setStore(
         "message",
         info.sessionID,
         produce((draft) => {
-          draft.splice(result.index, 0, info)
+          upsertMsg(draft, info)
         }),
       )
       break
@@ -204,8 +205,8 @@ export function applyDirectoryEvent(input: {
         produce((draft) => {
           const messages = draft.message[props.sessionID]
           if (messages) {
-            const result = Binary.search(messages, props.messageID, (m) => m.id)
-            if (result.found) messages.splice(result.index, 1)
+            const at = findMsg(messages, props.messageID)
+            if (at >= 0) messages.splice(at, 1)
           }
           delete draft.part[props.messageID]
         }),

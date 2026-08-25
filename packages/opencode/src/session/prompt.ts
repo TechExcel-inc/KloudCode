@@ -1340,11 +1340,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const hasToolCalls =
               lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
 
+            // Compare by created time, not id string. Message IDs encode a truncated
+            // timestamp that wrapped around 2026-08-14, so lexicographic id order can
+            // put older replies after newer prompts and skip generation entirely.
             if (
               lastAssistant?.finish &&
               !["tool-calls"].includes(lastAssistant.finish) &&
               !hasToolCalls &&
-              lastUser.id < lastAssistant.id
+              lastUser.time.created < lastAssistant.time.created
             ) {
               yield* slog.info("exiting loop")
               break

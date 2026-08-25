@@ -76,7 +76,14 @@ export namespace SessionRevert {
         if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
         yield* snap.revert(patches)
         if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot as string)
-        const range = all.filter((msg) => msg.info.id >= rev!.messageID)
+        const anchor = all.find((msg) => msg.info.id === rev!.messageID)
+        const range = all.filter((msg) => {
+          if (!anchor) return msg.info.id >= rev!.messageID
+          if (msg.info.time.created !== anchor.info.time.created) {
+            return msg.info.time.created >= anchor.info.time.created
+          }
+          return msg.info.id >= rev!.messageID
+        })
         const diffs = yield* summary.computeDiff({ messages: range })
         yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
         yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
@@ -107,19 +114,24 @@ export namespace SessionRevert {
         const sessionID = session.id
         const msgs = yield* sessions.messages({ sessionID })
         const messageID = session.revert.messageID
+        const anchor = msgs.find((msg) => msg.info.id === messageID)
         const remove = [] as MessageV2.WithParts[]
         let target: MessageV2.WithParts | undefined
         for (const msg of msgs) {
-          if (msg.info.id < messageID) continue
-          if (msg.info.id > messageID) {
+          if (msg.info.id === messageID) {
+            if (session.revert.partID) {
+              target = msg
+              continue
+            }
             remove.push(msg)
             continue
           }
-          if (session.revert.partID) {
-            target = msg
-            continue
-          }
-          remove.push(msg)
+          const after = anchor
+            ? msg.info.time.created !== anchor.info.time.created
+              ? msg.info.time.created > anchor.info.time.created
+              : msg.info.id > messageID
+            : msg.info.id > messageID
+          if (after) remove.push(msg)
         }
         for (const msg of remove) {
           SyncEvent.run(MessageV2.Event.Removed, {

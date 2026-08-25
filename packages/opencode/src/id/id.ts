@@ -64,22 +64,25 @@ export namespace Identifier {
     }
     counter++
 
+    // 8 bytes keeps ts*4096+counter monotonic past the 2026-08-14 6-byte wrap.
     let now = BigInt(currentTimestamp) * BigInt(0x1000) + BigInt(counter)
 
     now = descending ? ~now : now
 
-    const timeBytes = Buffer.alloc(6)
-    for (let i = 0; i < 6; i++) {
-      timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+    const timeBytes = Buffer.alloc(8)
+    for (let i = 0; i < 8; i++) {
+      timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
     }
 
-    return prefixes[prefix] + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+    return prefixes[prefix] + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 16)
   }
 
   /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
   export function timestamp(id: string): number {
     const prefix = id.split("_")[0]
-    const hex = id.slice(prefix.length + 1, prefix.length + 13)
+    const body = id.slice(prefix.length + 1)
+    // Legacy 6-byte (12 hex) ids wrapped in 2026; current ids use 8 bytes (16 hex).
+    const hex = body.length >= 16 ? body.slice(0, 16) : body.slice(0, 12)
     const encoded = BigInt("0x" + hex)
     return Number(encoded / BigInt(0x1000))
   }

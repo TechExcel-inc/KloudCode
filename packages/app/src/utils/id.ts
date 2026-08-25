@@ -50,18 +50,19 @@ function create(prefix: Prefix, descending: boolean, timestamp?: number): string
 
   counter += 1
 
+  // 8 bytes keeps ts*4096+counter monotonic past the 2026-08-14 6-byte wrap.
   let now = BigInt(currentTimestamp) * BigInt(0x1000) + BigInt(counter)
 
   if (descending) {
     now = ~now
   }
 
-  const timeBytes = new Uint8Array(6)
-  for (let i = 0; i < 6; i += 1) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  const timeBytes = new Uint8Array(8)
+  for (let i = 0; i < 8; i += 1) {
+    timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefixes[prefix] + "_" + bytesToHex(timeBytes) + randomBase62(LENGTH - 12)
+  return prefixes[prefix] + "_" + bytesToHex(timeBytes) + randomBase62(LENGTH - 16)
 }
 
 function bytesToHex(bytes: Uint8Array): string {

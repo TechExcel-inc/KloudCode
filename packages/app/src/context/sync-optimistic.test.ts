@@ -120,4 +120,28 @@ describe("sync optimistic reducers", () => {
       { id: "prt_2", type: "text", text: "prt_2" },
     ])
   })
+
+  test("applyOptimisticAdd inserts wrap-era message after older ff id by time", () => {
+    const sessionID = "ses_1"
+    const older = {
+      ...userMessage("msg_ff43a3445001old", sessionID),
+      time: { created: 1786508883013 },
+    }
+    const newer = {
+      ...userMessage("msg_02290c847001new", sessionID),
+      time: { created: 1787286308948 },
+    }
+    const draft = {
+      message: { [sessionID]: [older] },
+      part: {} as Record<string, Part[] | undefined>,
+    }
+
+    applyOptimisticAdd(draft, {
+      sessionID,
+      message: newer,
+      parts: [textPart("prt_1", sessionID, newer.id)],
+    })
+
+    expect(draft.message[sessionID]?.map((x) => x.id)).toEqual([older.id, newer.id])
+  })
 })
