@@ -11,6 +11,7 @@ export type PilotContext = {
   sourceName?: string
   sourcePath?: string
   mapId?: number
+  subSchemaId?: number
   openAiPilot?: boolean
   openAiFind?: boolean
   openSetup?: boolean
@@ -29,6 +30,7 @@ export type SourceOpts = {
   sourceId?: number
   sourcePath?: string
   sourceName?: string
+  linkedPaths?: string[]
 }
 
 export type BridgeHooks = {
@@ -50,7 +52,11 @@ export type BridgeHooks = {
   queueHelp?: (tipId: string) => void
   syncAuth?: () => void
   noteHeartbeat?: () => void
+  bridgeReady?: () => void
+  openExternal?: (url: string, windowName?: string) => void
+  openWebApp?: (opts?: { productId?: number; productName?: string; openEditProduct?: boolean }) => void
   clipboard?: (requestId: string) => void
+  writeClipboard?: (requestId: string, text: string) => void
   teamMembers?: (requestId: string, productId: number, token?: string) => void
   inject?: (text: string, label: string) => void
   codingJobs?: (msg: Record<string, unknown>) => void
@@ -99,6 +105,7 @@ export function buildPilotUrl(ctx: PilotContext) {
     if (ctx.nodeName) url.searchParams.set("entityName", ctx.nodeName)
   }
   if (ctx.mapId && ctx.mapId > 0) url.searchParams.set("mapId", String(ctx.mapId))
+  if (ctx.subSchemaId && ctx.subSchemaId > 0) url.searchParams.set("subSchemaId", String(ctx.subSchemaId))
   if (ctx.openAiPilot) url.searchParams.set("openAiPilot", "1")
   if (ctx.openAiFind) url.searchParams.set("openAiFind", "1")
   if (ctx.openSetup) url.searchParams.set("openSetup", "1")
@@ -133,9 +140,22 @@ export function postToFrame(frame: HTMLIFrameElement | undefined, payload: Recor
 
 /** Match Cursor shell: iframe listens for authTokenSync / authSyncComplete. */
 export function syncAuth(frame: HTMLIFrameElement | undefined, token: string) {
-  postToFrame(frame, { type: "authTokenSync", token: token || "" })
-  postToFrame(frame, { type: "authSyncComplete", hasToken: Boolean(token), token: token || "" })
-  postToFrame(frame, { type: "eadPfmSyncAuthToken", token: token || "" })
+  // Empty pushes wipe Pilot localStorage and flash the sign-in modal — skip unless explicit logout.
+  const t = token.trim()
+  if (!t) return
+  postToFrame(frame, { type: "authTokenSync", token: t })
+  postToFrame(frame, { type: "authSyncComplete", hasToken: true, token: t })
+  postToFrame(frame, { type: "eadPfmSyncAuthToken", token: t })
+}
+
+/** Cursor requestAuthSync always ACKs — including empty (hasToken:false). */
+export function syncAuthStatus(frame: HTMLIFrameElement | undefined, token: string) {
+  const t = token.trim()
+  if (t) {
+    syncAuth(frame, t)
+    return
+  }
+  postToFrame(frame, { type: "authSyncComplete", hasToken: false, token: "" })
 }
 
 export function openPilotDashboard(
@@ -219,11 +239,13 @@ export function openMindmap(
 }
 
 export function updateSourceSelection(frame: HTMLIFrameElement | undefined, opts?: SourceOpts) {
+  const linked = opts?.linkedPaths?.filter((p) => p.trim().length > 0) ?? []
   postToFrame(frame, {
     type: "updateSourceSelection",
     sourceCodeNodeId: opts?.sourceId,
     sourceCodeNodePath: opts?.sourcePath,
     sourceCodeNodeName: opts?.sourceName,
+    sourceLinkedFilePaths: linked.length ? JSON.stringify(linked) : undefined,
     productId: opts?.productId,
     productName: opts?.productName,
     entityName: opts?.sourceName,
@@ -307,6 +329,7 @@ export function applyPilotAction(
     sourceId: action?.sourceId,
     sourcePath: action?.sourcePath,
     sourceName: action?.sourceName,
+    linkedPaths: action?.linkedPaths,
   }
   if (!action || action.kind === "dashboard") {
     openPilotDashboard(frame, product)
@@ -382,6 +405,19 @@ export function replyClipboard(
     requestId,
     ok: result.ok,
     text: result.text || "",
+    message: result.message,
+  })
+}
+
+export function replyWriteClipboard(
+  frame: HTMLIFrameElement | undefined,
+  requestId: string,
+  result: { ok: boolean; message?: string },
+) {
+  postToFrame(frame, {
+    type: "writeClipboardTextResult",
+    requestId,
+    ok: result.ok,
     message: result.message,
   })
 }
@@ -463,8 +499,29 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
-  if (type === "pluginHeartbeat" || type === "hostBridgeReady") {
+  if (type === "openExternalUrl") {
+    const url = text(msg.url)
+    if (url) hooks.openExternal?.(url, text(msg.windowName) || undefined)
+    return true
+  }
+
+  if (type === "openEadPilotWebApp") {
+    hooks.openWebApp?.({
+      productId: num(msg.productId) || undefined,
+      productName: text(msg.productName) || undefined,
+      openEditProduct: msg.openEditProduct === "1" || msg.openEditProduct === true,
+    })
+    return true
+  }
+
+  if (type === "pluginHeartbeat") {
     hooks.noteHeartbeat?.()
+    return true
+  }
+
+  if (type === "hostBridgeReady") {
+    hooks.noteHeartbeat?.()
+    hooks.bridgeReady?.()
     return true
   }
 
@@ -574,6 +631,11 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
 
   if (type === "requestClipboardText") {
     hooks.clipboard?.(text(msg.requestId))
+    return true
+  }
+
+  if (type === "writeClipboardText") {
+    hooks.writeClipboard?.(text(msg.requestId), typeof msg.text === "string" ? msg.text : "")
     return true
   }
 

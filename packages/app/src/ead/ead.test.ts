@@ -161,6 +161,17 @@ describe("ead bridge", () => {
     expect(url.searchParams.get("_t")).toBe("3")
   })
 
+  test("buildPilotUrl includes subSchemaId", () => {
+    const url = new URL(
+      buildPilotUrl({
+        productId: 2,
+        subSchemaId: 7,
+        mode: "opencode",
+      }),
+    )
+    expect(url.searchParams.get("subSchemaId")).toBe("7")
+  })
+
   test("source selection prefers sourceCodeNodeId", () => {
     const url = new URL(
       buildPilotUrl({
@@ -221,6 +232,50 @@ describe("ead bridge", () => {
     )
     expect(calls).toEqual(["beat", "find:5", "jobs:r1"])
     expect(token).toBe("fresh")
+  })
+
+  test("hostBridgeReady invokes bridgeReady", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "hostBridgeReady" },
+      {
+        setToken: () => {},
+        noteHeartbeat: () => calls.push("beat"),
+        bridgeReady: () => calls.push("ready"),
+      },
+    )
+    expect(calls).toEqual(["beat", "ready"])
+  })
+
+  test("openExternalUrl and openEadPilotWebApp route to hooks", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "openExternalUrl", url: "https://eadfm.com", windowName: "ead" },
+      {
+        setToken: () => {},
+        openExternal: (url, name) => calls.push(`ext:${url}:${name}`),
+      },
+    )
+    handlePluginMessage(
+      { type: "openEadPilotWebApp", productId: 2, productName: "SW", openEditProduct: "1" },
+      {
+        setToken: () => {},
+        openWebApp: (opts) => calls.push(`web:${opts?.productId}:${opts?.openEditProduct}`),
+      },
+    )
+    expect(calls).toEqual(["ext:https://eadfm.com:ead", "web:2:true"])
+  })
+
+  test("writeClipboardText routes to hook", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "writeClipboardText", requestId: "w1", text: "hello" },
+      {
+        setToken: () => {},
+        writeClipboard: (id, text) => calls.push(`${id}:${text}`),
+      },
+    )
+    expect(calls).toEqual(["w1:hello"])
   })
 
   test("flags include crawl and help", () => {

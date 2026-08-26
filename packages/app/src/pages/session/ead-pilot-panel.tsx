@@ -6,6 +6,7 @@ import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
@@ -24,10 +25,12 @@ import {
   postPfmFilterCleared,
   postPfmFilterState,
   replyClipboard,
+  replyWriteClipboard,
   replyTeamMembers,
   requestSessionSync,
   setUiLanguage,
   syncAuth,
+  syncAuthStatus,
   type SourceOpts,
 } from "@/ead/bridge"
 import { sendChat } from "@/ead/composer"
@@ -53,6 +56,7 @@ function positive(value: unknown) {
 export function EadPilotPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
   const language = useLanguage()
+  const platform = usePlatform()
   const prompt = usePrompt()
   const sdk = useSDK()
   const params = useParams()
@@ -73,10 +77,38 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     if (panelOpen()) setAlive(true)
   })
 
+  const linkedUnder = (paths: string[], folder: string) => {
+    const root = folder.replace(/\/+$/, "")
+    if (!root) return []
+    return paths.filter((p) => p === root || p.startsWith(`${root}/`))
+  }
+
+  const selection = (): PilotAction | undefined => {
+    if (ead.view() === "source" && ead.sourceId() > 0) {
+      return {
+        kind: "source",
+        sourceId: ead.sourceId(),
+        sourcePath: ead.sourcePath() || undefined,
+        sourceName: ead.sourceName() || undefined,
+        linkedPaths: linkedUnder(readPfmFilter(ead.productId()).paths, ead.sourcePath()),
+      }
+    }
+    if (ead.nodeId() > 0) {
+      return {
+        kind: "pfm",
+        nodeId: ead.nodeId(),
+        nodeName: ead.nodeName() || undefined,
+      }
+    }
+    return undefined
+  }
+
   const src = createMemo(() => {
+    // Keep shell URL product-scoped; node/source changes soft-update via postMessage (Cursor parity).
     return buildPilotUrl({
       productId: ead.productId(),
       productName: ead.productName(),
+      subSchemaId: ead.subSchemaId() || undefined,
       language: ead.language(),
       mode: ead.pilotMode(),
       bust: ead.pilotBust(),
@@ -122,9 +154,9 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     setUiLanguage(el, ead.language())
     requestSessionSync(el)
     pingHost(el)
-    const pending = takePilot() ?? action()
+    const pending = takePilot() ?? action() ?? selection()
     if (pending) setAction(pending)
-    applyPilotAction(el, pending, product())
+    applyPilotAction(el, pending ?? { kind: "dashboard" }, product())
     const pid = ead.productId()
     if (pid > 0) {
       const owner = readOwner(pid)
@@ -171,8 +203,16 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     void token
     void lang
     setBeat(Date.now())
-    const timers = [400, 1200, 2500].map((ms) => window.setTimeout(() => push(el), ms))
-    onCleanup(() => timers.forEach((t) => window.clearTimeout(t)))
+    let stopped = false
+    const run = () => {
+      if (stopped) return
+      push(el)
+    }
+    const timers = [0, 50, 150, 400, 800].map((ms) => window.setTimeout(run, ms))
+    onCleanup(() => {
+      stopped = true
+      timers.forEach((t) => window.clearTimeout(t))
+    })
   })
 
   createEffect(() => {
@@ -265,8 +305,40 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         queueMindmap: () => launch({ kind: "mindmap" }),
         queueCrawl: () => launch({ kind: "crawl" }),
         queueHelp: (tipId) => launch({ kind: "help", tipId }),
-        syncAuth: () => push(el),
+        syncAuth: () => {
+          syncAuthStatus(el, ead.token())
+          requestSessionSync(el)
+        },
         noteHeartbeat: () => setBeat(Date.now()),
+        bridgeReady: () => {
+          setBeat(Date.now())
+          push(el)
+        },
+        openExternal: (url, name) => {
+          if (name) {
+            const win = window.open(url, name)
+            if (win) {
+              try {
+                win.focus()
+              } catch {
+                /* cross-origin */
+              }
+              return
+            }
+          }
+          platform.openLink(url)
+        },
+        openWebApp: (opts) => {
+          if (opts?.openEditProduct && opts.productId && opts.productId > 0) {
+            const url = new URL("https://eadfm.com/plugin/ai-code")
+            url.searchParams.set("productId", String(opts.productId))
+            if (opts.productName) url.searchParams.set("productName", opts.productName)
+            url.searchParams.set("openEditProduct", "1")
+            platform.openLink(url.toString())
+            return
+          }
+          platform.openLink(eadServer())
+        },
         clipboard: (requestId) => {
           void navigator.clipboard
             .readText()
@@ -275,6 +347,17 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               replyClipboard(el, requestId, {
                 ok: false,
                 message: e instanceof Error ? e.message : "Clipboard read failed.",
+              }),
+            )
+        },
+        writeClipboard: (requestId, text) => {
+          void navigator.clipboard
+            .writeText(text)
+            .then(() => replyWriteClipboard(el, requestId, { ok: true }))
+            .catch((e) =>
+              replyWriteClipboard(el, requestId, {
+                ok: false,
+                message: e instanceof Error ? e.message : "Clipboard write failed.",
               }),
             )
         },
@@ -423,7 +506,13 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                   return Number.isFinite(n) && n > 0 ? [n] : []
                 })
               : readPfmFilter(pid).ids
-          const active = ids.length > 0 && (raw.active !== undefined ? raw.active === true : true)
+          const active =
+            ids.length > 0 &&
+            (raw.filterActive !== undefined
+              ? raw.filterActive === true
+              : raw.active !== undefined
+                ? raw.active === true
+                : true)
           const given = Array.isArray(raw.linkedPaths)
             ? raw.linkedPaths.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
             : []
@@ -499,7 +588,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                 ref={setFrame}
                 src={src()}
                 class="size-full border-0"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
                 allow="clipboard-read; clipboard-write"
                 title="EAD Pilot"
                 onLoad={() => push(frame())}

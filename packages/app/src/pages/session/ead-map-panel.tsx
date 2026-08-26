@@ -575,6 +575,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     sourceName: ead.sourceName() || undefined,
   })
 
+  const linkedUnder = (paths: string[], folder: string) => {
+    const root = folder.replace(/\/+$/, "")
+    if (!root) return []
+    return paths.filter((p) => p === root || p.startsWith(`${root}/`))
+  }
+
   const folder = () => {
     const dir = String(sdk.directory || "").replace(/[/\\]+$/, "")
     const parts = dir.split(/[/\\]/).filter(Boolean)
@@ -765,9 +771,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   let gen = 0
   const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
+    const soft = opts?.soft === true
+    // Soft poll must not cancel an in-flight full refresh (that left the loading banner stuck).
+    if (soft && busy()) return
     const run = ++gen
     const live = () => run === gen
-    const soft = opts?.soft === true
     const token = ead.token()
     beginDiag()
     noteDiag("Startup", true, soft ? "Soft refresh" : "Loading product list from API")
@@ -926,7 +934,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setMapName("")
       clearCounts()
     } finally {
-      if (live() && !soft) setBusy(false)
+      if (!live()) return
+      if (!soft) setBusy(false)
+      // Soft refresh bumps gen and can supersede a non-soft run that left the loading banner up.
+      if (banner()?.kind === "loading") setBanner(null)
     }
   }
 
@@ -1012,6 +1023,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         sourceId: node.nodeId,
         sourcePath: node.nodePath,
         sourceName: node.nodeName,
+        linkedPaths: linkedUnder(pfmFilter().paths, node.nodePath),
       })
     }
     void applyContext(node.nodeId, node.nodeName, "source")
@@ -2157,41 +2169,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     </Show>
                   </div>
                 </Show>
-              </div>
-
-              <div class="navigator-scroll flex-1 min-h-0 overflow-y-auto px-3 py-2 flex flex-col gap-2">
-                <Show when={banner()}>
-                  <div
-                    class="px-2 py-1 rounded text-11-regular border"
-                    classList={{
-                      "border-border-weaker-base text-text-weak": banner()!.kind === "loading",
-                      "border-border-weak-base text-text-strong bg-surface-base-active": banner()!.kind === "ok",
-                      "border-border-weak-base text-text-weak": banner()!.kind === "error",
-                    }}
-                  >
-                    {banner()!.text}
-                  </div>
-                </Show>
-
-                <Show when={diag()}>
-                  <pre class="px-2 py-1.5 rounded border border-border-weaker-base text-11-regular font-mono text-text-weak whitespace-pre-wrap break-words">
-                    {`${tx("diagTitle")}
-env=${ead.env()}
-api=${eadApi()}
-auth=${ead.token() ? "yes" : "no"}
-mcp=${ead.mcpEntry() || "-"}
-productId=${ead.productId()}
-mapId=${ead.mapId()} schemaId=${ead.schemaId()} subSchemaId=${ead.subSchemaId()}
-nodeId=${ead.nodeId()} sourceId=${ead.sourceId()}
-view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}
-workContextId=${ead.workContextId()}
-pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}
-owner=${owner().enabled ? ownerSummary(owner()) : "off"}
-err=${err() || "-"}
-${pipeline()}`}
-                  </pre>
-                </Show>
-
                 <div class="tree-toolbar-row flex items-center gap-1 flex-wrap" data-ead-menu>
                   <div class="relative">
                     <button
@@ -2399,6 +2376,41 @@ ${pipeline()}`}
                     </div>
                   </Show>
                 </div>
+
+              </div>
+
+              <div class="navigator-scroll flex-1 min-h-0 overflow-y-auto px-3 py-2 flex flex-col gap-2">
+                <Show when={banner()}>
+                  <div
+                    class="px-2 py-1 rounded text-11-regular border"
+                    classList={{
+                      "border-border-weaker-base text-text-weak": banner()!.kind === "loading",
+                      "border-border-weak-base text-text-strong bg-surface-base-active": banner()!.kind === "ok",
+                      "border-border-weak-base text-text-weak": banner()!.kind === "error",
+                    }}
+                  >
+                    {banner()!.text}
+                  </div>
+                </Show>
+
+                <Show when={diag()}>
+                  <pre class="px-2 py-1.5 rounded border border-border-weaker-base text-11-regular font-mono text-text-weak whitespace-pre-wrap break-words">
+                    {`${tx("diagTitle")}
+env=${ead.env()}
+api=${eadApi()}
+auth=${ead.token() ? "yes" : "no"}
+mcp=${ead.mcpEntry() || "-"}
+productId=${ead.productId()}
+mapId=${ead.mapId()} schemaId=${ead.schemaId()} subSchemaId=${ead.subSchemaId()}
+nodeId=${ead.nodeId()} sourceId=${ead.sourceId()}
+view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}
+workContextId=${ead.workContextId()}
+pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}
+owner=${owner().enabled ? ownerSummary(owner()) : "off"}
+err=${err() || "-"}
+${pipeline()}`}
+                  </pre>
+                </Show>
 
                 <Show when={ead.view() === "source"}>
                   <div class="source-scope-bar flex gap-1" data-ead-menu>

@@ -298,7 +298,7 @@ fn wsl_path(path: String, mode: Option<WslPathMode>) -> Result<String, String> {
 pub fn run() {
     let builder = make_specta_builder();
 
-    #[cfg(debug_assertions)] // <- Only export on non-release builds
+    #[cfg(debug_assertions)]
     export_types(&builder);
 
     cli::sweep_sidecar_processes();
@@ -406,12 +406,13 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
 }
 
 fn export_types(builder: &tauri_specta::Builder<tauri::Wry>) {
-    builder
-        .export(
-            specta_typescript::Typescript::default(),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export typescript bindings");
+    // Packaged debug apps often start with cwd outside the repo; never abort launch.
+    if let Err(err) = builder.export(
+        specta_typescript::Typescript::default(),
+        "../src/bindings.ts",
+    ) {
+        eprintln!("skip typescript binding export: {err}");
+    }
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ export type PilotAction = {
   sourceId?: number
   sourcePath?: string
   sourceName?: string
+  linkedPaths?: string[]
   nodeId?: number
   nodeName?: string
   tipId?: string
