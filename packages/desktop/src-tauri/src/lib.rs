@@ -1,3 +1,4 @@
+mod asset;
 mod cli;
 mod constants;
 mod ead;
@@ -339,6 +340,10 @@ pub fn run() {
             // Hold the guard in managed state so it lives for the app's lifetime,
             // ensuring all buffered logs are flushed on shutdown.
             handle.manage(logging::init(&log_dir));
+
+            if let Some(port) = asset::boot(&handle) {
+                handle.manage(port);
+            }
 
             builder.mount_events(&handle);
             tauri::async_runtime::spawn(initialize(handle));

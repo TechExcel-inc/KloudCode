@@ -49,11 +49,11 @@ impl MainWindow {
             .unwrap_or(false);
         let decorations = use_decorations();
         let window_builder = base_window_config(
-            WebviewWindowBuilder::new(app, Self::LABEL, WebviewUrl::App("/".into())),
+            WebviewWindowBuilder::new(app, Self::LABEL, page(app, "/")),
             app,
             decorations,
         )
-        .title("OpenCode")
+        .title("KloudCode")
         .disable_drag_drop_handler()
         .zoom_hotkeys_enabled(false)
         .visible(true)
@@ -132,7 +132,7 @@ impl LoadingWindow {
         let decorations = use_decorations();
 
         let window_builder = base_window_config(
-            WebviewWindowBuilder::new(app, Self::LABEL, tauri::WebviewUrl::App("/loading".into())),
+            WebviewWindowBuilder::new(app, Self::LABEL, page(app, "/loading")),
             app,
             decorations,
         )
@@ -143,6 +143,14 @@ impl LoadingWindow {
 
         Ok(Self(window_builder.build()?))
     }
+}
+
+fn page(app: &AppHandle, path: &str) -> WebviewUrl {
+    let Some(port) = app.try_state::<crate::asset::Port>() else {
+        return WebviewUrl::App(path.into());
+    };
+    let href = format!("http://127.0.0.1:{}{path}", port.0);
+    WebviewUrl::External(href.parse().expect("asset url"))
 }
 
 fn base_window_config<'a, R: Runtime, M: Manager<R>>(
