@@ -1,7 +1,7 @@
-import { batch, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
+import { batch, createMemo, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
-import { makeEventListener } from "@solid-primitives/event-listener"
 import { same } from "@/utils/same"
+import { EAD_MAP_ID, EAD_PILOT_ID } from "@/ead/urls"
 
 const emptyTabs: string[] = []
 
@@ -153,42 +153,55 @@ export const getTabReorderIndex = (tabs: readonly string[], from: string, to: st
 
 export const createSizing = () => {
   const [state, setState] = createStore({ active: false })
-  let t: number | undefined
+  let depth = 0
 
-  const stop = () => {
-    if (t !== undefined) {
-      clearTimeout(t)
-      t = undefined
-    }
-    setState("active", false)
-  }
-
-  const start = () => {
-    if (t !== undefined) {
-      clearTimeout(t)
-      t = undefined
-    }
+  const begin = () => {
+    depth += 1
     setState("active", true)
   }
 
-  onMount(() => {
-    makeEventListener(window, "pointerup", stop)
-    makeEventListener(window, "pointercancel", stop)
-    makeEventListener(window, "blur", stop)
-  })
-
-  onCleanup(() => {
-    if (t !== undefined) clearTimeout(t)
-  })
+  const end = () => {
+    depth = Math.max(0, depth - 1)
+    if (depth === 0) setState("active", false)
+  }
 
   return {
     active: () => state.active,
-    start,
-    touch() {
-      start()
-      t = window.setTimeout(stop, 120)
-    },
+    begin,
+    end,
+    start: begin,
+    stop: end,
   }
 }
 
+export const RESIZE_MIN = 0
+
+export const resizeMax = () => (typeof window === "undefined" ? 10000 : window.innerWidth)
+
+export const resizeActive =
+  (...items: Sizing[]) =>
+  () =>
+    items.some((item) => item.active())
+
 export type Sizing = ReturnType<typeof createSizing>
+
+type EadLayout = {
+  session: { width: () => number; resize: (width: number) => void }
+  pluginPanel: {
+    width: (id: string) => () => number
+    resize: (id: string, width: number) => void
+  }
+}
+
+export const resizeEadPanel = (layout: EadLayout, input: { id: string; width: number; review: boolean }) => {
+  const map = layout.pluginPanel.width(EAD_MAP_ID)()
+  const pilot = layout.pluginPanel.width(EAD_PILOT_ID)()
+  const chat = layout.session.width() - map - pilot
+
+  layout.pluginPanel.resize(input.id, input.width)
+  if (!input.review) return
+
+  const nextMap = input.id === EAD_MAP_ID ? input.width : map
+  const nextPilot = input.id === EAD_PILOT_ID ? input.width : pilot
+  layout.session.resize(nextMap + nextPilot + Math.max(0, chat))
+}

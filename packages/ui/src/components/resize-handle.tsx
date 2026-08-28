@@ -7,6 +7,8 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
   min: number
   max: number
   onResize: (size: number) => void
+  onDragStart?: () => void
+  onDragEnd?: () => void
   onCollapse?: () => void
   collapseThreshold?: number
 }
@@ -19,23 +21,40 @@ export function ResizeHandle(props: ResizeHandleProps) {
     "min",
     "max",
     "onResize",
+    "onDragStart",
+    "onDragEnd",
     "onCollapse",
     "collapseThreshold",
     "class",
     "classList",
   ])
 
-  const handleMouseDown = (e: MouseEvent) => {
+  const handlePointerDown = (e: PointerEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    const target = e.currentTarget as HTMLElement
+    target.setPointerCapture(e.pointerId)
+
     const edge = local.edge ?? (local.direction === "vertical" ? "start" : "end")
     const start = local.direction === "horizontal" ? e.clientX : e.clientY
     const startSize = local.size
     let current = startSize
+    let frame = 0
+    let pending: number | undefined
 
     document.body.style.userSelect = "none"
     document.body.style.overflow = "hidden"
+    local.onDragStart?.()
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    const flush = () => {
+      frame = 0
+      if (pending === undefined) return
+      const clamped = Math.min(local.max, Math.max(local.min, pending))
+      local.onResize(clamped)
+      pending = undefined
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
       const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
       const delta =
         local.direction === "vertical"
@@ -46,15 +65,21 @@ export function ResizeHandle(props: ResizeHandleProps) {
             ? start - pos
             : pos - start
       current = startSize + delta
-      const clamped = Math.min(local.max, Math.max(local.min, current))
-      local.onResize(clamped)
+      pending = current
+      if (!frame) frame = requestAnimationFrame(flush)
     }
 
-    const onMouseUp = () => {
+    const onPointerUp = (upEvent: PointerEvent) => {
+      if (frame) cancelAnimationFrame(frame)
+      flush()
+
       document.body.style.userSelect = ""
       document.body.style.overflow = ""
-      document.removeEventListener("mousemove", onMouseMove)
-      document.removeEventListener("mouseup", onMouseUp)
+      target.releasePointerCapture(upEvent.pointerId)
+      target.removeEventListener("pointermove", onPointerMove)
+      target.removeEventListener("pointerup", onPointerUp)
+      target.removeEventListener("pointercancel", onPointerUp)
+      local.onDragEnd?.()
 
       const threshold = local.collapseThreshold ?? 0
       if (local.onCollapse && threshold > 0 && current < threshold) {
@@ -62,8 +87,9 @@ export function ResizeHandle(props: ResizeHandleProps) {
       }
     }
 
-    document.addEventListener("mousemove", onMouseMove)
-    document.addEventListener("mouseup", onMouseUp)
+    target.addEventListener("pointermove", onPointerMove)
+    target.addEventListener("pointerup", onPointerUp)
+    target.addEventListener("pointercancel", onPointerUp)
   }
 
   return (
@@ -76,7 +102,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
         ...(local.classList ?? {}),
         [local.class ?? ""]: !!local.class,
       }}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handlePointerDown}
     />
   )
 }

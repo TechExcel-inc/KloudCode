@@ -11,6 +11,8 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
+import { resizeEadPanel } from "@/pages/session/helpers"
+import { useSessionLayout } from "@/pages/session/session-layout"
 import { queuePilot } from "@/ead/actions"
 import {
   createJob,
@@ -402,6 +404,7 @@ function Choice(props: {
 
 export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
+  const { view } = useSessionLayout()
   const language = useLanguage()
   const prompt = usePrompt()
   const params = useParams()
@@ -416,6 +419,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const opened = layout.pluginPanel.opened(EAD_MAP_ID)
   const width = layout.pluginPanel.width(EAD_MAP_ID)
   const panelOpen = createMemo(() => isDesktop() && opened())
+  const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const panelWidth = createMemo(() => (panelOpen() ? `${width()}px` : "0px"))
 
   const [products, setProducts] = createSignal<Product[]>([])
@@ -2547,19 +2551,18 @@ ${pipeline()}`}
         </div>
 
         <Show when={panelOpen()}>
-          <div onPointerDown={() => props.sizing.start()}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="end"
-              size={width()}
-              min={EAD_MAP_MIN}
-              max={EAD_MAP_MAX}
-              onResize={(w) => {
-                props.sizing.touch()
-                layout.pluginPanel.resize(EAD_MAP_ID, w)
-              }}
-            />
-          </div>
+          <ResizeHandle
+            direction="horizontal"
+            edge="end"
+            size={width()}
+            min={EAD_MAP_MIN}
+            max={EAD_MAP_MAX}
+            onDragStart={() => props.sizing.begin()}
+            onDragEnd={() => props.sizing.end()}
+            onResize={(w) => {
+              resizeEadPanel(layout, { id: EAD_MAP_ID, width: w, review: reviewOpen() })
+            }}
+          />
         </Show>
       </aside>
     </Show>

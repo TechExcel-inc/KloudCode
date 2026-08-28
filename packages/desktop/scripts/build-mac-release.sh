@@ -22,9 +22,14 @@ if ! command -v bun >/dev/null; then
 fi
 
 # Offline models.dev snapshot (avoids network during CLI build)
+snapshot="$root/packages/opencode/src/provider/models-snapshot.js"
+if [[ ! -f "$snapshot" ]]; then
+  echo "error: missing $snapshot — run: cd packages/opencode && bun run build" >&2
+  exit 1
+fi
 python3 - <<PY
 from pathlib import Path
-s = Path("$root/packages/opencode/src/provider/models-snapshot.js").read_text()
+s = Path("$snapshot").read_text()
 key = "export const snapshot = "
 i = s.index(key) + len(key)
 Path("/tmp/models-api.json").write_text(s[i:].strip())
@@ -62,16 +67,34 @@ export TAURI_ENV_TARGET_TRIPLE="$target"
 export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 export MODELS_DEV_API_JSON=/tmp/models-api.json
+export OPENCODE_REBUILD_SIDECAR=1
 
-echo "==> predev (sidecar) version=$ver target=$target"
+echo "==> predev (sidecar rebuild) version=$ver target=$target"
 cd "$desktop"
 bun ./scripts/predev.ts
+
+sidecar="$desktop/src-tauri/sidecars/opencode-cli-$target"
+if [[ ! -f "$sidecar" ]]; then
+  echo "error: sidecar not found at $sidecar" >&2
+  exit 1
+fi
+if ! rg -q 'kloudcode' "$sidecar"; then
+  echo "error: sidecar missing kloudcode brand (stale opencode binary?)" >&2
+  exit 1
+fi
+echo "==> sidecar ok ($(wc -c < "$sidecar" | tr -d ' ') bytes, kloudcode brand verified)"
 
 echo "==> tauri build (unsigned release)"
 bun run tauri build --target "$target" --config ./src-tauri/tauri.unsigned.conf.json
 
 bundle="$desktop/src-tauri/target/$target/release/bundle"
-app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d | head -1)"
+app="$(find "$bundle/macos" -maxdepth 1 -name 'KloudCode.app' -type d | head -1)"
+if [[ -z "$app" ]]; then
+  app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d -newer "$bundle/dmg" 2>/dev/null | head -1)"
+fi
+if [[ -z "$app" ]]; then
+  app="$(ls -td "$bundle/macos"/*.app 2>/dev/null | head -1)"
+fi
 dmg="$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -type f | head -1)"
 
 if [[ -z "$app" || -z "$dmg" ]]; then

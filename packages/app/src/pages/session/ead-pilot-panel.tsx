@@ -10,6 +10,8 @@ import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
+import { resizeEadPanel } from "@/pages/session/helpers"
+import { useSessionLayout } from "@/pages/session/session-layout"
 import { peekPilot, queuePilot, takePilot, watchPilot, type PilotAction } from "@/ead/actions"
 import { loadContext, loadSubtreePaths, loadTeamMembers, reconcileJobs } from "@/ead/api"
 import {
@@ -55,6 +57,7 @@ function positive(value: unknown) {
 
 export function EadPilotPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
+  const { view } = useSessionLayout()
   const language = useLanguage()
   const platform = usePlatform()
   const prompt = usePrompt()
@@ -71,6 +74,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const opened = layout.pluginPanel.opened(EAD_PILOT_ID)
   const width = layout.pluginPanel.width(EAD_PILOT_ID)
   const panelOpen = createMemo(() => isDesktop() && opened())
+  const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const panelWidth = createMemo(() => (panelOpen() ? `${width()}px` : "0px"))
 
   createEffect(() => {
@@ -597,19 +601,18 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
           </div>
         </div>
         <Show when={panelOpen()}>
-          <div onPointerDown={() => props.sizing.start()}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="end"
-              size={width()}
-              min={EAD_PILOT_MIN}
-              max={EAD_PILOT_MAX}
-              onResize={(w) => {
-                props.sizing.touch()
-                layout.pluginPanel.resize(EAD_PILOT_ID, w)
-              }}
-            />
-          </div>
+          <ResizeHandle
+            direction="horizontal"
+            edge="end"
+            size={width()}
+            min={EAD_PILOT_MIN}
+            max={EAD_PILOT_MAX}
+            onDragStart={() => props.sizing.begin()}
+            onDragEnd={() => props.sizing.end()}
+            onResize={(w) => {
+              resizeEadPanel(layout, { id: EAD_PILOT_ID, width: w, review: reviewOpen() })
+            }}
+          />
         </Show>
       </aside>
     </Show>

@@ -47,6 +47,10 @@ import {
   createSessionTabs,
   createSizing,
   focusTerminalById,
+  RESIZE_MIN,
+  resizeActive,
+  resizeEadPanel,
+  resizeMax,
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
@@ -403,6 +407,7 @@ export default function Page() {
   const size = createSizing()
   const eadMapSizing = createSizing()
   const eadPilotSizing = createSizing()
+  const panelResizeActive = resizeActive(size, eadMapSizing, eadPilotSizing)
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
@@ -411,13 +416,17 @@ export default function Page() {
   const eadMapWidth = createMemo(() => (eadMapOpen() ? layout.pluginPanel.width(EAD_MAP_ID)() : 0))
   const eadPilotWidth = createMemo(() => (eadPilotOpen() ? layout.pluginPanel.width(EAD_PILOT_ID)() : 0))
   const eadExtra = createMemo(() => eadMapWidth() + eadPilotWidth())
+  const sessionChatWidth = createMemo(() => {
+    if (!desktopReviewOpen()) return undefined
+    return Math.max(0, layout.session.width() - eadExtra())
+  })
   const sessionPanelWidth = createMemo(() => {
     const ead = eadExtra()
     if (!desktopSidePanelOpen()) {
       if (ead === 0) return "100%"
       return `calc(100% - ${ead}px)`
     }
-    if (desktopReviewOpen()) return `calc(${layout.session.width()}px - ${ead}px)`
+    if (desktopReviewOpen()) return `${sessionChatWidth() ?? 0}px`
     return `calc(100% - ${layout.fileTree.width()}px - ${ead}px)`
   })
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
@@ -1932,8 +1941,9 @@ export default function Page() {
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
+            "pointer-events-none": sessionChatWidth() === 0,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-              !size.active() && !ui.reviewSnap,
+              !panelResizeActive() && !ui.reviewSnap,
           }}
           style={{
             width: sessionPanelWidth(),
@@ -2042,18 +2052,18 @@ export default function Page() {
           />
 
           <Show when={desktopReviewOpen()}>
-            <div onPointerDown={() => size.start()}>
-              <ResizeHandle
-                direction="horizontal"
-                size={layout.session.width()}
-                min={450}
-                max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
-                onResize={(width) => {
-                  size.touch()
-                  layout.session.resize(width)
-                }}
-              />
-            </div>
+            <ResizeHandle
+              direction="horizontal"
+              size={layout.session.width()}
+              min={RESIZE_MIN}
+              max={resizeMax()}
+              class="pointer-events-auto"
+              onDragStart={() => size.begin()}
+              onDragEnd={() => size.end()}
+              onResize={(width) => {
+                layout.session.resize(width)
+              }}
+            />
           </Show>
         </div>
 
@@ -2068,6 +2078,7 @@ export default function Page() {
           activeDiff={tree.activeDiff}
           focusReviewDiff={focusReviewDiff}
           reviewSnap={ui.reviewSnap}
+          resizeActive={panelResizeActive}
           size={size}
         />
       </div>

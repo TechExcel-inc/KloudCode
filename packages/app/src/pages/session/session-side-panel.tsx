@@ -21,7 +21,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
-import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
+import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, RESIZE_MIN, resizeMax, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -36,6 +36,7 @@ export function SessionSidePanel(props: {
   activeDiff?: string
   focusReviewDiff: (path: string) => void
   reviewSnap: boolean
+  resizeActive: () => boolean
   size: Sizing
 }) {
   const layout = useLayout()
@@ -198,11 +199,25 @@ export function SessionSidePanel(props: {
         classList={{
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.reviewSnap,
+            !props.resizeActive() && !props.reviewSnap,
         }}
         style={{ width: panelWidth() }}
       >
         <div class="size-full flex border-l border-border-weaker-base">
+          <Show when={reviewOpen()}>
+            <ResizeHandle
+              direction="horizontal"
+              edge="start"
+              size={layout.session.width()}
+              min={RESIZE_MIN}
+              max={resizeMax()}
+              onDragStart={() => props.size.begin()}
+              onDragEnd={() => props.size.end()}
+              onResize={(width) => {
+                layout.session.resize(width)
+              }}
+            />
+          </Show>
           <div
             aria-hidden={!reviewOpen()}
             inert={!reviewOpen()}
@@ -349,7 +364,7 @@ export function SessionSidePanel(props: {
             classList={{
               "pointer-events-none": !fileOpen(),
               "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                !props.size.active(),
+                !props.resizeActive(),
             }}
             style={{ width: treeWidth() }}
           >
@@ -418,19 +433,18 @@ export function SessionSidePanel(props: {
               </Tabs>
             </div>
             <Show when={fileOpen()}>
-              <div onPointerDown={() => props.size.start()}>
-                <ResizeHandle
-                  direction="horizontal"
-                  edge="start"
-                  size={layout.fileTree.width()}
-                  min={200}
-                  max={480}
-                  onResize={(width) => {
-                    props.size.touch()
-                    layout.fileTree.resize(width)
-                  }}
-                />
-              </div>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={layout.fileTree.width()}
+                min={RESIZE_MIN}
+                max={resizeMax()}
+                onDragStart={() => props.size.begin()}
+                onDragEnd={() => props.size.end()}
+                onResize={(width) => {
+                  layout.fileTree.resize(width)
+                }}
+              />
             </Show>
           </div>
         </div>

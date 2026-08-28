@@ -10,12 +10,12 @@ export const EAD_MAP_ID = "ead:map"
 export const EAD_PILOT_ID = "ead:pilot"
 
 export const EAD_MAP_WIDTH = 320
-export const EAD_MAP_MIN = 240
-export const EAD_MAP_MAX = 520
+export const EAD_MAP_MIN = 0
+export const EAD_MAP_MAX = 10000
 
 export const EAD_PILOT_WIDTH = 420
-export const EAD_PILOT_MIN = 320
-export const EAD_PILOT_MAX = 800
+export const EAD_PILOT_MIN = 0
+export const EAD_PILOT_MAX = 10000
 
 const LOCAL_ORIGINS = new Set([
   "http://127.0.0.1:5173",

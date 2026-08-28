@@ -5,7 +5,7 @@ import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import type { PluginPanelEntry, PluginPanelProps } from "@/context/plugin-registry"
-import type { Sizing } from "@/pages/session/helpers"
+import { RESIZE_MIN, resizeMax, type Sizing } from "@/pages/session/helpers"
 
 export type { PluginPanelProps }
 
@@ -54,19 +54,18 @@ export function PluginPanel(props: {
           </div>
         </div>
         <Show when={panelOpen()}>
-          <div onPointerDown={() => props.sizing.start()}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="start"
-              size={width()}
-              min={props.panel.minWidth ?? 200}
-              max={props.panel.maxWidth ?? 600}
-              onResize={(w) => {
-                props.sizing.touch()
-                layout.pluginPanel.resize(props.panel.id, w)
-              }}
-            />
-          </div>
+          <ResizeHandle
+            direction="horizontal"
+            edge="start"
+            size={width()}
+            min={RESIZE_MIN}
+            max={resizeMax()}
+            onDragStart={() => props.sizing.begin()}
+            onDragEnd={() => props.sizing.end()}
+            onResize={(w) => {
+              layout.pluginPanel.resize(props.panel.id, w)
+            }}
+          />
         </Show>
       </aside>
     </Show>

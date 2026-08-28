@@ -16,7 +16,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useTerminal } from "@/context/terminal"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
-import { createSizing, focusTerminalById } from "@/pages/session/helpers"
+import { createSizing, focusTerminalById, RESIZE_MIN, resizeMax } from "@/pages/session/helpers"
 import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { terminalProbe } from "@/testing/terminal"
@@ -203,15 +203,16 @@ export function TerminalPanel() {
         }}
         style={{ height: `${pane()}px` }}
       >
-        <div class="hidden md:block" onPointerDown={() => size.start()}>
+        <div class="hidden md:block">
           <ResizeHandle
             direction="vertical"
             size={pane()}
-            min={100}
+            min={RESIZE_MIN}
             max={max()}
             collapseThreshold={50}
+            onDragStart={() => size.begin()}
+            onDragEnd={() => size.end()}
             onResize={(next) => {
-              size.touch()
               layout.terminal.resize(next)
             }}
             onCollapse={close}
