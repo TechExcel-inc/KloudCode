@@ -89,6 +89,19 @@ export function togglePilot(panel: Panel, bump?: () => void) {
   openPilot(panel, bump)
 }
 
+export function buildPilotShellUrl(
+  ctx: Pick<PilotContext, "productId" | "productName" | "subSchemaId" | "language" | "mode" | "bust">,
+) {
+  const url = new URL(`${eadServer()}/plugin/ai-code`)
+  if (ctx.productId && ctx.productId > 0) url.searchParams.set("productId", String(ctx.productId))
+  if (ctx.productName) url.searchParams.set("productName", ctx.productName)
+  if (ctx.subSchemaId && ctx.subSchemaId > 0) url.searchParams.set("subSchemaId", String(ctx.subSchemaId))
+  url.searchParams.set("mode", ctx.mode === "opencode" ? "opencode" : "cursor")
+  if (ctx.language) url.searchParams.set("lang", ctx.language)
+  if (ctx.bust) url.searchParams.set("_cb", String(ctx.bust))
+  return url.toString()
+}
+
 export function buildPilotUrl(ctx: PilotContext) {
   const url = new URL(`${eadServer()}/plugin/ai-code`)
   url.searchParams.set("mode", ctx.mode === "cursor" ? "cursor" : "opencode")
@@ -114,7 +127,7 @@ export function buildPilotUrl(ctx: PilotContext) {
   if (ctx.openCrawlVision) url.searchParams.set("openCrawlVision", "1")
   if (ctx.helpTipId) url.searchParams.set("openHelpTip", ctx.helpTipId)
   if (ctx.language) url.searchParams.set("lang", ctx.language)
-  if (ctx.bust) url.searchParams.set("_t", String(ctx.bust))
+  if (ctx.bust) url.searchParams.set("_cb", String(ctx.bust))
   return url.toString()
 }
 
@@ -283,6 +296,24 @@ export function openHelpTip(frame: HTMLIFrameElement | undefined, tipId: string)
   const id = tipId.trim()
   if (!id) return
   postToFrame(frame, { type: "openHelpTip", helpTipId: id })
+}
+
+export function selectPfmSubSchema(
+  frame: HTMLIFrameElement | undefined,
+  opts: { productId: number; subSchemaId: number | null },
+) {
+  postToFrame(frame, {
+    type: "selectPfmSubSchema",
+    productId: opts.productId,
+    subSchemaId: opts.subSchemaId,
+  })
+}
+
+export function hostClipboardCommand(
+  frame: HTMLIFrameElement | undefined,
+  command: "copy" | "cut" | "paste" | "selectAll",
+) {
+  postToFrame(frame, { type: "hostClipboardCommand", command })
 }
 
 export function postOwnerState(

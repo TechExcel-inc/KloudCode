@@ -64,7 +64,7 @@ export async function ensureEadMcp(input: {
   // "MCP config not found or invalid" for runtime-only registrations.
   await input.client.mcp.add({
     name: "eadpfm",
-    config: mcpConfig(input.token, entry),
+    config: mcpConfig(input.token, entry, input.worktree ?? ""),
   })
   return entry
 }
@@ -86,7 +86,7 @@ export async function clearEadMcp(input: {
   if (!entry) return ""
   await input.client.mcp.add({
     name: "eadpfm",
-    config: mcpConfig("", entry),
+    config: mcpConfig("", entry, input.worktree ?? ""),
   })
   return entry
 }

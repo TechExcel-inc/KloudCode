@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import {
+  buildPilotShellUrl,
   buildPilotUrl,
   flagsFromAction,
   handlePluginMessage,
+  hostClipboardCommand,
   openCrawlVision,
   openFindWizard,
   openHelpTip,
   openSetupMap,
+  selectPfmSubSchema,
   updatePfmSelection,
 } from "./bridge"
 import { expandKey } from "./settings"
@@ -36,8 +39,25 @@ import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKi
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag } from "./diag"
-import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, isEadHost } from "./urls"
+import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, isEadHost } from "./urls"
+import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
+
+describe("ead urls", () => {
+  test("tracks cursor extension version", () => {
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.196")
+  })
+})
+
+describe("ead auth", () => {
+  test("tokenExpired reads jwt exp", () => {
+    const header = btoa(JSON.stringify({ alg: "none", typ: "JWT" }))
+    const past = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 }))
+    expect(tokenExpired(`${header}.${past}.`)).toBe(true)
+    const future = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))
+    expect(tokenExpired(`${header}.${future}.`)).toBe(false)
+  })
+})
 
 describe("ead source-tree", () => {
   test("parseRows + buildTree + hide index", () => {
@@ -158,7 +178,26 @@ describe("ead bridge", () => {
     expect(url.searchParams.get("pfmNodeId")).toBe("128")
     expect(url.searchParams.get("openAiPilot")).toBe("1")
     expect(url.searchParams.get("lang")).toBe("zh")
-    expect(url.searchParams.get("_t")).toBe("3")
+    expect(url.searchParams.get("_cb")).toBe("3")
+  })
+
+  test("buildPilotShellUrl is product-scoped shell", () => {
+    const url = new URL(
+      buildPilotShellUrl({
+        productId: 2,
+        productName: "SW Admin",
+        subSchemaId: 7,
+        language: "zh",
+        mode: "cursor",
+        bust: 3,
+      }),
+    )
+    expect(url.searchParams.get("mode")).toBe("cursor")
+    expect(url.searchParams.get("productId")).toBe("2")
+    expect(url.searchParams.get("subSchemaId")).toBe("7")
+    expect(url.searchParams.get("pfmNodeId")).toBeNull()
+    expect(url.searchParams.get("openAiPilot")).toBeNull()
+    expect(url.searchParams.get("_cb")).toBe("3")
   })
 
   test("buildPilotUrl includes subSchemaId", () => {
@@ -310,6 +349,28 @@ describe("ead bridge", () => {
     openSetupMap(frame, { productId: 2, productName: "SW" })
     expect((posted[0] as { type: string }).type).toBe("openAiFindWizard")
     expect((posted[1] as { type: string }).type).toBe("openSetupEadMap")
+  })
+
+  test("selectPfmSubSchema and hostClipboardCommand post host messages", () => {
+    const posted: unknown[] = []
+    const frame = {
+      contentWindow: {
+        postMessage: (payload: unknown) => posted.push(payload),
+      },
+    } as unknown as HTMLIFrameElement
+    selectPfmSubSchema(frame, { productId: 2, subSchemaId: 7 })
+    hostClipboardCommand(frame, "copy")
+    expect(posted[0]).toEqual({
+      source: "ead-pfm-host",
+      type: "selectPfmSubSchema",
+      productId: 2,
+      subSchemaId: 7,
+    })
+    expect(posted[1]).toEqual({
+      source: "ead-pfm-host",
+      type: "hostClipboardCommand",
+      command: "copy",
+    })
   })
 })
 

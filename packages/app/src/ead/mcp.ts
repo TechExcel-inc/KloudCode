@@ -29,18 +29,20 @@ export function mcpCandidates(worktree: string, preferred = "") {
   })
 }
 
-export function mcpConfig(token: string, entry: string) {
+export function mcpConfig(token: string, entry: string, workspace = "") {
   const api = eadApi().replace(/\/api\/?$/i, "") || "https://eadfm.com"
+  const env: Record<string, string> = {
+    EADPFM_API_URL: api,
+    EADPFM_API_TOKEN: token,
+    EADPFM_TOKEN: token,
+    EADPFM_SERVER_URL: eadServer(),
+  }
+  if (workspace.trim()) env.EADPFM_WORKSPACE = workspace.trim()
   return {
     type: "local" as const,
     enabled: true,
     command: ["node", entry],
-    environment: {
-      EADPFM_API_URL: api,
-      EADPFM_API_TOKEN: token,
-      EADPFM_TOKEN: token,
-      EADPFM_SERVER_URL: eadServer(),
-    },
+    environment: env,
   }
 }
 

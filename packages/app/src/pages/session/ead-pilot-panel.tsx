@@ -16,8 +16,9 @@ import { peekPilot, queuePilot, takePilot, watchPilot, type PilotAction } from "
 import { loadContext, loadSubtreePaths, loadTeamMembers, reconcileJobs } from "@/ead/api"
 import {
   applyPilotAction,
-  buildPilotUrl,
+  buildPilotShellUrl,
   handlePluginMessage,
+  hostClipboardCommand,
   isEadOrigin,
   openPilot,
   pingHost,
@@ -30,6 +31,7 @@ import {
   replyWriteClipboard,
   replyTeamMembers,
   requestSessionSync,
+  selectPfmSubSchema,
   setUiLanguage,
   syncAuth,
   syncAuthStatus,
@@ -42,7 +44,7 @@ import { useEad } from "@/ead/settings"
 import { EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer } from "@/ead/urls"
 
 const PING_MS = 30_000
-const STALE_MS = 90_000
+const STALE_MS = 120_000
 const COOLDOWN_MS = 45_000
 
 function reqId(msg: Record<string, unknown>, prefix: string) {
@@ -108,15 +110,13 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   }
 
   const src = createMemo(() => {
-    // Keep shell URL product-scoped; node/source changes soft-update via postMessage (Cursor parity).
-    return buildPilotUrl({
+    return buildPilotShellUrl({
       productId: ead.productId(),
       productName: ead.productName(),
       subSchemaId: ead.subSchemaId() || undefined,
       language: ead.language(),
       mode: ead.pilotMode(),
       bust: ead.pilotBust(),
-      openAiPilot: true,
     })
   })
 
@@ -175,6 +175,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         pfmFilterLinkedPaths: filter.paths,
         productId: pid,
       })
+      const sub = ead.subSchemaId()
+      selectPfmSubSchema(el, { productId: pid, subSchemaId: sub > 0 ? sub : null })
     }
   }
 
@@ -225,6 +227,49 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     if (!queued) return
     setAction(queued)
     applyPilotAction(frame(), queued, product())
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const pid = ead.productId()
+    if (pid <= 0) return
+    const sub = ead.subSchemaId()
+    const el = frame()
+    if (!el) return
+    selectPfmSubSchema(el, { productId: pid, subSchemaId: sub > 0 ? sub : null })
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey
+      const el = frame()
+      if (!el) return
+      const root = document.getElementById("ead-pilot-panel")
+      const active = document.activeElement
+      if (!root?.contains(active) && active?.tagName !== "IFRAME") return
+      if (mod && event.key === "c") {
+        event.preventDefault()
+        hostClipboardCommand(el, "copy")
+        return
+      }
+      if (mod && event.key === "x") {
+        event.preventDefault()
+        hostClipboardCommand(el, "cut")
+        return
+      }
+      if (mod && event.key === "v") {
+        event.preventDefault()
+        hostClipboardCommand(el, "paste")
+        return
+      }
+      if (mod && event.key === "a") {
+        event.preventDefault()
+        hostClipboardCommand(el, "selectAll")
+      }
+    }
+    window.addEventListener("keydown", onKey, true)
+    onCleanup(() => window.removeEventListener("keydown", onKey, true))
   })
 
   createEffect(() => {
@@ -555,6 +600,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   return (
     <Show when={isDesktop()}>
       <aside
+        id="ead-pilot-panel"
         aria-label="EAD Pilot"
         aria-hidden={!panelOpen()}
         inert={!panelOpen()}
@@ -574,7 +620,16 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                 icon="link"
                 variant="ghost"
                 class="h-5 w-5"
-                onClick={() => window.open(`${eadServer()}/plugin/ai-code`, "_blank", "noopener,noreferrer")}
+                onClick={() => {
+                  const url = buildPilotShellUrl({
+                    productId: ead.productId(),
+                    productName: ead.productName(),
+                    subSchemaId: ead.subSchemaId() || undefined,
+                    language: ead.language(),
+                    mode: ead.pilotMode(),
+                  })
+                  window.open(url, "_blank", "noopener,noreferrer")
+                }}
                 aria-label="Open EAD Pilot web"
               />
               <IconButton

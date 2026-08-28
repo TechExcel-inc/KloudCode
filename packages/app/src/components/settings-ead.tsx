@@ -110,7 +110,7 @@ export function SettingsEad() {
             </Show>
           </span>
         </Row>
-        <Row title="Pilot mode" description="opencode (default) or cursor compatibility">
+        <Row title="Pilot mode" description="cursor (default, Cursor extension parity) or opencode">
           <select
             class="h-8 text-12-regular rounded-md border border-border-weak-base bg-background-base px-2"
             value={ead.pilotMode()}

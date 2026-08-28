@@ -6,6 +6,7 @@ import { persisted } from "@/utils/persist"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
+import { tokenExpired } from "./auth"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
 import { applyEnv, eadApi, type Env } from "./urls"
 
@@ -77,7 +78,7 @@ const empty: State = {
   sourceName: "",
   sourcePath: "",
   view: "pfm",
-  pilotMode: "opencode",
+  pilotMode: "cursor",
   language: "zh",
   env: "production",
   mcpEntry: DEFAULT_MCP_ENTRY,
@@ -128,9 +129,23 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       if (!ready()) return
       applyEnv(store.env === "localhost" ? "localhost" : "production")
       flushFilters()
-      if ((store.token ?? "").trim() && !(store.tokenApiUrl ?? "").trim()) {
+      if ((store.token ?? "").trim() && !(store.tokenApiUrl ?? "").trim() && store.env === "localhost") {
         setStore("tokenApiUrl", eadApi())
       }
+    })
+
+    createEffect(() => {
+      if (!ready()) return
+      const raw = (store.token ?? "").trim()
+      if (!raw) return
+      const saved = normalizeApi(store.tokenApiUrl ?? "")
+      const current = normalizeApi(eadApi())
+      const hostMismatch = saved && saved !== current
+      const unboundProduction = !saved && current.includes("eadfm.com")
+      if (!hostMismatch && !unboundProduction && !tokenExpired(raw)) return
+      setStore("token", "")
+      setStore("tokenApiUrl", "")
+      setStore("pilotBust", (n) => (n ?? 0) + 1)
     })
 
     const writeChrome = () => {
