@@ -12,6 +12,7 @@ import { Instance } from "../../project/instance"
 import { Installation } from "../../installation"
 import path from "path"
 import { Global } from "../../global"
+import { Brand } from "../../brand"
 import { modify, applyEdits } from "jsonc-parser"
 import { Filesystem } from "../../util/filesystem"
 import { Bus } from "../../bus"
@@ -408,11 +409,17 @@ export const McpLogoutCommand = cmd({
 })
 
 async function resolveConfigPath(baseDir: string, global = false) {
-  // Check for existing config files (prefer .jsonc over .json, check .opencode/ subdirectory too)
-  const candidates = [path.join(baseDir, "opencode.json"), path.join(baseDir, "opencode.jsonc")]
+  // Check for existing config files (prefer .jsonc over .json, check project subdirectory too)
+  const candidates = [
+    path.join(baseDir, `${Brand.config}.json`),
+    path.join(baseDir, `${Brand.config}.jsonc`),
+  ]
 
   if (!global) {
-    candidates.push(path.join(baseDir, ".opencode", "opencode.json"), path.join(baseDir, ".opencode", "opencode.jsonc"))
+    candidates.push(
+      path.join(baseDir, Brand.project, `${Brand.config}.json`),
+      path.join(baseDir, Brand.project, `${Brand.config}.jsonc`),
+    )
   }
 
   for (const candidate of candidates) {

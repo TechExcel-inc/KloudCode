@@ -4,6 +4,7 @@ import { Provider } from "../provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"
 import { generateObject, streamObject, type ModelMessage } from "ai"
 import { Instance } from "../project/instance"
+import { Brand } from "../brand"
 import { Truncate } from "../tool/truncate"
 import { Auth } from "../auth"
 import { ProviderTransform } from "../provider/transform"
@@ -134,7 +135,7 @@ export namespace Agent {
                   },
                   edit: {
                     "*": "deny",
-                    [path.join(".opencode", "plans", "*.md")]: "allow",
+                    [path.join(Brand.project, "plans", "*.md")]: "allow",
                     [path.relative(Instance.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]:
                       "allow",
                   },

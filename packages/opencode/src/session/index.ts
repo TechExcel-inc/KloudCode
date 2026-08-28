@@ -7,6 +7,7 @@ import z from "zod"
 import { type ProviderMetadata, type LanguageModelUsage } from "ai"
 import { Flag } from "../flag/flag"
 import { Installation } from "../installation"
+import { Brand } from "../brand"
 
 import { Database, NotFoundError, eq, and, gte, isNull, desc, like, inArray, lt } from "../storage/db"
 import { SyncEvent } from "../sync"
@@ -232,7 +233,7 @@ export namespace Session {
 
   export function plan(input: { slug: string; time: { created: number } }) {
     const base = Instance.project.vcs
-      ? path.join(Instance.worktree, ".opencode", "plans")
+      ? path.join(Instance.worktree, Brand.project, "plans")
       : path.join(Global.Path.data, "plans")
     return path.join(base, [input.time.created, input.slug].join("-") + ".md")
   }

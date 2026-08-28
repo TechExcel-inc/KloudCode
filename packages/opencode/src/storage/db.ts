@@ -5,6 +5,7 @@ export * from "drizzle-orm"
 import { LocalContext } from "../util/local-context"
 import { lazy } from "../util/lazy"
 import { Global } from "../global"
+import { Brand } from "../brand"
 import { Log } from "../util/log"
 import { NamedError } from "@opencode-ai/util/error"
 import z from "zod"
@@ -30,7 +31,7 @@ const log = Log.create({ service: "db" })
 export namespace Database {
   export function getChannelPath() {
     if (["latest", "beta", "prod"].includes(CHANNEL) || Flag.OPENCODE_DISABLE_CHANNEL_DB)
-      return path.join(Global.Path.data, "opencode.db")
+      return path.join(Global.Path.data, Brand.db)
     const safe = CHANNEL.replace(/[^a-zA-Z0-9._-]/g, "-")
     return path.join(Global.Path.data, `opencode-${safe}.db`)
   }

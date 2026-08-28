@@ -31,6 +31,7 @@ import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import path from "path"
 import { Global } from "./global"
+import { Brand } from "./brand"
 import { JsonMigration } from "./storage/json-migration"
 import { Database } from "./storage/db"
 import { errorMessage } from "./util/error"
@@ -109,7 +110,7 @@ const cli = yargs(args)
       args: process.argv.slice(2),
     })
 
-    const marker = path.join(Global.Path.data, "opencode.db")
+    const marker = path.join(Global.Path.data, Brand.db)
     if (!(await Filesystem.exists(marker))) {
       const tty = process.stderr.isTTY
       process.stderr.write("Performing one time database migration, may take a few minutes..." + EOL)

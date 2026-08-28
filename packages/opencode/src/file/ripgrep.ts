@@ -1,6 +1,7 @@
 // Ripgrep utility functions
 import path from "path"
 import { Global } from "../global"
+import { Brand } from "../brand"
 import fs from "fs/promises"
 import z from "zod"
 import { Effect, Layer, Context, Schema } from "effect"
@@ -488,7 +489,7 @@ export namespace Ripgrep {
 
     const root: Node = { name: "", children: new Map() }
     for (const file of files) {
-      if (file.includes(".opencode")) continue
+      if (file.includes(Brand.project)) continue
       const parts = file.split(path.sep)
       if (parts.length < 2) continue
       let node = root

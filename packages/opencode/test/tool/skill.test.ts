@@ -39,7 +39,7 @@ describe("tool.skill", () => {
     provideTmpdirInstance(
       (dir) =>
         Effect.gen(function* () {
-          const skill = path.join(dir, ".opencode", "skill", "tool-skill")
+          const skill = path.join(dir, ".kloudcode", "skill", "tool-skill")
           yield* Effect.promise(() =>
             Bun.write(
               path.join(skill, "SKILL.md"),
@@ -81,7 +81,7 @@ description: Skill for tool tests.
             ["alpha-skill", "Alpha skill."],
             ["middle-skill", "Middle skill."],
           ]) {
-            const skill = path.join(dir, ".opencode", "skill", name)
+            const skill = path.join(dir, ".kloudcode", "skill", name)
             yield* Effect.promise(() =>
               Bun.write(
                 path.join(skill, "SKILL.md"),
@@ -135,7 +135,7 @@ description: ${description}
     await using tmp = await tmpdir({
       git: true,
       init: async (dir) => {
-        const skillDir = path.join(dir, ".opencode", "skill", "tool-skill")
+        const skillDir = path.join(dir, ".kloudcode", "skill", "tool-skill")
         await Bun.write(
           path.join(skillDir, "SKILL.md"),
           `---
@@ -174,7 +174,7 @@ Use this skill.
           }
 
           const result = await runtime.runPromise(tool.execute({ name: "tool-skill" }, ctx))
-          const dir = path.join(tmp.path, ".opencode", "skill", "tool-skill")
+          const dir = path.join(tmp.path, ".kloudcode", "skill", "tool-skill")
           const file = path.resolve(dir, "scripts", "demo.txt")
 
           expect(requests.length).toBe(1)

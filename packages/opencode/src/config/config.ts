@@ -6,6 +6,7 @@ import { Process } from "../util/process"
 import z from "zod"
 import { mergeDeep, pipe, unique } from "remeda"
 import { Global } from "../global"
+import { Brand } from "../brand"
 import fsNode from "fs/promises"
 import { NamedError } from "@opencode-ai/util/error"
 import { Flag } from "../flag/flag"
@@ -74,7 +75,7 @@ export namespace Config {
 
   const managedDir = managedConfigDir()
 
-  const MANAGED_PLIST_DOMAIN = "ai.opencode.managed"
+  const MANAGED_PLIST_DOMAIN = Brand.managed
 
   // Keys injected by macOS/MDM into the managed plist that are not OpenCode config
   const PLIST_META = new Set([
@@ -177,7 +178,7 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = ["/.opencode/command/", "/.opencode/commands/", "/command/", "/commands/"]
+      const patterns = [`/${Brand.project}/command/`, `/${Brand.project}/commands/`, "/command/", "/commands/"]
       const file = rel(item, patterns) ?? path.basename(item)
       const name = trim(file)
 
@@ -216,7 +217,7 @@ export namespace Config {
       })
       if (!md) continue
 
-      const patterns = ["/.opencode/agent/", "/.opencode/agents/", "/agent/", "/agents/"]
+      const patterns = [`/${Brand.project}/agent/`, `/${Brand.project}/agents/`, "/agent/", "/agents/"]
       const file = rel(item, patterns) ?? path.basename(item)
       const agentName = trim(file)
 
@@ -1085,7 +1086,7 @@ export namespace Config {
   export class Service extends Context.Service<Service, Interface>()("@opencode/Config") {}
 
   function globalConfigFile() {
-    const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
+    const candidates = [`${Brand.config}.jsonc`, `${Brand.config}.json`, "config.json"].map((file) =>
       path.join(Global.Path.config, file),
     )
     for (const file of candidates) {
@@ -1239,8 +1240,8 @@ export namespace Config {
           let result: Info = pipe(
             {},
             mergeDeep(yield* loadFile(path.join(Global.Path.config, "config.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.json"))),
-            mergeDeep(yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
+            mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.config}.json`))),
+            mergeDeep(yield* loadFile(path.join(Global.Path.config, `${Brand.config}.jsonc`))),
           )
 
           const legacy = path.join(Global.Path.config, "config")
@@ -1429,8 +1430,8 @@ export namespace Config {
           const deps: Fiber.Fiber<void, never>[] = []
 
           for (const dir of unique(directories)) {
-            if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
-              for (const file of ["opencode.json", "opencode.jsonc"]) {
+            if (dir.endsWith(Brand.project) || dir === Flag.OPENCODE_CONFIG_DIR) {
+              for (const file of [`${Brand.config}.json`, `${Brand.config}.jsonc`]) {
                 const source = path.join(dir, file)
                 log.debug(`loading config from ${source}`)
                 yield* merge(source, yield* loadFile(source))
@@ -1509,7 +1510,7 @@ export namespace Config {
           }
 
           if (existsSync(managedDir)) {
-            for (const file of ["opencode.json", "opencode.jsonc"]) {
+            for (const file of [`${Brand.config}.json`, `${Brand.config}.jsonc`]) {
               const source = path.join(managedDir, file)
               yield* merge(source, yield* loadFile(source), "global")
             }

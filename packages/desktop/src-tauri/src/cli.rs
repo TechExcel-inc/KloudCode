@@ -40,7 +40,7 @@ impl CommandWrapper for WinCreationFlags {
     }
 }
 
-const CLI_INSTALL_DIR: &str = ".opencode/bin";
+const CLI_INSTALL_DIR: &str = ".kloudcode/bin";
 const CLI_BINARY_NAME: &str = "opencode";
 const SHELL_ENV_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -451,7 +451,7 @@ pub fn spawn_command(
             let version = app.package_info().version.to_string();
             let mut script = vec![
                 "set -e".to_string(),
-                "BIN=\"$HOME/.opencode/bin/opencode\"".to_string(),
+                "BIN=\"$HOME/.kloudcode/bin/opencode\"".to_string(),
                 "if [ ! -x \"$BIN\" ]; then".to_string(),
                 format!(
                     "  curl -fsSL https://opencode.ai/install | bash -s -- --version {} --no-modify-path",
@@ -614,6 +614,7 @@ pub fn serve(
     let envs = [
         ("OPENCODE_SERVER_USERNAME", "opencode".to_string()),
         ("OPENCODE_SERVER_PASSWORD", password.to_string()),
+        ("OPENCODE_DISABLE_MODELS_FETCH", "true".to_string()),
     ];
 
     let (events, child) = spawn_command(

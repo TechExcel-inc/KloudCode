@@ -63,6 +63,7 @@ function prepareServerEnv(password: string) {
   const env = {
     ...process.env,
     ...shellEnv,
+    OPENCODE_DISABLE_MODELS_FETCH: "true",
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",

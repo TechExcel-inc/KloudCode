@@ -40,6 +40,7 @@ import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
 import { Global } from "@/global"
+import { Brand } from "@/brand"
 import { Filesystem } from "@/util/filesystem"
 import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
@@ -481,7 +482,7 @@ async function getCustomThemes() {
     Global.Path.config,
     ...(await Array.fromAsync(
       Filesystem.up({
-        targets: [".opencode"],
+        targets: [Brand.project],
         start: process.cwd(),
       }),
     )),

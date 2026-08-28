@@ -10,6 +10,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { isRecord } from "@/util/record"
 import { Global } from "@/global"
+import { Brand } from "@/brand"
 import { AppRuntime } from "@/effect/app-runtime"
 
 export namespace TuiConfig {
@@ -100,7 +101,7 @@ export namespace TuiConfig {
     }
 
     for (const dir of unique(directories)) {
-      if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+      if (!dir.endsWith(Brand.project) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
       for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
         await mergeFile(acc, file)
       }
@@ -125,7 +126,7 @@ export namespace TuiConfig {
     const deps: Promise<void>[] = []
     if (acc.result.plugin?.length) {
       for (const dir of unique(directories)) {
-        if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+        if (!dir.endsWith(Brand.project) && dir !== Flag.OPENCODE_CONFIG_DIR) continue
         deps.push(installDeps(dir))
       }
     }

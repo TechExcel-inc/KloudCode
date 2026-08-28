@@ -138,15 +138,22 @@ export namespace ModelsDev {
     if (snapshot) return snapshot
     if (Flag.OPENCODE_DISABLE_MODELS_FETCH) return {}
     return Flock.withLock(`models-dev:${filepath}`, async () => {
-      const result = await Filesystem.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).catch(() => {})
-      if (result) return result
+      const cached = await Filesystem.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).catch(() => {})
+      if (cached) return cached
       const result2 = await fetchApi()
       if (result2.ok) {
         await Filesystem.write(filepath, result2.text).catch((e) => {
           log.error("Failed to write models cache", { error: e })
         })
+        return JSON.parse(result2.text)
       }
-      return JSON.parse(result2.text)
+      // @ts-ignore
+      const fallback = await import("./models-snapshot.js")
+        .then((m) => m.snapshot as Record<string, unknown>)
+        .catch(() => undefined)
+      if (fallback && Object.keys(fallback).length > 0) return fallback
+      log.error("Failed to fetch models.dev and no bundled snapshot available")
+      return {}
     })
   })
 
