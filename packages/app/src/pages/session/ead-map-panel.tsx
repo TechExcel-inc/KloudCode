@@ -1,7 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Button } from "@opencode-ai/ui/button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -14,6 +13,7 @@ import type { Sizing } from "@/pages/session/helpers"
 import { resizeEadPanel } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { queuePilot } from "@/ead/actions"
+import "@/ead/navigator.css"
 import {
   createJob,
   loadActiveMap,
@@ -105,12 +105,109 @@ type Menu =
 
 const KINDS: ContextKind[] = ["jobs", "prompt", "skills", "api", "source"]
 
-const field = "w-full px-2 py-1.5 text-12-regular rounded-md border border-border-weak-base bg-background-base"
-const drop =
-  "absolute z-20 mt-1 min-w-[11rem] max-w-[18rem] rounded-md border border-border-weak-base bg-background-base shadow-md py-1 text-12-regular"
-const item =
-  "w-full px-2.5 py-1.5 text-left text-12-regular hover:bg-surface-base-hover text-text-base disabled:opacity-40"
-const itemActive = "bg-surface-base-active text-text-strong"
+const field = "ead-field"
+const drop = "ead-drop"
+const item = "ead-drop-item"
+const itemActive = "is-active"
+
+const IconSpark = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+    <path d="M20 3v4" />
+    <path d="M22 5h-4" />
+    <path d="M4 17v2" />
+    <path d="M5 18H3" />
+  </svg>
+)
+const IconMenu = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+    <path d="M4 6h16" />
+    <path d="M4 12h16" />
+    <path d="M4 18h16" />
+  </svg>
+)
+const IconSwap = () => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M8 3 4 7l4 4" />
+    <path d="M4 7h16" />
+    <path d="m16 21 4-4-4-4" />
+    <path d="M20 17H4" />
+  </svg>
+)
+const IconEdit = () => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 0L7 19l-4 1 1-4Z" />
+  </svg>
+)
+const IconDots = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="19" cy="12" r="2" />
+  </svg>
+)
+const IconFilter = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+  </svg>
+)
+const IconFile = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-5-5Z" />
+    <path d="M14 2v5h5" />
+    <path d="M9 13h6" />
+    <path d="M9 17h6" />
+  </svg>
+)
+const IconLayers = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+    <path d="m22 12.57-8.58 3.91a2 2 0 0 1-1.66 0L2.6 12.57" />
+    <path d="m22 17.57-8.58 3.91a2 2 0 0 1-1.66 0L2.6 17.57" />
+  </svg>
+)
+const IconCheck = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+    <path d="m5 12 4 4 10-10" />
+  </svg>
+)
+const IconEad = () => (
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M8 3h8" />
+    <path d="M12 3v7" />
+    <rect x="5" y="10" width="14" height="11" rx="2" />
+    <path d="M9 15h6" />
+  </svg>
+)
+const IconJobs = () => (
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H9l2 2h6.5A2.5 2.5 0 0 1 20 9.5V10" />
+    <path d="M4 10h16l-1.4 7.2A2.2 2.2 0 0 1 16.45 19H7.55a2.2 2.2 0 0 1-2.15-1.8L4 10Z" />
+    <path d="M12 13v3" />
+    <path d="M10.5 14.5h3" />
+  </svg>
+)
+const IconTests = () => (
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M8 2v4" />
+    <path d="M16 2v4" />
+    <path d="M3 10h18" />
+    <rect x="3" y="4" width="18" height="18" rx="3" />
+    <path d="m9 16 2 2 4-5" />
+  </svg>
+)
+const IconCaret = () => (
+  <svg class="filter-caret" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+)
+const IconClose = () => (
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+)
 
 function seedOpen(nodes: PfmNode[], depth = 0): number[] {
   return nodes.flatMap((node) => {
@@ -135,6 +232,12 @@ function Tree(props: {
   onToggle?: (id: number, open: boolean) => void
   onChip: (id: number) => void
   onInject: (kind: ContextKind, node: PfmNode) => void
+  schemas?: SubSchema[]
+  subId?: number
+  schemaOpen?: number
+  onSchemaOpen?: (id: number) => void
+  onSchema?: (id: number) => void
+  schemaLabel?: string
 }) {
   const depth = () => props.depth ?? 0
   return (
@@ -148,6 +251,8 @@ function Tree(props: {
         const work = () => !!props.work && props.work === node.nodeId && !on()
         const shown = () => !!props.force?.includes(node.nodeId) || open()
         const flash = () => !!props.pulse && props.pulse === node.nodeId
+        const dyn = () => !!node.isDynamicTopLevel
+        const canSchema = () => dyn() && (props.schemas?.length ?? 0) > 0
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const label = () => {
           const n = count()
@@ -155,6 +260,15 @@ function Tree(props: {
           if (props.badge === "ead") return `EAD ${n}`
           if (props.badge === "jobs") return `Jobs ${n}`
           return `Tests ${n}`
+        }
+        const badgeCls = () => {
+          if (props.badge === "jobs") return "ead-jobs-badge"
+          if (props.badge === "tests") return "ead-tests-badge"
+          return "ead-count-badge"
+        }
+        const title = () => {
+          if (canSchema() && props.schemaLabel) return props.schemaLabel
+          return node.name
         }
         const toggle = (e: MouseEvent) => {
           e.stopPropagation()
@@ -168,61 +282,126 @@ function Tree(props: {
         return (
           <div>
             <div
-              class="w-full flex items-center gap-1 px-1.5 py-0.5 text-left text-12-regular rounded-md hover:bg-surface-base-hover group"
+              class="ead-row group"
               classList={{
-                "bg-surface-base-active text-text-strong": on(),
-                "text-sky-400": work(),
-                "text-text-base": !on() && !work(),
+                "is-actual": on(),
+                "is-work": work(),
+                "is-dynamic-top": dyn(),
                 "ring-1 ring-sky-400/80": flash(),
               }}
-              style={{ "padding-left": `${6 + depth() * 12}px` }}
+              style={{ "padding-left": `${8 + depth() * 18}px` }}
+              title={title()}
               data-ead-node={node.nodeId}
+              data-ead-pfm={node.nodeId}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                props.onSelect(node)
+                props.onSchemaOpen?.(0)
+                props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
+              }}
             >
-              <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
+              <Show when={kids()} fallback={<span class="ead-chevron" />}>
+                <button type="button" class="ead-chevron is-toggle" onClick={toggle}>
                   {shown() ? "▾" : "▸"}
                 </button>
               </Show>
               <Show when={work()}>
-                <span class="w-1.5 h-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+                <span class="ead-work-dot" aria-hidden="true" />
               </Show>
-              <button type="button" class="min-w-0 flex-1 truncate text-left" onClick={() => props.onSelect(node)}>
-                {node.name}
+              <button
+                type="button"
+                class="ead-row-icon"
+                classList={{ dynamic: dyn(), "is-toggle": kids() }}
+                onClick={(e) => {
+                  if (!kids()) {
+                    props.onSelect(node)
+                    return
+                  }
+                  toggle(e)
+                }}
+              >
+                <Show when={dyn()} fallback={kids() || depth() === 0 || work() ? <IconFolder /> : <IconFile />}>
+                  <IconLayers />
+                </Show>
+              </button>
+              <button type="button" class="ead-row-name" onClick={() => props.onSelect(node)}>
+                {title()}
               </button>
               <Show when={label()}>
-                <span class="shrink-0 px-1 rounded text-11-regular bg-surface-base-active text-text-weak">{label()}</span>
+                <span class={badgeCls()}>{label()}</span>
               </Show>
-              <Show when={on()}>
-                <div class="relative shrink-0">
+              <Show when={canSchema()}>
+                <span class="dyn-switch-wrap">
                   <button
                     type="button"
-                    class="px-1 rounded text-11-regular border border-border-weaker-base text-text-weak hover:bg-surface-base-hover"
+                    class="generate-dyn-btn"
+                    classList={{ "is-open": props.schemaOpen === node.nodeId }}
+                    title={t(props.lang, "switchDyn")}
+                    aria-label={t(props.lang, "switchDyn")}
                     onClick={(e) => {
                       e.stopPropagation()
-                      props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
+                      props.onChip(0)
+                      props.onSchemaOpen?.(props.schemaOpen === node.nodeId ? 0 : node.nodeId)
                     }}
                   >
-                    ▾
+                    ›
                   </button>
-                  <Show when={props.chip === node.nodeId}>
-                    <div class={`${drop} right-0`}>
-                      <For each={KINDS}>
-                        {(k) => (
+                  <Show when={props.schemaOpen === node.nodeId}>
+                    <div class="node-menu">
+                      <div class="node-menu-label">{t(props.lang, "switchDyn")}</div>
+                      <button
+                        type="button"
+                        class="node-menu-item"
+                        classList={{ "is-selected": (props.subId ?? 0) <= 0 }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          props.onSchema?.(0)
+                          props.onSchemaOpen?.(0)
+                        }}
+                      >
+                        {(props.subId ?? 0) <= 0 ? "✓ " : ""}
+                        {t(props.lang, "baseMap")}
+                      </button>
+                      <For each={props.schemas || []}>
+                        {(s) => (
                           <button
                             type="button"
-                            class={item}
+                            class="node-menu-item"
+                            classList={{ "is-selected": props.subId === s.id }}
                             onClick={(e) => {
                               e.stopPropagation()
-                              props.onChip(0)
-                              props.onInject(k, node)
+                              props.onSchema?.(s.id)
+                              props.onSchemaOpen?.(0)
                             }}
                           >
-                            {kindLabel(k, props.lang)}
+                            {props.subId === s.id ? "✓ " : ""}
+                            {s.name}
                           </button>
                         )}
                       </For>
                     </div>
                   </Show>
+                </span>
+              </Show>
+              <Show when={props.chip === node.nodeId}>
+                <div class="ead-row-inject">
+                  <div class={`${drop} right-0`}>
+                    <For each={KINDS}>
+                      {(k) => (
+                        <button
+                          type="button"
+                          class={item}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            props.onChip(0)
+                            props.onInject(k, node)
+                          }}
+                        >
+                          {kindLabel(k, props.lang)}
+                        </button>
+                      )}
+                    </For>
+                  </div>
                 </div>
               </Show>
             </div>
@@ -243,6 +422,12 @@ function Tree(props: {
                 onToggle={props.onToggle}
                 onChip={props.onChip}
                 onInject={props.onInject}
+                schemas={props.schemas}
+                subId={props.subId}
+                schemaOpen={props.schemaOpen}
+                onSchemaOpen={props.onSchemaOpen}
+                onSchema={props.onSchema}
+                schemaLabel={props.schemaLabel}
               />
             </Show>
           </div>
@@ -291,61 +476,68 @@ function SourceTree(props: {
         return (
           <div>
             <div
-              class="w-full flex items-center gap-1 px-1.5 py-0.5 text-left text-12-regular rounded-md hover:bg-surface-base-hover"
+              class="ead-row"
               classList={{
-                "bg-surface-base-active text-text-strong": on(),
-                "text-text-base": !on(),
+                "is-actual": on(),
+                "is-pending": pending(),
                 "ring-1 ring-sky-400/80": flash(),
               }}
-              style={{ "padding-left": `${6 + depth() * 12}px` }}
+              style={{ "padding-left": `${8 + depth() * 18}px` }}
               title={node.nodePath}
               data-ead-source={node.nodeId}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                props.onSelect(node)
+                props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
+              }}
             >
-              <Show when={kids()} fallback={<span class="w-3 shrink-0" />}>
-                <button type="button" class="w-3 shrink-0 text-text-weak" onClick={toggle}>
+              <Show when={kids()} fallback={<span class="ead-chevron" />}>
+                <button type="button" class="ead-chevron is-toggle" onClick={toggle}>
                   {open() ? "▾" : "▸"}
                 </button>
               </Show>
-              <button type="button" class="min-w-0 flex-1 truncate text-left" onClick={() => props.onSelect(node)}>
+              <button
+                type="button"
+                class="ead-row-icon"
+                classList={{ "is-toggle": kids() }}
+                onClick={(e) => {
+                  if (!kids()) {
+                    props.onSelect(node)
+                    return
+                  }
+                  toggle(e)
+                }}
+              >
+                {kids() || depth() === 0 ? <IconFolder /> : <IconFile />}
+              </button>
+              <button type="button" class="ead-row-name" onClick={() => props.onSelect(node)}>
                 {node.nodeName}
               </button>
               <Show when={pending()}>
-                <span class="shrink-0 px-1 rounded text-11-regular bg-surface-base-active text-text-weak">…</span>
+                <span class="ead-pending-badge">Pending</span>
               </Show>
               <Show when={count() > 0}>
-                <span class="shrink-0 text-11-regular text-text-weak">{count()}</span>
+                <span class="ead-count-badge">{count()}</span>
               </Show>
-              <Show when={on()}>
-                <div class="relative shrink-0">
-                  <button
-                    type="button"
-                    class="px-1 rounded text-11-regular border border-border-weaker-base text-text-weak hover:bg-surface-base-hover"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
-                    }}
-                  >
-                    ▾
-                  </button>
-                  <Show when={props.chip === node.nodeId}>
-                    <div class={`${drop} right-0`}>
-                      <For each={KINDS}>
-                        {(k) => (
-                          <button
-                            type="button"
-                            class={item}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              props.onChip(0)
-                              props.onInject(k, node)
-                            }}
-                          >
-                            {kindLabel(k, props.lang)}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
+              <Show when={props.chip === node.nodeId}>
+                <div class="ead-row-inject">
+                  <div class={`${drop} right-0`}>
+                    <For each={KINDS}>
+                      {(k) => (
+                        <button
+                          type="button"
+                          class={item}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            props.onChip(0)
+                            props.onInject(k, node)
+                          }}
+                        >
+                          {kindLabel(k, props.lang)}
+                        </button>
+                      )}
+                    </For>
+                  </div>
                 </div>
               </Show>
             </div>
@@ -373,10 +565,34 @@ function SourceTree(props: {
   )
 }
 
+const IconBox = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+    <path d="m3.3 7 8.7 5 8.7-5" />
+    <path d="M12 22V12" />
+  </svg>
+)
+const IconFolder = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6A2 2 0 0 1 18.46 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9L11 6h5a2 2 0 0 1 2 2v2" />
+  </svg>
+)
+const IconFolders = () => (
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2h7.5A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-10Z" />
+    <path d="M7 11h10" />
+    <path d="M7 15h6" />
+  </svg>
+)
+
 function mark(role: ReturnType<typeof productRole>, lang: Lang) {
-  if (role === "sibling") return { cls: "text-sky-400", title: t(lang, "siblingProduct"), glyph: "◇" }
-  if (role === "base") return { cls: "text-violet-400", title: t(lang, "baseSiblings"), glyph: "▣" }
-  return { cls: "text-text-weak", title: "", glyph: "•" }
+  if (role === "sibling") {
+    return { cls: "product-icon--sibling", title: t(lang, "siblingProduct") }
+  }
+  if (role === "base") {
+    return { cls: "product-icon--base-siblings", title: t(lang, "baseSiblings") }
+  }
+  return { cls: "product-icon--normal", title: "" }
 }
 
 function Choice(props: {
@@ -390,14 +606,14 @@ function Choice(props: {
   return (
     <button
       type="button"
-      class={`${item} flex items-center gap-1.5 ${props.active ? itemActive : ""}`}
-      title={meta().title}
+      class={`product-option ${props.active ? "active" : ""}`}
+      title={meta().title || undefined}
       onClick={() => props.onPick(props.product)}
     >
-      <span class={`shrink-0 text-11-regular ${meta().cls}`} aria-hidden="true">
-        {meta().glyph}
+      <span class={`product-option-icon ${meta().cls}`} aria-hidden="true">
+        <IconBox />
       </span>
-      <span class="min-w-0 truncate">{props.product.name}</span>
+      <span class="product-option-label">{props.product.name}</span>
     </button>
   )
 }
@@ -461,6 +677,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [pipeline, setPipeline] = createSignal("")
   const [menu, setMenu] = createSignal<Menu>("")
   const [chip, setChip] = createSignal(0)
+  const [dynMenu, setDynMenu] = createSignal(0)
   const [members, setMembers] = createSignal<TeamMember[]>([])
   const [multi, setMulti] = createSignal(false)
   const [draftEmails, setDraftEmails] = createSignal<string[]>([])
@@ -601,6 +818,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const closeMenus = () => {
     setMenu("")
     setChip(0)
+    setDynMenu(0)
   }
 
   const bump = () => {
@@ -1422,10 +1640,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   return (
     <Show when={isDesktop()}>
       <aside
+        data-ead-map
         aria-label="EAD Map"
         aria-hidden={!panelOpen()}
         inert={!panelOpen()}
-        class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
+        class="relative min-w-0 h-full flex shrink-0 overflow-hidden"
         classList={{
           "pointer-events-none": !panelOpen(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
@@ -1433,39 +1652,60 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         }}
         style={{ width: panelWidth() }}
       >
-        <div class="size-full flex flex-col border-r border-border-weaker-base min-h-0">
-          <div class="shrink-0 px-3 py-2 flex items-center justify-between border-b border-border-weaker-base gap-2">
-            <span class="text-14-medium text-text-strong truncate">{tx("title")}</span>
-            <div class="flex items-center gap-1">
-              <IconButton icon="expand" variant="ghost" class="h-5 w-5" onClick={() => void refresh({ syncLinked: true })} aria-label={tx("refresh")} />
-              <IconButton
-                icon="close-small"
-                variant="ghost"
-                class="h-5 w-5"
+        <div class="ead-shell size-full flex flex-col min-h-0">
+          <div class="ead-titlebar">
+            <span class="ead-titlebar-title truncate">{tx("title")}</span>
+            <div class="ead-titlebar-actions">
+              <button
+                type="button"
+                class="ead-icon-btn"
                 onClick={() => layout.pluginPanel.close(EAD_MAP_ID)}
                 aria-label={language.t("common.close")}
-              />
+              >
+                <IconClose />
+              </button>
             </div>
           </div>
 
-          <div class="flex-1 min-h-0 flex flex-col">
+          <div class="navigator-content">
+            <Show when={menu() === "product"}>
+              <div class="product-menu-scrim" onClick={() => closeMenus()} />
+            </Show>
             <Show
               when={ead.token()}
               fallback={
-                <div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
+                <div class="login-panel">
+                  <div class="auth-card">
+                  <div class="auth-brand">
+                    <span aria-hidden="true">▣</span>
+                    <span>EAD-PFM</span>
+                    <span class="auth-top-actions">
+                      <span class="auth-chip">?</span>
+                      <span class="auth-chip">{lang().toUpperCase()}</span>
+                      <span class="auth-chip">◐</span>
+                    </span>
+                  </div>
                   <Show when={tab() === "signin"}>
-                    <p class="text-14-medium text-text-strong">{tx("signIn")}</p>
-                    <p class="text-12-regular text-text-weak">{tx("signInHint")}</p>
+                    <p class="auth-title">{tx("signIn")}</p>
+                    <div class="auth-label-row">
+                      <label class="auth-label">{tx("idPlaceholder")}</label>
+                    </div>
                     <input
                       class={field}
                       placeholder={tx("idPlaceholder")}
                       value={id()}
                       onInput={(e) => setId(e.currentTarget.value)}
                     />
-                    <div class="relative">
+                    <div class="auth-label-row">
+                      <label class="auth-label">{tx("password")}</label>
+                      <button type="button" class="auth-link" onClick={() => setTab("forgot")}>
+                        {tx("forgot")}
+                      </button>
+                    </div>
+                    <div class="auth-input-wrap">
                       <input
                         type={showPass() ? "text" : "password"}
-                        class={`${field} pr-8`}
+                        class={field}
                         placeholder={tx("password")}
                         value={pass()}
                         onInput={(e) => setPass(e.currentTarget.value)}
@@ -1475,81 +1715,72 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       />
                       <button
                         type="button"
-                        class="absolute right-2 top-1/2 -translate-y-1/2 text-11-regular text-text-weak"
+                        class="auth-eye"
                         onClick={() => setShowPass((v) => !v)}
                       >
-                        {showPass() ? tx("hide") : tx("show")}
+                        {showPass() ? "◌" : "◎"}
                       </button>
                     </div>
-                    <div class="flex items-center justify-between gap-2">
-                      <button type="button" class="text-12-regular text-text-weak hover:underline" onClick={() => setTab("forgot")}>
-                        {tx("forgot")}
-                      </button>
-                      <Button size="small" variant="primary" disabled={busy()} onClick={() => void onLogin()}>
-                        {tx("signIn")}
-                      </Button>
-                    </div>
-                    <div class="flex items-center gap-2 text-11-regular text-text-weak">
-                      <span class="flex-1 border-t border-border-weaker-base" />
-                      {tx("orContinue")}
-                      <span class="flex-1 border-t border-border-weaker-base" />
-                    </div>
-                    <div class="flex gap-1">
-                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("Google")}>
+                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onLogin()}>
+                      {tx("signIn")}
+                    </button>
+                    <div class="auth-divider">{tx("orContinue")}</div>
+                    <div class="auth-oauth">
+                      <button type="button" onClick={() => soon("Google")}>
                         {tx("google")}
-                      </Button>
-                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("GitHub")}>
+                      </button>
+                      <button type="button" onClick={() => soon("GitHub")}>
                         {tx("github")}
-                      </Button>
+                      </button>
                     </div>
-                    <p class="text-12-regular text-text-weak">
+                    <p class="auth-muted" style={{ "margin-top": "16px", "margin-bottom": 0 }}>
                       {tx("noAccount")}{" "}
-                      <button type="button" class="underline" onClick={() => setTab("signup-start")}>
+                      <button type="button" class="auth-link" onClick={() => setTab("signup-start")}>
                         {tx("signUp")}
                       </button>
                     </p>
                   </Show>
 
                   <Show when={tab() === "signup-start"}>
-                    <p class="text-14-medium text-text-strong">{tx("signUp")}</p>
-                    <p class="text-12-regular text-text-weak">{tx("signUpHint")}</p>
+                    <p class="auth-title">{tx("signUp")}</p>
+                    <p class="auth-hint">{tx("signUpHint")}</p>
                     <input
                       class={field}
                       placeholder={tx("targetPlaceholder")}
                       value={target()}
                       onInput={(e) => setTarget(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onSendCode("signup")}>
+                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onSendCode("signup")}>
                       {tx("sendCode")}
-                    </Button>
-                    <div class="flex gap-1">
-                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("Google")}>
+                    </button>
+                    <div class="auth-oauth">
+                      <button type="button" onClick={() => soon("Google")}>
                         {tx("google")}
-                      </Button>
-                      <Button size="small" variant="secondary" class="flex-1" onClick={() => soon("GitHub")}>
+                      </button>
+                      <button type="button" onClick={() => soon("GitHub")}>
                         {tx("github")}
-                      </Button>
+                      </button>
                     </div>
-                    <button type="button" class="text-12-regular text-text-weak hover:underline self-start" onClick={() => setTab("signin")}>
+                    <button type="button" class="auth-link self-start" onClick={() => setTab("signin")}>
                       {tx("backSignIn")}
                     </button>
                   </Show>
 
                   <Show when={tab() === "signup-verify"}>
-                    <p class="text-14-medium text-text-strong">{tx("verify")}</p>
-                    <p class="text-12-regular text-text-weak">{tx("verifyHint", { target: target() })}</p>
+                    <p class="auth-title">{tx("verify")}</p>
+                    <p class="auth-hint">{tx("verifyHint", { target: target() })}</p>
                     <input
                       class={field}
                       placeholder={tx("codePlaceholder")}
                       value={code()}
                       onInput={(e) => setCode(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onVerify()}>
+                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onVerify()}>
                       {tx("verify")}
-                    </Button>
+                    </button>
                     <button
                       type="button"
-                      class="text-12-regular text-text-weak hover:underline self-start"
+                      class="auth-link self-start"
                       onClick={() => setTab("signup-start")}
                     >
                       {tx("back")}
@@ -1557,7 +1788,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Show>
 
                   <Show when={tab() === "signup-create"}>
-                    <p class="text-14-medium text-text-strong">{tx("createAccount")}</p>
+                    <p class="auth-title">{tx("createAccount")}</p>
                     <input
                       class={field}
                       placeholder={tx("username")}
@@ -1578,29 +1809,29 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={confirmPass()}
                       onInput={(e) => setConfirmPass(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
+                    <button type="button" class="auth-primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
                       {tx("create")}
-                    </Button>
+                    </button>
                   </Show>
 
                   <Show when={tab() === "forgot"}>
-                    <p class="text-14-medium text-text-strong">{tx("forgotTitle")}</p>
+                    <p class="auth-title">{tx("forgotTitle")}</p>
                     <input
                       class={field}
                       placeholder={tx("targetPlaceholder")}
                       value={target()}
                       onInput={(e) => setTarget(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onSendCode("reset")}>
+                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onSendCode("reset")}>
                       {tx("sendCode")}
-                    </Button>
-                    <button type="button" class="text-12-regular text-text-weak hover:underline self-start" onClick={() => setTab("signin")}>
+                    </button>
+                    <button type="button" class="auth-link self-start" onClick={() => setTab("signin")}>
                       {tx("backSignIn")}
                     </button>
                   </Show>
 
                   <Show when={tab() === "forgot-reset"}>
-                    <p class="text-14-medium text-text-strong">{tx("resetTitle")}</p>
+                    <p class="auth-title">{tx("resetTitle")}</p>
                     <input
                       class={field}
                       placeholder={tx("codePlaceholder")}
@@ -1621,43 +1852,57 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={confirmPass()}
                       onInput={(e) => setConfirmPass(e.currentTarget.value)}
                     />
-                    <Button size="small" variant="primary" disabled={busy()} onClick={() => void onReset()}>
+                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onReset()}>
                       {tx("resetPassword")}
-                    </Button>
+                    </button>
                   </Show>
 
                   <Show when={tab() === "forgot-success"}>
-                    <p class="text-14-medium text-text-strong">{tx("passwordUpdated")}</p>
-                    <p class="text-12-regular text-text-weak">{tx("passwordUpdatedHint")}</p>
-                    <Button size="small" variant="primary" onClick={() => setTab("signin")}>
+                    <p class="auth-title">{tx("passwordUpdated")}</p>
+                    <p class="auth-hint">{tx("passwordUpdatedHint")}</p>
+                    <button type="button" class="auth-primary" onClick={() => setTab("signin")}>
                       {tx("backSignIn")}
-                    </Button>
+                    </button>
                   </Show>
 
                   <Show when={err()}>
-                    <p class="text-12-regular text-text-weak break-words">{err()}</p>
+                    <p class="auth-error">{err()}</p>
                   </Show>
+                  </div>
                 </div>
               }
             >
-              <div class="navigator-chrome shrink-0 px-3 pt-2 pb-1 border-b border-border-weaker-base flex flex-col gap-1.5 relative z-10 overflow-visible">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-11-medium text-text-weak truncate">{tx("selectProduct")}</span>
-                  <div class="flex items-center gap-1 shrink-0" data-ead-menu>
-                    <Button size="small" variant="secondary" onClick={() => launch({ kind: "dashboard" })}>
-                      {tx("aiPilot")}
-                    </Button>
+              <div class="navigator-chrome" classList={{ "is-product-open": menu() === "product" }}>
+                <div class="product-label-row">
+                  <span class="ead-label">{tx("selectProduct")}</span>
+                  <div class="product-label-actions" data-ead-menu>
+                    <button type="button" class="ead-map-ai-find-btn" onClick={() => launch({ kind: "dashboard" })}>
+                      <IconSpark />
+                      <span>{tx("aiPilot")}</span>
+                    </button>
                     <div class="relative">
                       <button
                         type="button"
-                        class="h-6 w-6 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
+                        class="ead-icon-btn"
+                        classList={{ open: menu() === "user" || menu() === "lang" }}
                         aria-label={tx("menu")}
                         onClick={() => setMenu(menu() === "user" ? "" : "user")}
                       >
-                        ☰
+                        <IconMenu />
                       </button>
                       <Show when={menu() === "user" || menu() === "lang"}>
                         <div class={`${drop} right-0 w-52`}>
+                          <button
+                            type="button"
+                            class={item}
+                            onClick={() => {
+                              closeMenus()
+                              void refresh({ syncLinked: true })
+                            }}
+                          >
+                            {tx("refresh")}
+                          </button>
+                          <div class="ead-drop-sep" />
                           <button
                             type="button"
                             class={item}
@@ -1666,6 +1911,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           >
                             {tx("editProduct")}
                           </button>
+                          <div class="ead-drop-sep" />
                           <button
                             type="button"
                             class={item}
@@ -1676,44 +1922,66 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           >
                             {tx("profile")}
                           </button>
+                          <div class="ead-drop-sep" />
                           <button
                             type="button"
-                            class={`${item} flex items-center justify-between`}
+                            class={item}
+                            aria-expanded={menu() === "lang"}
                             onClick={() => setMenu(menu() === "lang" ? "user" : "lang")}
                           >
                             <span>{tx("language")}</span>
-                            <span class="text-11-regular text-text-weak">{lang().toUpperCase()}</span>
+                            <span class="nav-user-menu-item-meta">
+                              <span>
+                                {tx(
+                                  lang() === "en"
+                                    ? "langEn"
+                                    : lang() === "zh"
+                                      ? "langZh"
+                                      : lang() === "ja"
+                                        ? "langJa"
+                                        : "langKo",
+                                )}
+                              </span>
+                              <span class="nav-user-menu-caret" aria-hidden="true">▼</span>
+                            </span>
                           </button>
                           <Show when={menu() === "lang"}>
-                            <For each={["en", "zh", "ja", "ko"] as Lang[]}>
-                              {(code) => (
-                                <button
-                                  type="button"
-                                  class={`${item} pl-4 ${ead.language() === code ? itemActive : ""}`}
-                                  onClick={() => {
-                                    ead.setLanguage(code)
-                                    closeMenus()
-                                  }}
-                                >
-                                  {tx(
-                                    code === "en"
-                                      ? "langEn"
-                                      : code === "zh"
-                                        ? "langZh"
-                                        : code === "ja"
-                                          ? "langJa"
-                                          : "langKo",
-                                  )}
-                                </button>
-                              )}
-                            </For>
+                            <div class="nav-lang-menu">
+                              <div class="nav-lang-menu-header">{tx("selectLang")}</div>
+                              <For each={["en", "zh", "ja", "ko"] as Lang[]}>
+                                {(code) => (
+                                  <button
+                                    type="button"
+                                    class="nav-lang-menu-item"
+                                    classList={{ "is-active": ead.language() === code }}
+                                    onClick={() => {
+                                      ead.setLanguage(code)
+                                      closeMenus()
+                                    }}
+                                  >
+                                    {tx(
+                                      code === "en"
+                                        ? "langEn"
+                                        : code === "zh"
+                                          ? "langZh"
+                                          : code === "ja"
+                                            ? "langJa"
+                                            : "langKo",
+                                    )}
+                                    <span class="nav-lang-menu-check">
+                                      {ead.language() === code ? "✓" : ""}
+                                    </span>
+                                  </button>
+                                )}
+                              </For>
+                            </div>
                           </Show>
-                          <div class="my-1 border-t border-border-weaker-base" />
-                          <button type="button" class={`${item} text-text-weak`} onClick={onSignOut}>
+                          <div class="ead-drop-sep" />
+                          <button type="button" class={`${item} is-logout`} onClick={onSignOut}>
                             {tx("logout")}
                           </button>
                           <Show when={user()}>
-                            <div class="px-2.5 py-1 text-11-regular text-text-weak truncate">{user()}</div>
+                            <div class="px-2.5 py-1 truncate" style={{ color: "var(--ead-muted)", "font-size": "11px" }}>{user()}</div>
                           </Show>
                         </div>
                       </Show>
@@ -1721,11 +1989,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
                 </div>
 
-                <div class="flex items-center gap-1" data-ead-menu>
+                <div class="product-row" classList={{ "is-open": menu() === "product" }} data-ead-menu>
                   <div class="relative flex-1 min-w-0">
                     <button
                       type="button"
-                      class="w-full flex items-center gap-2 px-2 py-1.5 text-12-regular rounded-md border border-border-weak-base bg-background-base text-left hover:bg-surface-base-hover"
+                      class="product-select"
                       aria-expanded={menu() === "product"}
                       onClick={() => {
                         setMenu(menu() === "product" ? "" : "product")
@@ -1733,27 +2001,29 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         setChip(0)
                       }}
                     >
-                      <span class="flex-1 min-w-0 truncate text-text-base">
+                      <span class="product-select-label">
                         {ead.productName() || tx("selectProductHint")}
                       </span>
-                      <span class="shrink-0 text-text-weak">▾</span>
+                      <span class="product-select-switch" aria-hidden="true">
+                        <IconSwap />
+                      </span>
                     </button>
                     <Show when={menu() === "product"}>
-                      <div class={`${drop} left-0 right-0 w-auto max-w-none`}>
-                        <div class="px-2 pb-1.5 border-b border-border-weaker-base">
+                      <div class={`${drop} is-product`}>
+                        <div class="product-menu-search-wrap">
                           <input
-                            class={`${field} py-1`}
+                            class={`${field} product-menu-search`}
                             placeholder={tx("searchProduct")}
                             value={pq()}
                             onInput={(e) => setPq(e.currentTarget.value)}
                             autofocus
                           />
                         </div>
-                        <div class="max-h-56 overflow-y-auto">
+                        <div class="product-menu-list">
                           <Show
                             when={grouped().length}
                             fallback={
-                              <For each={filtered()} fallback={<div class="px-2.5 py-2 text-text-weak">{tx("noProducts")}</div>}>
+                              <For each={filtered()} fallback={<div class="px-2.5 py-2" style={{ color: "var(--ead-muted)" }}>{tx("noProducts")}</div>}>
                                 {(p) => (
                                   <Choice
                                     product={p}
@@ -1767,20 +2037,25 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           >
                             <For each={grouped()}>
                               {(g) => (
-                                <div>
-                                  <div class="px-2.5 py-1 text-11-regular text-text-weak truncate">
-                                    {g.name || tx("teamFallback")}
+                                <div class="product-menu-group">
+                                  <div class="product-menu-team">
+                                    <span class="product-menu-team-icon">
+                                      <IconFolder />
+                                    </span>
+                                    <span class="product-menu-team-label">{g.name || tx("teamFallback")}</span>
                                   </div>
-                                  <For each={g.products}>
-                                    {(p) => (
-                                      <Choice
-                                        product={p}
-                                        active={ead.productId() === p.productId}
-                                        lang={lang()}
-                                        onPick={pickProduct}
-                                      />
-                                    )}
-                                  </For>
+                                  <div class="product-menu-children">
+                                    <For each={g.products}>
+                                      {(p) => (
+                                        <Choice
+                                          product={p}
+                                          active={ead.productId() === p.productId}
+                                          lang={lang()}
+                                          onPick={pickProduct}
+                                        />
+                                      )}
+                                    </For>
+                                  </div>
                                 </div>
                               )}
                             </For>
@@ -1789,25 +2064,25 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       </div>
                     </Show>
                   </div>
-                  <Button
-                    size="small"
-                    variant="ghost"
+                  <button
+                    type="button"
+                    class="ead-icon-btn product-edit-btn"
                     disabled={ead.productId() <= 0}
                     onClick={askEdit}
                     title={tx("editProduct")}
                   >
-                    ✎
-                  </Button>
+                    <IconEdit />
+                  </button>
                 </div>
 
                 <Show when={hint() && ead.productId() <= 0}>
-                  <div class="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border-weaker-base bg-surface-base text-12-regular">
-                    <span class="min-w-0 flex-1 truncate text-text-weak">
-                      {tx("suggested")} <span class="text-text-strong">{hint()!.name}</span>
+                  <div class="product-suggestion">
+                    <span class="min-w-0 flex-1 truncate">
+                      {tx("suggested")} <strong>{hint()!.name}</strong>
                     </span>
-                    <Button
-                      size="small"
-                      variant="secondary"
+                    <button
+                      type="button"
+                      class="ead-map-ai-find-btn"
                       onClick={() => {
                         const hit = hint()
                         if (!hit) return
@@ -1815,18 +2090,18 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       }}
                     >
                       {tx("use")}
-                    </Button>
-                    <Button size="small" variant="ghost" onClick={() => setHint(undefined)}>
+                    </button>
+                    <button type="button" class="auth-link" onClick={() => setHint(undefined)}>
                       {tx("dismiss")}
-                    </Button>
+                    </button>
                   </div>
                 </Show>
 
                 <Show when={ead.mapId() > 0}>
-                  <div class="relative flex items-center gap-1.5 min-w-0 text-11-regular" data-ead-menu>
+                  <div class="active-pfm-wrap" data-ead-menu>
                     <button
                       type="button"
-                      class="min-w-0 flex-1 flex items-center gap-1 text-left disabled:cursor-default"
+                      class="active-pfm-btn"
                       disabled={!schemas().length}
                       onClick={() => {
                         if (!schemas().length) return
@@ -1834,53 +2109,55 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         setChip(0)
                       }}
                     >
-                      <span class="shrink-0 text-text-weak">{tx("pfmPrefix")}</span>
-                      <span class="min-w-0 truncate text-text-base" style={{ direction: "rtl", "text-align": "left" }}>
+                      <span class="active-pfm-prefix">{tx("pfmPrefix")}</span>
+                      <span class="active-pfm-value-map">
                         <bdi>{mapName() || `Map ${ead.mapId()}`}</bdi>
                       </span>
-                      <span class="shrink-0 text-text-weak">–</span>
-                      <span class="shrink-0 text-text-base">{schemaType()}</span>
+                      <span class="active-pfm-prefix" style={{ color: "#60a5fa" }}>–</span>
+                      <span class="active-pfm-value-type">{schemaType()}</span>
                       <Show when={schemas().length}>
-                        <span class="shrink-0 text-text-weak">▾</span>
+                        <span class="job-owner-filter-caret">▾</span>
                       </Show>
                     </button>
                     <Show when={baseMapId() > 0}>
-                      <span class="shrink-0 px-1.5 rounded-full text-11-regular border border-border-weaker-base text-text-weak">
-                        {tx("siblingPfm")}
-                      </span>
+                      <span class="active-pfm-badge">{tx("siblingPfm")}</span>
                     </Show>
                     <Show when={menu() === "schema"}>
-                      <div class={`${drop} left-0`}>
+                      <div class="pfm-schema-filter-menu">
                         <button
                           type="button"
-                          class={`${item} ${ead.subSchemaId() <= 0 ? itemActive : ""}`}
+                          class="pfm-schema-filter-option"
+                          classList={{ "is-selected": ead.subSchemaId() <= 0 }}
                           onClick={() => {
                             ead.setSubSchema(0)
                             closeMenus()
                             void refresh()
                           }}
                         >
+                          <span class="pfm-schema-filter-check">{ead.subSchemaId() <= 0 ? "✓" : ""}</span>
                           {tx("baseMap")}
                         </button>
                         <For each={schemas()}>
                           {(s) => (
                             <button
                               type="button"
-                              class={`${item} ${ead.subSchemaId() === s.id ? itemActive : ""}`}
+                              class="pfm-schema-filter-option"
+                              classList={{ "is-selected": ead.subSchemaId() === s.id }}
                               onClick={() => {
                                 ead.setSubSchema(s.id)
                                 closeMenus()
                                 void refresh()
                               }}
                             >
+                              <span class="pfm-schema-filter-check">{ead.subSchemaId() === s.id ? "✓" : ""}</span>
                               {s.name}
                             </button>
                           )}
                         </For>
-                        <div class="my-1 border-t border-border-weaker-base" />
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={`${item} text-text-weak`}
+                          class="pfm-schema-filter-option"
                           onClick={() => openHelp("pfm-schema-filter")}
                         >
                           {tx("help")}
@@ -1890,31 +2167,36 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
                 </Show>
 
-                <div class="flex items-center gap-1" data-ead-menu>
-                  <input
-                    class={`${field} flex-1 py-1`}
-                    placeholder={ead.view() === "source" ? tx("searchSource") : tx("searchPfm")}
-                    value={query()}
-                    onInput={(e) => setQuery(e.currentTarget.value)}
-                  />
+                <div class="search-toolbar-row" data-ead-menu>
+                  <div class="search-input-wrap">
+                    <input
+                      class="search"
+                      placeholder={ead.view() === "source" ? tx("searchSource") : tx("searchPfm")}
+                      value={query()}
+                      onInput={(e) => setQuery(e.currentTarget.value)}
+                    />
+                  </div>
                   <div class="relative shrink-0">
                     <button
                       type="button"
-                      class="h-7 w-7 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
-                      classList={{ "border-border-weak-base bg-surface-base-active": pfmFilter().active }}
+                      class="search-mindmap-btn"
+                      classList={{
+                        open: menu() === "setup",
+                        "is-filter-on": pfmFilter().active,
+                      }}
                       aria-label={tx("setup")}
                       onClick={() => {
                         setMenu(menu() === "setup" ? "" : "setup")
                         setChip(0)
                       }}
                     >
-                      ⋯
+                      <IconDots />
                     </button>
                     <Show when={menu() === "setup"}>
-                      <div class={`${drop} right-0 w-56`}>
+                      <div class="search-setup-menu">
                         <button
                           type="button"
-                          class={item}
+                          class="search-setup-menu-item"
                           disabled={ead.productId() <= 0}
                           onClick={() => {
                             closeMenus()
@@ -1923,9 +2205,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("viewSetup")}
                         </button>
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={item}
+                          class="search-setup-menu-item"
                           disabled={ead.productId() <= 0}
                           onClick={() => {
                             closeMenus()
@@ -1934,9 +2217,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("setupFilter")}
                         </button>
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={item}
+                          class="search-setup-menu-item"
                           disabled={ead.productId() <= 0}
                           onClick={() => {
                             closeMenus()
@@ -1946,34 +2230,41 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("crawlVision")}
                         </button>
-                        <label class={`${item} flex items-center gap-2 cursor-pointer`}>
-                          <input
-                            type="checkbox"
-                            checked={owner().enabled}
-                            onChange={(e) => {
-                              const pid = ead.productId()
-                              if (pid <= 0) return
-                              writeOwner(pid, { enabled: e.currentTarget.checked })
-                              bump()
-                            }}
-                          />
-                          {tx("enableOwner")}
-                        </label>
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={`${item} flex items-center justify-between`}
+                          class="search-setup-menu-item"
+                          disabled={ead.productId() <= 0}
+                          onClick={() => {
+                            const pid = ead.productId()
+                            if (pid <= 0) return
+                            writeOwner(pid, { enabled: !owner().enabled })
+                            bump()
+                          }}
+                        >
+                          <span class="search-setup-menu-check" classList={{ "is-on": owner().enabled }}>
+                            {owner().enabled ? "✓" : ""}
+                          </span>
+                          <span>{tx("enableOwner")}</span>
+                        </button>
+                        <div class="ead-drop-sep" />
+                        <button
+                          type="button"
+                          class="search-setup-menu-item"
                           onClick={() => {
                             setDiag((v) => !v)
                             closeMenus()
                           }}
                         >
+                          <span class="search-setup-menu-check" classList={{ "is-on": diag() }}>
+                            {diag() ? "✓" : ""}
+                          </span>
                           <span>{tx("showDebug")}</span>
-                          <span class="text-11-regular text-text-weak">{diag() ? tx("on") : tx("off")}</span>
                         </button>
-                        <div class="my-1 border-t border-border-weaker-base" />
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={`${item} text-text-weak`}
+                          class="search-setup-menu-item"
                           onClick={() => openHelp("ead-map-search-setup")}
                         >
                           {tx("help")}
@@ -1984,12 +2275,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                 </div>
 
                 <Show when={pfmFilter().ids.length > 0}>
-                  <div class="flex items-center gap-2 text-11-regular text-text-weak">
+                  <div class="pfm-filter-status">
                     <span>{tx("pfmFilterPrefix", { count: pfmFilter().ids.length })}</span>
                     <button
                       type="button"
-                      class="px-1.5 py-0.5 rounded border border-border-weaker-base hover:bg-surface-base-hover"
-                      classList={{ "text-text-strong border-border-weak-base": pfmFilter().active }}
+                      class="pfm-filter-state"
+                      classList={{ "is-off": !pfmFilter().active }}
                       onClick={() => {
                         const cur = pfmFilter()
                         const pid = ead.productId()
@@ -2005,17 +2296,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                 </Show>
 
                 <Show when={owner().enabled}>
-                  <div class="relative flex items-center gap-1.5 text-11-regular" data-ead-menu>
-                    <span class="shrink-0 text-text-weak">{tx("jobOwner")}</span>
+                  <div class="job-owner-row" data-ead-menu>
+                    <span class="job-owner-filter-label">{tx("jobOwner")}</span>
                     <button
                       type="button"
-                      class="min-w-0 truncate text-text-base hover:underline"
+                      class="job-owner-filter-value"
                       onClick={() => void openOwner()}
                     >
                       {ownerSummary(owner())} ▾
                     </button>
                     <Show when={menu() === "owner"}>
-                      <div class={`${drop} left-0 w-64 max-h-80 overflow-y-auto`}>
+                      <div class="job-owner-filter-menu">
                         <div class="px-2 pb-1.5 border-b border-border-weaker-base flex items-center gap-1">
                           <input
                             class={`${field} flex-1 py-1`}
@@ -2161,7 +2452,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             )}
                           </For>
                         </Show>
-                        <div class="my-1 border-t border-border-weaker-base" />
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
                           class={`${item} text-text-weak`}
@@ -2173,17 +2464,21 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     </Show>
                   </div>
                 </Show>
-                <div class="tree-toolbar-row flex items-center gap-1 flex-wrap" data-ead-menu>
-                  <div class="relative">
+                <div class="tree-toolbar-row" data-ead-menu>
+                  <div class="tree-view-switch-wrap">
                     <button
                       type="button"
-                      class="px-2 py-1 rounded border border-border-weaker-base text-11-regular text-text-base hover:bg-surface-base-hover"
+                      class="tree-view-select"
+                      classList={{ open: menu() === "view" }}
                       onClick={() => setMenu(menu() === "view" ? "" : "view")}
                     >
-                      {ead.view() === "source" ? tx("aiCode") : tx("pfmTree")} ▾
+                      <span class="tree-view-select-label">
+                        {ead.view() === "source" ? tx("aiCode") : tx("pfmTree")}
+                      </span>
+                      <span class="tree-view-select-caret" aria-hidden="true">&gt;</span>
                     </button>
                     <Show when={menu() === "view"}>
-                      <div class={drop}>
+                      <div class={`${drop} left-0 right-0 w-auto max-w-none`}>
                         <button
                           type="button"
                           class={`${item} ${ead.view() === "pfm" ? itemActive : ""}`}
@@ -2198,10 +2493,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("aiCode")}
                         </button>
-                        <div class="my-1 border-t border-border-weaker-base" />
+                        <div class="ead-drop-sep" />
                         <button
                           type="button"
-                          class={`${item} text-text-weak`}
+                          class={item}
                           onClick={() => openHelp("navigator-view-mode")}
                         >
                           {tx("help")}
@@ -2211,74 +2506,100 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
 
                   <Show when={ead.view() === "pfm"}>
-                    <div class="relative">
+                    <div class="job-filter-wrap">
                       <button
                         type="button"
-                        class="px-2 py-1 rounded border border-border-weaker-base text-11-regular text-text-base hover:bg-surface-base-hover"
+                        class="job-filter-button"
+                        classList={{ open: menu() === "job" }}
                         title={`${ead.badge()} · ${ead.jobsOnly() ? tx("filtered") : tx("all")}`}
                         onClick={() => setMenu(menu() === "job" ? "" : "job")}
                       >
-                        {tx("filter")}
-                        <Show when={ead.badge() !== "none" || ead.jobsOnly()}>
-                          <span class="ml-1 text-text-weak">
-                            · {ead.badge() === "none" ? tx("none") : ead.badge()}
-                            {ead.jobsOnly() ? ` · ${tx("filtered")}` : ""}
-                          </span>
-                        </Show>
+                        <span class="job-filter-icon">
+                          <Show
+                            when={!ead.jobsOnly()}
+                            fallback={
+                              <Show when={ead.badge() === "ead"} fallback={
+                                <Show when={ead.badge() === "tests"} fallback={<IconJobs />}>
+                                  <IconTests />
+                                </Show>
+                              }>
+                                <IconEad />
+                              </Show>
+                            }
+                          >
+                            <IconFolders />
+                          </Show>
+                        </span>
+                        <IconCaret />
                       </button>
                       <Show when={menu() === "job"}>
-                        <div class={`${drop} w-44`}>
-                          <div class="px-2.5 py-1 text-11-regular text-text-weak">{tx("badge")}</div>
+                        <div class="job-filter-menu">
+                          <div class="job-filter-group-label">{tx("badge")}</div>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "ead" ? itemActive : ""}`}
+                            class="job-filter-option"
+                            classList={{ active: ead.badge() === "ead" }}
                             onClick={() => toggleBadge("ead")}
                           >
-                            {tx("ead")}
+                            <span class="job-filter-icon"><IconEad /></span>
+                            <span>{tx("ead")}</span>
+                            <span class="job-filter-check">{ead.badge() === "ead" ? <IconCheck /> : null}</span>
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "jobs" ? itemActive : ""}`}
+                            class="job-filter-option"
+                            classList={{ active: ead.badge() === "jobs" }}
                             onClick={() => toggleBadge("jobs")}
                           >
-                            {tx("jobs")}
+                            <span class="job-filter-icon"><IconJobs /></span>
+                            <span>{tx("jobs")}</span>
+                            <span class="job-filter-check">{ead.badge() === "jobs" ? <IconCheck /> : null}</span>
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "tests" ? itemActive : ""}`}
+                            class="job-filter-option"
+                            classList={{ active: ead.badge() === "tests" }}
                             onClick={() => toggleBadge("tests")}
                           >
-                            {tx("tests")}
+                            <span class="job-filter-icon"><IconTests /></span>
+                            <span>{tx("tests")}</span>
+                            <span class="job-filter-check">{ead.badge() === "tests" ? <IconCheck /> : null}</span>
                           </button>
-                          <div class="my-1 border-t border-border-weaker-base" />
-                          <div class="px-2.5 py-1 text-11-regular text-text-weak">{tx("filter")}</div>
+                          <div class="job-filter-separator" />
+                          <div class="job-filter-group-label">{tx("filter")}</div>
                           <button
                             type="button"
-                            class={`${item} ${!ead.jobsOnly() ? itemActive : ""}`}
+                            class="job-filter-option"
+                            classList={{ active: !ead.jobsOnly() }}
                             onClick={() => {
                               ead.setJobsOnly(false)
                               setMenu("")
                             }}
                           >
-                            {tx("all")}
+                            <span class="job-filter-icon"><IconFolders /></span>
+                            <span>{tx("all")}</span>
+                            <span class="job-filter-check">{!ead.jobsOnly() ? <IconCheck /> : null}</span>
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.jobsOnly() ? itemActive : ""}`}
+                            class="job-filter-option"
+                            classList={{ active: ead.jobsOnly() }}
                             onClick={() => {
                               ead.setJobsOnly(true)
                               setMenu("")
                             }}
                           >
-                            {tx("filtered")}
+                            <span class="job-filter-icon"><IconFilter /></span>
+                            <span>{tx("filtered")}</span>
+                            <span class="job-filter-check">{ead.jobsOnly() ? <IconCheck /> : null}</span>
                           </button>
-                          <div class="my-1 border-t border-border-weaker-base" />
+                          <div class="job-filter-separator" />
                           <button
                             type="button"
-                            class={`${item} text-text-weak`}
+                            class="job-filter-option"
                             onClick={() => openHelp("pfm-tree-filter")}
                           >
-                            {tx("help")}
+                            <span>{tx("help")}</span>
                           </button>
                         </div>
                       </Show>
@@ -2286,14 +2607,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Show>
 
                   <Show when={ead.view() === "source"}>
-                    <div class="relative ml-auto">
+                    <div class="job-filter-wrap">
                       <button
                         type="button"
-                        class="h-7 w-7 rounded border border-border-weaker-base text-12-regular text-text-weak hover:bg-surface-base-hover"
+                        class="ead-icon-btn"
+                        classList={{ open: menu() === "run" }}
                         aria-label="EAD run"
                         onClick={() => setMenu(menu() === "run" ? "" : "run")}
                       >
-                        ⋯
+                        <IconDots />
                       </button>
                       <Show when={menu() === "run"}>
                         <div class={`${drop} right-0 w-52`}>
@@ -2319,7 +2641,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           >
                             {tx("tests")}
                           </button>
-                          <div class="my-1 border-t border-border-weaker-base" />
+                          <div class="ead-drop-sep" />
                           <div class="px-2.5 py-1 text-11-regular text-text-weak">{tx("sourceTree")}</div>
                           <button
                             type="button"
@@ -2341,7 +2663,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           >
                             {tx("withEads")}
                           </button>
-                          <div class="my-1 border-t border-border-weaker-base" />
+                          <div class="ead-drop-sep" />
                           <button
                             type="button"
                             class={item}
@@ -2383,14 +2705,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
               </div>
 
-              <div class="navigator-scroll flex-1 min-h-0 overflow-y-auto px-3 py-2 flex flex-col gap-2">
+              <div class="navigator-scroll">
                 <Show when={banner()}>
                   <div
-                    class="px-2 py-1 rounded text-11-regular border"
+                    class="refresh-banner"
                     classList={{
-                      "border-border-weaker-base text-text-weak": banner()!.kind === "loading",
-                      "border-border-weak-base text-text-strong bg-surface-base-active": banner()!.kind === "ok",
-                      "border-border-weak-base text-text-weak": banner()!.kind === "error",
+                      "is-ok": banner()!.kind === "ok",
+                      "is-error": banner()!.kind === "error",
                     }}
                   >
                     {banner()!.text}
@@ -2417,29 +2738,48 @@ ${pipeline()}`}
                 </Show>
 
                 <Show when={ead.view() === "source"}>
-                  <div class="source-scope-bar flex gap-1" data-ead-menu>
+                  <div class="source-scope-bar" data-ead-menu>
                     <button
                       type="button"
-                      class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
-                      classList={{ "bg-surface-base-active text-text-strong": !ead.eadsOnly() }}
-                      onClick={() => {
-                        ead.setEadsOnly(false)
-                        persistRun()
-                      }}
+                      class="source-scope-select"
+                      classList={{ open: menu() === "scope" }}
+                      onClick={() => setMenu(menu() === "scope" ? "" : "scope")}
                     >
-                      {tx("showAllSource")}
+                      <span class="source-scope-select-label">
+                        {ead.eadsOnly() ? tx("showWithEads") : tx("showAllSource")}
+                      </span>
+                      <span class="source-scope-select-caret">&gt;</span>
                     </button>
-                    <button
-                      type="button"
-                      class="px-2 py-0.5 rounded text-11-regular border border-border-weaker-base"
-                      classList={{ "bg-surface-base-active text-text-strong": ead.eadsOnly() }}
-                      onClick={() => {
-                        ead.setEadsOnly(true)
-                        persistRun()
-                      }}
-                    >
-                      {tx("showWithEads")}
-                    </button>
+                    <Show when={menu() === "scope"}>
+                      <div class="source-scope-menu">
+                        <button
+                          type="button"
+                          class="source-scope-menu-item"
+                          classList={{ active: !ead.eadsOnly() }}
+                          onClick={() => {
+                            ead.setEadsOnly(false)
+                            persistRun()
+                            closeMenus()
+                          }}
+                        >
+                          <span class="job-filter-check">{!ead.eadsOnly() ? <IconCheck /> : null}</span>
+                          {tx("showAllSource")}
+                        </button>
+                        <button
+                          type="button"
+                          class="source-scope-menu-item"
+                          classList={{ active: ead.eadsOnly() }}
+                          onClick={() => {
+                            ead.setEadsOnly(true)
+                            persistRun()
+                            closeMenus()
+                          }}
+                        >
+                          <span class="job-filter-check">{ead.eadsOnly() ? <IconCheck /> : null}</span>
+                          {tx("showWithEads")}
+                        </button>
+                      </div>
+                    </Show>
                   </div>
                 </Show>
 
@@ -2449,7 +2789,7 @@ ${pipeline()}`}
 
                 <Show when={ead.view() === "pfm"}>
                   <Show when={pfmVisible().length}>
-                    <div class="flex flex-col gap-0.5">
+                    <div class="tree">
                       <Tree
                         nodes={pfmVisible()}
                         selected={ead.nodeId()}
@@ -2465,6 +2805,15 @@ ${pipeline()}`}
                         onToggle={onPfmToggle}
                         onChip={setChip}
                         onInject={(kind, node) => void inject(kind, node.nodeId, node.name, "pfm")}
+                        schemas={schemas()}
+                        subId={ead.subSchemaId()}
+                        schemaOpen={dynMenu()}
+                        onSchemaOpen={setDynMenu}
+                        onSchema={(id) => {
+                          ead.setSubSchema(id)
+                          void refresh()
+                        }}
+                        schemaLabel={schemas().length ? schemaType() : undefined}
                       />
                     </div>
                   </Show>
@@ -2501,7 +2850,7 @@ ${pipeline()}`}
 
                 <Show when={ead.view() === "source"}>
                   <Show when={sourceVisible().length}>
-                    <div class="flex flex-col gap-0.5">
+                    <div class="tree">
                       <SourceTree
                         nodes={sourceVisible()}
                         selected={ead.sourceId()}
