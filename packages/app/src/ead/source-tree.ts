@@ -265,13 +265,87 @@ export function filterLinkedTree(nodes: SourceNode[], linked: string[] | null | 
   })
 }
 
+/** Source-code path allowlist — keep in sync with Cursor extension sourceTree.ts. */
+const EXTS = new Set([
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+  "vue",
+  "svelte",
+  "java",
+  "kt",
+  "kts",
+  "scala",
+  "go",
+  "rs",
+  "py",
+  "rb",
+  "php",
+  "cs",
+  "vb",
+  "aspx",
+  "ascx",
+  "asmx",
+  "asax",
+  "master",
+  "resx",
+  "csproj",
+  "vbproj",
+  "sln",
+  "config",
+  "svc",
+  "wsdl",
+  "cpp",
+  "cc",
+  "cxx",
+  "c",
+  "h",
+  "hpp",
+  "rc",
+  "idl",
+  "def",
+  "swift",
+  "m",
+  "mm",
+  "sql",
+  "xml",
+  "json",
+  "yaml",
+  "yml",
+  "md",
+  "html",
+  "htm",
+  "css",
+  "scss",
+  "less",
+  "sass",
+  "sh",
+  "bash",
+  "zsh",
+  "bat",
+  "ps1",
+  "gradle",
+  "properties",
+  "toml",
+  "ini",
+  "env",
+  "graphql",
+  "gql",
+  "proto",
+  "wasm",
+])
+
 function isFile(path: string) {
   const n = path.trim().replace(/\\/g, "/")
   if (n.includes("@") && !n.includes("/", n.indexOf("@"))) return false
   const base = n.split("/").filter(Boolean).pop() || ""
   if (!base || base.includes("@")) return false
   const dot = base.lastIndexOf(".")
-  return dot > 0 && dot < base.length - 1
+  if (dot <= 0 || dot === base.length - 1) return false
+  return EXTS.has(base.slice(dot + 1).toLowerCase())
 }
 
 function rel(path: string) {
@@ -292,7 +366,11 @@ export function repoOf(path: string) {
 
 /** Linked file sits under a source-tree folder (Cursor linkedSourceFileUnderSelectedFolder). */
 export function underFolder(file: string, folder: string) {
-  if (!file.trim() || !folder.trim() || !isFile(file)) return false
+  if (!file.trim() || !folder.trim()) return false
+  if (!isFile(file)) {
+    const only = file.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+    if (!isFile(only)) return false
+  }
   let next = file.trim().replace(/\\/g, "/")
   const root = repoOf(folder)
   if (!next.includes("@") && root) next = `${root}/${next.replace(/^\/+/, "")}`

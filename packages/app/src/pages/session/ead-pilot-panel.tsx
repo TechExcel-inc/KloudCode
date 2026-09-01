@@ -214,7 +214,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
       if (stopped) return
       push(el)
     }
-    const timers = [0, 50, 150, 400, 800].map((ms) => window.setTimeout(run, ms))
+    // Keep retries short: Pilot iframe dedupes identical updates; excess retries thrash on open.
+    const timers = [0, 120, 500].map((ms) => window.setTimeout(run, ms))
     onCleanup(() => {
       stopped = true
       timers.forEach((t) => window.clearTimeout(t))

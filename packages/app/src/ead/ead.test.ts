@@ -45,7 +45,7 @@ import { mcpCandidates } from "./mcp"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.196")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.201")
   })
 })
 
@@ -156,6 +156,13 @@ describe("ead source-tree", () => {
     expect(counts["src/auth/login.ts"]).toBe(3)
     expect(counts["src/auth"]).toBe(3)
     expect(counts["src/other.ts"]).toBeUndefined()
+  })
+
+  test("underFolder allows Legacy ASP.NET / VB source paths", () => {
+    expect(underFolder("Web/Login.aspx", "Web")).toBe(true)
+    expect(underFolder("App_Code/Helper.vb", "App_Code")).toBe(true)
+    expect(underFolder("ServiceWise.csproj", "")).toBe(false)
+    expect(underFolder("notes.txt", "docs")).toBe(false)
   })
 })
 
