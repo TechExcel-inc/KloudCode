@@ -397,6 +397,96 @@ export function hits(linked: string, node: string) {
   return pathMatches(b, [a])
 }
 
+export function rootPaths(nodes: SourceNode[]) {
+  return nodes.map((n) => n.nodePath).filter((p) => p.length > 0)
+}
+
+export function collectTreePaths(nodes: SourceNode[]) {
+  const paths = new Set<string>()
+  const walk = (list: SourceNode[]) => {
+    for (const node of list) {
+      if (node.nodePath) paths.add(node.nodePath)
+      if (node.children.length) walk(node.children)
+    }
+  }
+  walk(nodes)
+  return paths
+}
+
+export function pruneExpanded(expanded: string[], roots: SourceNode[]) {
+  const valid = collectTreePaths(roots)
+  return expanded.filter((path) => valid.has(path))
+}
+
+export function ancestorPaths(nodePath: string) {
+  const trimmed = nodePath.trim()
+  if (!trimmed) return [] as string[]
+  const parts = trimmed.split("/").filter(Boolean)
+  const paths: string[] = []
+  for (let i = 1; i < parts.length; i++) paths.push(parts.slice(0, i).join("/"))
+  return paths
+}
+
+export function expandedForEad(roots: SourceNode[], eads?: Record<string, number>) {
+  const out = new Set<string>(rootPaths(roots))
+  const walk = (nodes: SourceNode[]) => {
+    for (const node of nodes) {
+      const count = Number(eads?.[String(node.nodeId)] || 0)
+      if (count > 0 && node.nodePath) {
+        ancestorPaths(node.nodePath).forEach((path) => out.add(path))
+        out.add(node.nodePath)
+      }
+      if (node.children.length) walk(node.children)
+    }
+  }
+  walk(roots)
+  return [...out]
+}
+
+export function mergeExpanded(base: string[], roots: SourceNode[], extra: string[]) {
+  const valid = collectTreePaths(roots)
+  const merged = new Set<string>()
+  for (const path of [...base, ...extra]) {
+    const trimmed = path.trim()
+    if (trimmed && valid.has(trimmed)) merged.add(trimmed)
+  }
+  return [...merged]
+}
+
+export function computeExpanded(opts: {
+  saved?: string[] | null
+  roots: SourceNode[]
+  expandByDefaultPaths?: string[]
+  selectedPath?: string | null
+  eadCountByNodeId?: Record<string, number>
+}) {
+  const valid = collectTreePaths(opts.roots)
+  const merged = new Set<string>()
+  if (opts.saved?.length) {
+    for (const path of opts.saved) {
+      if (valid.has(path)) merged.add(path)
+    }
+  }
+  if (opts.expandByDefaultPaths?.length) {
+    for (const path of opts.expandByDefaultPaths) {
+      if (valid.has(path)) merged.add(path)
+    }
+  } else if (opts.eadCountByNodeId) {
+    for (const path of expandedForEad(opts.roots, opts.eadCountByNodeId)) {
+      if (valid.has(path)) merged.add(path)
+    }
+  }
+  const selected = opts.selectedPath?.trim()
+  if (selected) {
+    for (const path of ancestorPaths(selected)) {
+      if (valid.has(path)) merged.add(path)
+    }
+    if (valid.has(selected)) merged.add(selected)
+  }
+  if (merged.size > 0) return [...merged]
+  return rootPaths(opts.roots)
+}
+
 /** Recompute Source EAD badges from filtered PFM nodes (Cursor computeFilteredEadCountsByPath). */
 export function filteredCounts(
   paths: string[],

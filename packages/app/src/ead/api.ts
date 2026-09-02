@@ -20,6 +20,7 @@ export type PfmNode = {
   children: PfmNode[]
   isDynamicTopLevel?: boolean
   subSchemaId?: number | null
+  workType?: string
 }
 
 export type ActiveContext = {
@@ -198,6 +199,7 @@ function asNode(
     row.isDynamicTopLevel === 1 ||
     (!!meta?.dynId && meta.dynId === id)
   const sub = Number(row.subSchemaId)
+  const wt = typeof row.workType === "string" ? row.workType : undefined
   const name =
     dyn && meta?.dynName
       ? meta.dynName
@@ -207,6 +209,7 @@ function asNode(
     name,
     isDynamicTopLevel: dyn || undefined,
     subSchemaId: Number.isFinite(sub) && sub > 0 ? sub : null,
+    workType: wt,
     children: kids.flatMap((child) => {
       const next = asNode(child, meta)
       return next ? [next] : []
@@ -480,6 +483,88 @@ export async function loadLinkedBundle(
     openTestCaseCountByNodeId,
     expandByDefaultPaths: Array.isArray(data.expandByDefaultPaths) ? data.expandByDefaultPaths : [],
     linkedFilePaths: Array.isArray(data.linkedFilePaths) ? data.linkedFilePaths.filter((p) => typeof p === "string") : [],
+  }
+}
+
+async function sourceOpenCounts(http: Http, token: string, schemaId: number) {
+  let openJobCountByNodeId: Record<string, number> = {}
+  let openTestCaseCountByNodeId: Record<string, number> = {}
+  try {
+    const jobs = (await call(http, `/v1/ai-coding-jobs/source-node-open-counts?schemaId=${schemaId}`, token)) as Record<
+      string,
+      number
+    >
+    if (jobs && typeof jobs === "object") openJobCountByNodeId = jobs
+  } catch {
+    openJobCountByNodeId = {}
+  }
+  try {
+    const tests = (await call(http, `/ai-test-cases/source-node-open-counts?schemaId=${schemaId}`, token)) as Record<
+      string,
+      number
+    >
+    if (tests && typeof tests === "object") openTestCaseCountByNodeId = tests
+  } catch {
+    openTestCaseCountByNodeId = {}
+  }
+  return { openJobCountByNodeId, openTestCaseCountByNodeId }
+}
+
+export async function loadFullBundle(
+  token: string,
+  productId: number,
+  schemaId: number,
+  http: Http = eadHttp(),
+  sync = false,
+): Promise<LinkedBundle> {
+  const empty: LinkedBundle = {
+    nodes: [],
+    eadCountByNodeId: {},
+    pendingEadByNodePath: {},
+    openJobCountByNodeId: {},
+    openTestCaseCountByNodeId: {},
+    expandByDefaultPaths: [],
+    linkedFilePaths: [],
+  }
+  const read = async () => {
+    const raw = await call(http, `/source-code-pfm-node-tree/schema/${schemaId}`, token).catch(() => [])
+    return Array.isArray(raw) ? raw : []
+  }
+  let nodes = await read()
+  if (!nodes.length) {
+    await http(`${eadApi()}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
+      method: "POST",
+      headers: { ...headers(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ productId }),
+    }).catch(() => undefined)
+    nodes = await read()
+  } else if (sync) {
+    await http(`${eadApi()}/source-code-pfm-node-tree/schema/${schemaId}/sync-pfm-linked-paths`, {
+      method: "POST",
+      headers: { ...headers(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ productId }),
+    }).catch(() => undefined)
+    nodes = await read()
+  }
+  if (!nodes.length) return empty
+  let eadCountByNodeId: Record<string, number> = {}
+  try {
+    const raw = (await call(
+      http,
+      `/source-code-pfm-node-tree/schema/${schemaId}/related-pfm-ead-counts?productId=${productId}`,
+      token,
+    )) as Record<string, number>
+    if (raw && typeof raw === "object") eadCountByNodeId = raw
+  } catch {
+    eadCountByNodeId = {}
+  }
+  const { openJobCountByNodeId, openTestCaseCountByNodeId } = await sourceOpenCounts(http, token, schemaId)
+  return {
+    ...empty,
+    nodes,
+    eadCountByNodeId,
+    openJobCountByNodeId,
+    openTestCaseCountByNodeId,
   }
 }
 
@@ -905,6 +990,54 @@ export async function saveRunPrefs(
       tenantId,
       settingKey: "ead_run_source_tree_prefs",
       settingValue: prefs,
+      contextType: "ead_run",
+      contextId: String(schemaId),
+    }),
+  }).catch(() => undefined)
+}
+
+export async function loadSourceExpanded(
+  token: string,
+  userId: number,
+  tenantId: number,
+  schemaId: number,
+  http: Http = eadHttp(),
+) {
+  if (!(userId > 0) || !(tenantId > 0) || !(schemaId > 0)) return null as string[] | null
+  const q = new URLSearchParams({
+    userId: String(userId),
+    tenantId: String(tenantId),
+    settingKey: "ead_run_source_tree_expanded",
+    contextType: "ead_run",
+    contextId: String(schemaId),
+  })
+  const data = (await call(http, `/settings/get?${q.toString()}`, token).catch(() => null)) as
+    | { value?: string | string[] }
+    | null
+  if (!data) return null
+  const raw = typeof data.value === "string" ? (JSON.parse(data.value) as unknown) : data.value
+  if (!Array.isArray(raw)) return null
+  return raw.flatMap((path) => (typeof path === "string" && path.trim() ? [path.trim()] : []))
+}
+
+export async function saveSourceExpanded(
+  token: string,
+  userId: number,
+  tenantId: number,
+  schemaId: number,
+  paths: string[],
+  http: Http = eadHttp(),
+) {
+  if (!(userId > 0) || !(tenantId > 0) || !(schemaId > 0)) return
+  const pruned = paths.flatMap((path) => (typeof path === "string" && path.trim() ? [path.trim()] : []))
+  await http(`${eadApi()}/settings/save`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      tenantId,
+      settingKey: "ead_run_source_tree_expanded",
+      settingValue: pruned,
       contextType: "ead_run",
       contextId: String(schemaId),
     }),

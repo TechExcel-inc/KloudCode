@@ -1,3 +1,5 @@
+import { t, type Lang } from "./i18n"
+
 export type OwnerFilter = {
   enabled: boolean
   active: boolean
@@ -68,17 +70,30 @@ export function mergePfm(raw: Partial<PfmFilter> | undefined): PfmFilter {
   }
 }
 
-export function ownerSummary(filter: OwnerFilter) {
-  if (!filter.enabled) return "Job owner filter off"
-  if (!filter.active) return "All"
+function pickLabel(label: string) {
+  const trimmed = label.trim()
+  if (!trimmed) return ""
+  const m = trimmed.match(/^(.+?)\s*\(([^)\s]+@[^)\s]+)\)\s*$/)
+  if (m?.[1]?.trim()) return m[1].trim()
+  if (trimmed.includes("@")) return ""
+  return trimmed
+}
+
+export function ownerSummary(filter: OwnerFilter, lang: Lang = "en") {
+  if (!filter.enabled) return t(lang, "ownerOff")
+  if (!filter.active) return t(lang, "all")
   if (filter.memberEmails.length > 1) {
-    const n = filter.memberEmails.length + (filter.includeMe ? 1 : 0)
-    return `${n} owners`
+    const parts: string[] = []
+    if (filter.includeMe) parts.push(t(lang, "me"))
+    parts.push(t(lang, "ownerN", { count: filter.memberEmails.length }))
+    return parts.length ? parts.join(" + ") : t(lang, "all")
   }
-  if (filter.memberEmails.length === 1) return filter.memberLabel || filter.memberEmails[0] || "1 owner"
-  if (filter.memberEmail) return filter.memberLabel || filter.memberEmail
-  if (filter.includeMe) return "Me"
-  return "All"
+  if (filter.memberEmails.length === 1) {
+    return pickLabel(filter.memberLabel) || filter.memberEmails[0] || t(lang, "ownerOne")
+  }
+  if (filter.memberEmail) return pickLabel(filter.memberLabel) || filter.memberEmail
+  if (filter.includeMe) return t(lang, "me")
+  return t(lang, "all")
 }
 
 type Saved = {

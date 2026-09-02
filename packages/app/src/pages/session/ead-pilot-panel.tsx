@@ -164,7 +164,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     const pid = ead.productId()
     if (pid > 0) {
       const owner = readOwner(pid)
-      postOwnerState(el, { ...owner, summary: ownerSummary(owner), productId: pid })
+      postOwnerState(el, { ...owner, summary: ownerSummary(owner, ead.language()), productId: pid })
       const filter = readPfmFilter(pid)
       postPfmFilterState(el, {
         active: filter.active,
@@ -533,7 +533,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               : undefined,
             includeMe: raw.includeMe !== undefined ? raw.includeMe === true : undefined,
           } as Partial<ReturnType<typeof readOwner>>)
-          postOwnerState(el, { ...next, summary: ownerSummary(next), productId: pid })
+          postOwnerState(el, { ...next, summary: ownerSummary(next, ead.language()), productId: pid })
           ead.bumpMap()
         },
         pfmFilter: (raw) => {

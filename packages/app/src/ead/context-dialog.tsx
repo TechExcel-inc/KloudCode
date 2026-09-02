@@ -1,6 +1,4 @@
 import { For, Show, createSignal } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { ModalPayload } from "./context-modal"
@@ -29,11 +27,11 @@ function Block(props: { title?: string; children: string }) {
   return (
     <div class="mb-2 last:mb-0">
       <Show when={props.title}>
-        <p class="text-12-medium text-text-strong mb-1">{props.title}</p>
+        <p class="text-12-medium mb-1" style={{ color: "#cbd5e1" }}>
+          {props.title}
+        </p>
       </Show>
-      <pre class="text-12-regular whitespace-pre-wrap break-words p-2 rounded-md border border-border-weaker-base bg-background-base">
-        {props.children}
-      </pre>
+      <pre class="context-preview">{props.children}</pre>
     </div>
   )
 }
@@ -99,81 +97,106 @@ export function ContextDialog(props: {
   const prompt = () => asPrompt(props.payload.payload)
   const skills = () => asSkills(props.payload.payload)
   return (
-    <Dialog
-      title={props.title}
-      size="large"
-      action={
-        <div class="flex items-center gap-1">
-          <Button size="small" variant="secondary" disabled={busy()} onClick={() => void copy()}>
-            {t(props.lang, "copy")}
-          </Button>
-          <Button size="small" variant="primary" disabled={busy()} onClick={() => void inject()}>
-            {t(props.lang, "inject")}
-          </Button>
+    <div class="project-cute-popup-backdrop" onClick={() => dialog.close()}>
+      <div
+        class="context-modal-root"
+        style={{ width: "min(100%, 560px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div class="context-modal-header">
+          <div>
+            <h3 class="context-modal-title">{props.title}</h3>
+            <Show when={props.payload.nodeTitle}>
+              <p class="context-modal-meta">
+                {props.payload.nodeTitle}
+                <Show when={props.payload.updatedAt}>
+                  {" • "}
+                  {t(props.lang, "contextUpdated")} {props.payload.updatedAt}
+                </Show>
+              </p>
+            </Show>
+          </div>
+          <button type="button" class="context-modal-close" aria-label={t(props.lang, "contextClose")} onClick={() => dialog.close()}>
+            ✕
+          </button>
         </div>
-      }
-    >
-      <div class="max-h-[60vh] overflow-y-auto">
-        <Show when={props.payload.contextKind === "jobs"}>
-          <Show
-            when={jobs().length}
-            fallback={<p class="text-12-regular text-text-weak">{t(props.lang, "noJobs")}</p>}
-          >
-            <For each={jobs()}>
-              {(job) => (
-                <div class="mb-2 pb-2 border-b border-border-weaker-base last:border-b-0">
-                  <p class="text-12-medium text-text-strong">{job.title || `Job ${job.jobId || ""}`}</p>
-                  <Show when={job.description}>
-                    <p class="text-12-regular text-text-weak mt-0.5">{job.description}</p>
-                  </Show>
-                </div>
-              )}
-            </For>
+        <div class="context-modal-body">
+          <Show when={props.payload.contextKind === "jobs"}>
+            <Show
+              when={jobs().length}
+              fallback={<p style={{ color: "#94a3b8", "font-size": "12px" }}>{t(props.lang, "noJobs")}</p>}
+            >
+              <For each={jobs()}>
+                {(job) => (
+                  <div class="mb-2 pb-2 last:mb-0 last:pb-0" style={{ "border-bottom": "1px solid rgba(148,163,184,0.15)" }}>
+                    <p class="text-12-medium" style={{ color: "#e2e8f0" }}>
+                      {job.title || `Job ${job.jobId || ""}`}
+                    </p>
+                    <Show when={job.description}>
+                      <p class="text-12-regular mt-0.5" style={{ color: "#94a3b8" }}>
+                        {job.description}
+                      </p>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
+            <Show when={props.onCreate}>
+              <div class="mt-3 flex flex-col gap-1.5">
+                <input
+                  class="context-input"
+                  placeholder={t(props.lang, "taskTitle")}
+                  value={name()}
+                  onInput={(e) => setName(e.currentTarget.value)}
+                />
+                <textarea
+                  class="context-textarea"
+                  placeholder={t(props.lang, "taskDesc")}
+                  value={desc()}
+                  onInput={(e) => setDesc(e.currentTarget.value)}
+                />
+                <button type="button" class="context-btn primary" disabled={busy()} onClick={() => void create()}>
+                  {t(props.lang, "createTask")}
+                </button>
+              </div>
+            </Show>
           </Show>
-          <Show when={props.onCreate}>
-            <div class="mt-3 flex flex-col gap-1.5">
-              <input
-                class="w-full px-2 py-1 rounded-md border border-border-weak-base bg-background-base text-12-regular"
-                placeholder={t(props.lang, "taskTitle")}
-                value={name()}
-                onInput={(e) => setName(e.currentTarget.value)}
-              />
-              <textarea
-                class="w-full min-h-16 px-2 py-1 rounded-md border border-border-weak-base bg-background-base text-12-regular"
-                placeholder={t(props.lang, "taskDesc")}
-                value={desc()}
-                onInput={(e) => setDesc(e.currentTarget.value)}
-              />
-              <Button size="small" variant="primary" disabled={busy()} onClick={() => void create()}>
-                {t(props.lang, "createTask")}
-              </Button>
-            </div>
+          <Show when={props.payload.contextKind === "prompt"}>
+            <Block title={t(props.lang, "aiPromptLabel")}>{prompt().aiPrompt || t(props.lang, "noPrompt")}</Block>
+            <Block title={t(props.lang, "eadScriptLabel")}>{prompt().eadScript || t(props.lang, "noScript")}</Block>
           </Show>
-        </Show>
-        <Show when={props.payload.contextKind === "prompt"}>
-          <Block title={t(props.lang, "aiPromptLabel")}>{prompt().aiPrompt || t(props.lang, "noPrompt")}</Block>
-          <Block title={t(props.lang, "eadScriptLabel")}>{prompt().eadScript || t(props.lang, "noScript")}</Block>
-        </Show>
-        <Show when={props.payload.contextKind === "skills"}>
-          <Show
-            when={skills().length}
-            fallback={<p class="text-12-regular text-text-weak">{t(props.lang, "noSkills")}</p>}
-          >
-            <For each={skills()}>
-              {(skill) => (
-                <Block title={skill.title || skill.name || "Skill"}>{skill.description || ""}</Block>
-              )}
-            </For>
+          <Show when={props.payload.contextKind === "skills"}>
+            <Show
+              when={skills().length}
+              fallback={<p style={{ color: "#94a3b8", "font-size": "12px" }}>{t(props.lang, "noSkills")}</p>}
+            >
+              <For each={skills()}>
+                {(skill) => (
+                  <Block title={skill.title || skill.name || "Skill"}>{skill.description || ""}</Block>
+                )}
+              </For>
+            </Show>
           </Show>
-        </Show>
-        <Show when={props.payload.contextKind === "api"}>
-          <Block>{String(props.payload.payload || "").trim() || t(props.lang, "noApi")}</Block>
-        </Show>
-        <Show when={props.payload.contextKind === "source"}>
-          <Block>{JSON.stringify(props.payload.payload ?? {}, null, 2)}</Block>
-        </Show>
+          <Show when={props.payload.contextKind === "api"}>
+            <Block>{String(props.payload.payload || "").trim() || t(props.lang, "noApi")}</Block>
+          </Show>
+          <Show when={props.payload.contextKind === "source"}>
+            <Block>{JSON.stringify(props.payload.payload ?? {}, null, 2)}</Block>
+          </Show>
+        </div>
+        <div class="context-modal-actions">
+          <button type="button" class="context-btn" disabled={busy()} onClick={() => void copy()}>
+            {t(props.lang, "copy")}
+          </button>
+          <button type="button" class="context-btn primary" disabled={busy()} onClick={() => void inject()}>
+            {t(props.lang, "inject")}
+          </button>
+          <button type="button" class="context-btn" disabled={busy()} onClick={() => dialog.close()}>
+            {t(props.lang, "contextClose")}
+          </button>
+        </div>
       </div>
-    </Dialog>
+    </div>
   )
 }
 
@@ -181,26 +204,33 @@ export function ConfirmDialog(props: {
   title: string
   message: string
   confirm: string
+  lang?: Lang
   onConfirm: () => void
 }) {
   const dialog = useDialog()
+  const lang = () => props.lang || "en"
   return (
-    <Dialog
-      title={props.title}
-      action={
-        <Button
-          size="small"
-          variant="primary"
-          onClick={() => {
-            dialog.close()
-            props.onConfirm()
-          }}
-        >
-          {props.confirm}
-        </Button>
-      }
-    >
-      <p class="text-12-regular text-text-weak">{props.message}</p>
-    </Dialog>
+    <div class="project-cute-popup-backdrop" onClick={() => dialog.close()}>
+      <div class="project-cute-popup" onClick={(e) => e.stopPropagation()}>
+        <span class="project-cute-popup-badge">EAD</span>
+        <p class="project-cute-popup-title">{props.title}</p>
+        <p class="project-cute-popup-text">{props.message}</p>
+        <div class="project-cute-popup-actions">
+          <button type="button" class="context-btn" onClick={() => dialog.close()}>
+            {t(lang(), "cancel")}
+          </button>
+          <button
+            type="button"
+            class="context-btn primary"
+            onClick={() => {
+              dialog.close()
+              props.onConfirm()
+            }}
+          >
+            {props.confirm}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -85,6 +85,70 @@ export function tipBody(id: TipId, lang: keyof Pack) {
   return row[lang] || row.en
 }
 
+const prefix: Pack = {
+  en: "Online help",
+  zh: "在线帮助",
+  ja: "オンラインヘルプ",
+  ko: "온라인 도움말",
+}
+
+export function tipDialogTitle(id: TipId, lang: keyof Pack) {
+  return `${prefix[lang] || prefix.en}: ${tipTitle(id, lang)}`
+}
+
+function esc(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function inline(md: string) {
+  return esc(md).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+}
+
+export function markdownToHelpHtml(md: string) {
+  const lines = md.split("\n")
+  const out: string[] = []
+  let list = false
+  const close = () => {
+    if (!list) return
+    out.push("</ul>")
+    list = false
+  }
+  for (const raw of lines) {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      close()
+      continue
+    }
+    if (trimmed === "---") {
+      close()
+      out.push('<hr class="help-tip-hr" />')
+      continue
+    }
+    if (trimmed.startsWith("### ")) {
+      close()
+      out.push(`<h3 class="help-tip-h3">${inline(trimmed.slice(4))}</h3>`)
+      continue
+    }
+    if (trimmed.startsWith("## ")) {
+      close()
+      out.push(`<h2 class="help-tip-h2">${inline(trimmed.slice(3))}</h2>`)
+      continue
+    }
+    if (trimmed.startsWith("- ")) {
+      if (!list) {
+        out.push('<ul class="help-tip-ul">')
+        list = true
+      }
+      out.push(`<li class="help-tip-li">${inline(trimmed.slice(2))}</li>`)
+      continue
+    }
+    close()
+    out.push(`<p class="help-tip-p">${inline(trimmed)}</p>`)
+  }
+  close()
+  return out.join("")
+}
+
 export const TIP_IDS: TipId[] = [
   "pfm-schema-filter",
   "ead-map-search-setup",

@@ -38,7 +38,7 @@ import {
 import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
-import { beginDiag, formatDiag, noteDiag } from "./diag"
+import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, isEadHost } from "./urls"
 import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
@@ -400,7 +400,7 @@ describe("ead context-modal + jobs + filters + actions", () => {
 
   test("owner + pfm filters persist per product and keep paths", () => {
     writeOwner(2, { enabled: true, active: true, memberEmail: "a@b.c" })
-    expect(ownerSummary(readOwner(2))).toContain("a@b.c")
+    expect(ownerSummary(readOwner(2), "en")).toContain("a@b.c")
     writePfmFilter([10, 11], true, ["src/a.ts"], 2)
     expect(readPfmFilter(2)).toEqual({ ids: [10, 11], active: true, paths: ["src/a.ts"] })
     writePfmFilter([10, 11], false, undefined, 2)
@@ -512,5 +512,6 @@ describe("ead i18n + env + mcp", () => {
     noteDiag("Auth", true, "ok")
     noteDiag("Map", false, "timeout")
     expect(formatDiag()).toBe("ok Auth: ok\nfail Map: timeout")
+    expect(readStartup()).toEqual({ text: "✗ Map: timeout", kind: "error" })
   })
 })

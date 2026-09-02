@@ -1,7 +1,6 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
-import { Button } from "@opencode-ai/ui/button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -22,12 +21,14 @@ import {
   loadJobsForNode,
   loadLinkPaths,
   loadLinkedBundle,
+  loadFullBundle,
   loadOpenFilterNodeIds,
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
   loadRawContext,
   loadRunPrefs,
+  loadSourceExpanded,
   loadSourceSchema,
   loadSubSchemas,
   loadSubtreePaths,
@@ -37,6 +38,7 @@ import {
   productRole,
   resetPassword,
   saveRunPrefs,
+  saveSourceExpanded,
   selectSourcePath,
   sendCode,
   signup,
@@ -50,18 +52,20 @@ import {
 } from "@/ead/api"
 import { openPilot } from "@/ead/bridge"
 import { sendChat } from "@/ead/composer"
-import { ConfirmDialog, ContextDialog } from "@/ead/context-dialog"
+import { ContextDialog } from "@/ead/context-dialog"
 import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
-import { beginDiag, formatDiag, noteDiag } from "@/ead/diag"
+import { beginDiag, markStartup, noteDiag, readDiag, readStartup } from "@/ead/diag"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
-import { type TipId } from "@/ead/help-tips"
+import { type TipId, markdownToHelpHtml, tipBody, tipDialogTitle } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
 import { expandKey, useEad } from "@/ead/settings"
 import { eadHttp } from "@/ead/http"
 import {
+  ancestorPaths,
   buildTree,
   collectIds,
+  computeExpanded,
   filterByCount,
   filterByIds,
   filterDisplay,
@@ -71,9 +75,11 @@ import {
   filterSource,
   filteredCounts,
   idCounts,
+  mergeExpanded,
   parseRows,
   pathIds,
   pathTrail,
+  pruneExpanded,
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
@@ -103,7 +109,7 @@ type Menu =
   | "owner"
   | "chip"
 
-const KINDS: ContextKind[] = ["jobs", "prompt", "skills", "api", "source"]
+const KINDS: ContextKind[] = ["jobs", "skills", "api", "source"]
 
 const field = "ead-field"
 const drop = "ead-drop"
@@ -124,6 +130,20 @@ const IconMenu = () => (
     <path d="M4 6h16" />
     <path d="M4 12h16" />
     <path d="M4 18h16" />
+  </svg>
+)
+const IconOwnerSingle = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+)
+const IconOwnerMulti = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 )
 const IconSwap = () => (
@@ -202,6 +222,23 @@ const IconCaret = () => (
     <path d="m6 9 6 6 6-6" />
   </svg>
 )
+const IconChevron = (props: { open: boolean }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    style={{
+      transform: props.open ? "rotate(90deg)" : "none",
+      transition: "transform 0.15s ease",
+    }}
+  >
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+)
 const IconClose = () => (
   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
     <path d="M18 6 6 18" />
@@ -214,6 +251,61 @@ function seedOpen(nodes: PfmNode[], depth = 0): number[] {
     if (depth >= 2) return []
     return [node.nodeId, ...seedOpen(node.children, depth + 1)]
   })
+}
+
+function badgeLabel(lang: Lang, kind: "ead" | "job" | "test", count: number) {
+  if (kind === "ead") return count === 1 ? t(lang, "badgeEad", { count }) : t(lang, "badgeEads", { count })
+  if (kind === "job") return count === 1 ? t(lang, "badgeJob", { count }) : t(lang, "badgeJobs", { count })
+  return count === 1 ? t(lang, "badgeTest", { count }) : t(lang, "badgeTests", { count })
+}
+
+function Empty(props: { title: string; hint?: string; children?: JSX.Element }) {
+  return (
+    <div class="empty-rich">
+      <div class="empty-title">{props.title}</div>
+      <Show when={props.hint}>
+        <div class="empty-hint">{props.hint}</div>
+      </Show>
+      {props.children}
+    </div>
+  )
+}
+
+const IconHelp = () => (
+  <svg
+    class="nav-menu-help-icon"
+    viewBox="0 0 24 24"
+    width="14"
+    height="14"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <path d="M12 17h.01" />
+  </svg>
+)
+
+function HelpMenu(props: { lang: Lang; onClick: () => void }) {
+  const label = () => t(props.lang, "help")
+  return (
+    <div class="nav-menu-help">
+      <button
+        type="button"
+        class="nav-menu-help-btn"
+        title={label()}
+        aria-label={label()}
+        onClick={props.onClick}
+      >
+        <IconHelp />
+        <span>{label()}</span>
+      </button>
+    </div>
+  )
 }
 
 function Tree(props: {
@@ -257,9 +349,9 @@ function Tree(props: {
         const label = () => {
           const n = count()
           if (n <= 0 || !props.badge || props.badge === "none") return ""
-          if (props.badge === "ead") return `EAD ${n}`
-          if (props.badge === "jobs") return `Jobs ${n}`
-          return `Tests ${n}`
+          if (props.badge === "ead") return badgeLabel(props.lang, "ead", n)
+          if (props.badge === "jobs") return badgeLabel(props.lang, "job", n)
+          return badgeLabel(props.lang, "test", n)
         }
         const badgeCls = () => {
           if (props.badge === "jobs") return "ead-jobs-badge"
@@ -287,7 +379,7 @@ function Tree(props: {
                 "is-actual": on(),
                 "is-work": work(),
                 "is-dynamic-top": dyn(),
-                "ring-1 ring-sky-400/80": flash(),
+                "refresh-flash": flash(),
               }}
               style={{ "padding-left": `${8 + depth() * 18}px` }}
               title={title()}
@@ -302,7 +394,7 @@ function Tree(props: {
             >
               <Show when={kids()} fallback={<span class="ead-chevron" />}>
                 <button type="button" class="ead-chevron is-toggle" onClick={toggle}>
-                  {shown() ? "▾" : "▸"}
+                  <IconChevron open={shown()} />
                 </button>
               </Show>
               <Show when={work()}>
@@ -311,7 +403,11 @@ function Tree(props: {
               <button
                 type="button"
                 class="ead-row-icon"
-                classList={{ dynamic: dyn(), "is-toggle": kids() }}
+                classList={{
+                  dynamic: dyn(),
+                  functional: node.workType === "functional",
+                  "is-toggle": kids(),
+                }}
                 onClick={(e) => {
                   if (!kids()) {
                     props.onSelect(node)
@@ -328,7 +424,9 @@ function Tree(props: {
                 {title()}
               </button>
               <Show when={label()}>
-                <span class={badgeCls()}>{label()}</span>
+                <span class="pfm-badges">
+                  <span class={badgeCls()}>{label()}</span>
+                </span>
               </Show>
               <Show when={canSchema()}>
                 <span class="dyn-switch-wrap">
@@ -349,19 +447,6 @@ function Tree(props: {
                   <Show when={props.schemaOpen === node.nodeId}>
                     <div class="node-menu">
                       <div class="node-menu-label">{t(props.lang, "switchDyn")}</div>
-                      <button
-                        type="button"
-                        class="node-menu-item"
-                        classList={{ "is-selected": (props.subId ?? 0) <= 0 }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          props.onSchema?.(0)
-                          props.onSchemaOpen?.(0)
-                        }}
-                      >
-                        {(props.subId ?? 0) <= 0 ? "✓ " : ""}
-                        {t(props.lang, "baseMap")}
-                      </button>
                       <For each={props.schemas || []}>
                         {(s) => (
                           <button
@@ -442,7 +527,10 @@ function SourceTree(props: {
   selected: number
   onSelect: (node: SourceNode) => void
   depth?: number
-  counts?: Record<string, number>
+  eads?: Record<string, number>
+  jobs?: Record<string, number>
+  tests?: Record<string, number>
+  mode?: "ead" | "jobs" | "tests" | "none"
   pending?: Record<string, boolean>
   expanded?: string[]
   onExpand?: (path: string, open: boolean) => void
@@ -453,6 +541,7 @@ function SourceTree(props: {
   onInject: (kind: ContextKind, node: SourceNode) => void
 }) {
   const depth = () => props.depth ?? 0
+  const mode = () => props.mode ?? "ead"
   return (
     <For each={props.nodes}>
       {(node) => {
@@ -460,7 +549,9 @@ function SourceTree(props: {
         const [local, setLocal] = createSignal(depth() < 1)
         const open = () => (controlled() ? props.expanded!.includes(node.nodePath) : local())
         const kids = () => node.children.length > 0
-        const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
+        const ead = () => Number(props.eads?.[String(node.nodeId)] || 0)
+        const jobs = () => Number(props.jobs?.[String(node.nodeId)] || 0)
+        const tests = () => Number(props.tests?.[String(node.nodeId)] || 0)
         const pending = () => !!props.pending?.[node.nodePath]
         const on = () => props.selected === node.nodeId
         const flash = () => !!props.pulse && props.pulse === node.nodeId
@@ -476,13 +567,13 @@ function SourceTree(props: {
         return (
           <div>
             <div
-              class="ead-row"
+              class="source-tree-row"
               classList={{
-                "is-actual": on(),
-                "is-pending": pending(),
-                "ring-1 ring-sky-400/80": flash(),
+                actual: on(),
+                pending: pending(),
+                "refresh-flash": flash(),
               }}
-              style={{ "padding-left": `${8 + depth() * 18}px` }}
+              style={{ "padding-left": `${depth() * 18}px` }}
               title={node.nodePath}
               data-ead-source={node.nodeId}
               onContextMenu={(e) => {
@@ -491,34 +582,33 @@ function SourceTree(props: {
                 props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
               }}
             >
-              <Show when={kids()} fallback={<span class="ead-chevron" />}>
-                <button type="button" class="ead-chevron is-toggle" onClick={toggle}>
-                  {open() ? "▾" : "▸"}
+              <Show when={kids()} fallback={<span class="source-tree-expand-spacer" />}>
+                <button type="button" class="source-tree-expand" onClick={toggle}>
+                  <IconChevron open={open()} />
                 </button>
               </Show>
-              <button
-                type="button"
-                class="ead-row-icon"
-                classList={{ "is-toggle": kids() }}
-                onClick={(e) => {
-                  if (!kids()) {
-                    props.onSelect(node)
-                    return
-                  }
-                  toggle(e)
-                }}
-              >
-                {kids() || depth() === 0 ? <IconFolder /> : <IconFile />}
+              <button type="button" class="source-tree-body" onClick={() => props.onSelect(node)}>
+                <span class="ead-row-icon">
+                  {kids() || depth() === 0 ? <IconFolder /> : <IconFile />}
+                </span>
+                <span class="name">{node.nodeName}</span>
+                <span class="source-tree-badges">
+                  <Show when={mode() === "ead"}>
+                    <Show when={ead() > 0}>
+                      <span class="ead-count-badge">{badgeLabel(props.lang, "ead", ead())}</span>
+                    </Show>
+                    <Show when={ead() <= 0 && pending()}>
+                      <span class="ead-pending-badge">{t(props.lang, "badgePending")}</span>
+                    </Show>
+                  </Show>
+                  <Show when={mode() === "jobs" && jobs() > 0}>
+                    <span class="open-job-count-badge">{badgeLabel(props.lang, "job", jobs())}</span>
+                  </Show>
+                  <Show when={mode() === "tests" && tests() > 0}>
+                    <span class="open-test-count-badge">{badgeLabel(props.lang, "test", tests())}</span>
+                  </Show>
+                </span>
               </button>
-              <button type="button" class="ead-row-name" onClick={() => props.onSelect(node)}>
-                {node.nodeName}
-              </button>
-              <Show when={pending()}>
-                <span class="ead-pending-badge">Pending</span>
-              </Show>
-              <Show when={count() > 0}>
-                <span class="ead-count-badge">{count()}</span>
-              </Show>
               <Show when={props.chip === node.nodeId}>
                 <div class="ead-row-inject">
                   <div class={`${drop} right-0`}>
@@ -547,7 +637,10 @@ function SourceTree(props: {
                 selected={props.selected}
                 onSelect={props.onSelect}
                 depth={depth() + 1}
-                counts={props.counts}
+                eads={props.eads}
+                jobs={props.jobs}
+                tests={props.tests}
+                mode={props.mode}
                 pending={props.pending}
                 expanded={props.expanded}
                 onExpand={props.onExpand}
@@ -674,27 +767,46 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [confirmPass, setConfirmPass] = createSignal("")
   const [userId, setUserId] = createSignal(0)
   const [tenantId, setTenantId] = createSignal(0)
-  const [pipeline, setPipeline] = createSignal("")
+  const [pipelineTick, setPipelineTick] = createSignal(0)
+  const [startup, setStartup] = createSignal(readStartup())
+  const [injectNote, setInjectNote] = createSignal<{ text: string; ok: boolean } | undefined>()
   const [menu, setMenu] = createSignal<Menu>("")
   const [chip, setChip] = createSignal(0)
   const [dynMenu, setDynMenu] = createSignal(0)
   const [members, setMembers] = createSignal<TeamMember[]>([])
+  const [ownerBusy, setOwnerBusy] = createSignal(false)
+  const [ownerErr, setOwnerErr] = createSignal("")
+  const [pendingOwner, setPendingOwner] = createSignal(false)
   const [multi, setMulti] = createSignal(false)
   const [draftEmails, setDraftEmails] = createSignal<string[]>([])
   const [draftMe, setDraftMe] = createSignal(false)
   const [oq, setOq] = createSignal("")
   const [pulse, setPulse] = createSignal(0)
+  const [overlay, setOverlay] = createSignal(false)
+  const [editOpen, setEditOpen] = createSignal(false)
+  const [via, setVia] = createSignal<"email" | "phone">("email")
+  const [tip, setTip] = createSignal<TipId | undefined>()
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let pulseTimer: ReturnType<typeof setTimeout> | undefined
+  let injectTimer: ReturnType<typeof setTimeout> | undefined
 
-  const badgeCounts = createMemo(() => {
-    const mode = ead.badge()
-    if (mode === "jobs") return jobCounts()
-    if (mode === "tests") return testCounts()
-    if (mode === "none") return {} as Record<string, number>
-    return eadCounts()
-  })
+  const bumpPipeline = () => {
+    setStartup(readStartup())
+    setPipelineTick((n) => n + 1)
+  }
+
+  const setInjectStatus = (message: string, ok: boolean) => {
+    if (!message.trim()) {
+      setInjectNote(undefined)
+      return
+    }
+    setInjectNote({ text: message, ok })
+    if (injectTimer) clearTimeout(injectTimer)
+    injectTimer = setTimeout(() => setInjectNote(undefined), 5000)
+  }
+
+  const menuOpen = () => !!menu() || chip() > 0 || dynMenu() > 0 || editOpen()
 
   const pfmBadgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -782,11 +894,44 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     )
   })
 
+  const ownerSearchEmpty = () => !!oq().trim() && !ownerMembers().length && members().length > 0
+
+  const ownerMemberGap = () =>
+    ownerBusy() || ead.productId() <= 0 || !members().length || !ead.token() || !!ownerErr()
+
+  const ownerEmptyMsg = () => {
+    if (ownerBusy()) return tx("loading")
+    if (ead.productId() <= 0) return tx("ownerNoProduct")
+    if (!ead.token()) return tx("ownerAuthRequired")
+    if (ownerErr()) return ownerErr()
+    return tx("ownerNoMembers")
+  }
+
+  const ownerAllSelected = () => {
+    const all = members().map((m) => m.email)
+    return (
+      draftMe() &&
+      draftEmails().length === all.length &&
+      all.every((e) => draftEmails().includes(e))
+    )
+  }
+
+  const diagSteps = createMemo(() => {
+    void pipelineTick()
+    return readDiag()
+  })
+
+  const diagFail = createMemo(() => !!err() || diagSteps().some((s) => !s.ok))
+
+  const diagOk = createMemo(() => diagSteps().length > 0 && diagSteps().every((s) => s.ok) && !err())
+
   const schemaType = createMemo(() => {
     const sid = ead.subSchemaId()
-    if (sid <= 0) return "Base"
+    if (sid <= 0) return ""
     return schemas().find((s) => s.id === sid)?.name || `#${sid}`
   })
+
+  const hasSource = createMemo(() => ead.schemaId() > 0)
 
   const sourceOpts = () => ({
     productId: ead.productId() || undefined,
@@ -879,12 +1024,41 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     return paths
   }
 
+  const hydrateSourcePref = async (sid: number, token: string) => {
+    const cached = ead.sourcePref(sid)
+    if (cached) {
+      if (sid === ead.schemaId() || ead.schemaId() <= 0) {
+        ead.setBadge(cached.badge)
+        ead.setEadsOnly(cached.eadsOnly)
+      }
+      return cached.eadsOnly
+    }
+    if (userId() > 0 && tenantId() > 0) {
+      const remote = await loadRunPrefs(token, userId(), tenantId(), sid, http())
+      if (remote) {
+        const badge = remote.showOpenJobs ? "jobs" : remote.showOpenTests ? "tests" : "ead"
+        const only = remote.eadsOnlyFilter !== false
+        ead.setSourcePref(sid, { badge, eadsOnly: only })
+        if (sid === ead.schemaId() || ead.schemaId() <= 0) {
+          ead.setBadge(badge)
+          ead.setEadsOnly(only)
+        }
+        return only
+      }
+    }
+    return ead.eadsOnly()
+  }
+
+  const fetchSourceBundle = (token: string, pid: number, sid: number, only: boolean, syncFlag: boolean) =>
+    only ? loadLinkedBundle(token, pid, sid, http(), syncFlag) : loadFullBundle(token, pid, sid, http(), syncFlag)
+
   const loadSource = async (sync = false) => {
     const token = ead.token()
     const pid = ead.productId()
     if (!token || pid <= 0) {
       setSource([])
       clearCounts()
+      loadedSchema = 0
       return
     }
     const schema = await loadSourceSchema(token, pid, http())
@@ -892,6 +1066,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setSource([])
       clearCounts()
       ead.setSchema(0, "")
+      loadedSchema = 0
       return
     }
     ead.setSchema(schema.schemaId, schema.name)
@@ -902,8 +1077,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     let tests: Record<string, number> = {}
     let pending: Record<string, boolean> = {}
     let defaults: string[] = []
+    let only = ead.eadsOnly()
     for (const sid of schema.candidates) {
-      const bundle = await loadLinkedBundle(token, pid, sid, http(), sync)
+      only = await hydrateSourcePref(sid, token)
+      const bundle = await fetchSourceBundle(token, pid, sid, only, sync)
       if (bundle.nodes.length) {
         used = sid
         rows = bundle.nodes
@@ -917,7 +1094,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }
     if (!rows.length && !sync) {
       for (const sid of schema.candidates) {
-        const bundle = await loadLinkedBundle(token, pid, sid, http(), true)
+        only = ead.sourcePref(sid)?.eadsOnly ?? ead.eadsOnly()
+        const bundle = await fetchSourceBundle(token, pid, sid, only, true)
         if (bundle.nodes.length) {
           used = sid
           rows = bundle.nodes
@@ -931,20 +1109,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
     }
     if (used !== schema.schemaId) ead.setSchema(used, schema.name)
-    const pref = ead.sourcePref(used)
-    if (pref) {
-      ead.setBadge(pref.badge)
-      ead.setEadsOnly(pref.eadsOnly)
-    } else if (userId() > 0 && tenantId() > 0) {
-      const remote = await loadRunPrefs(token, userId(), tenantId(), used, http())
-      if (remote) {
-        const badge = remote.showOpenJobs ? "jobs" : remote.showOpenTests ? "tests" : "ead"
-        const only = remote.eadsOnlyFilter !== false
-        ead.setSourcePref(used, { badge, eadsOnly: only })
-        ead.setBadge(badge)
-        ead.setEadsOnly(only)
-      }
-    }
     const filter = readPfmFilter(pid)
     if (filter.active && filter.ids.length && !filter.paths.length) {
       const paths = await loadSubtreePaths(token, filter.ids, http())
@@ -985,13 +1149,37 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPendingPaths(pending)
     const tree = buildTree(filterDisplay(parseRows(rows)))
     setSource(tree)
-    if (!ead.expanded(used).length) {
-      const seed = defaults.length ? defaults : tree.map((n) => n.nodePath)
-      if (seed.length) ead.setExpanded(used, seed)
+    const schemaChanged = used !== loadedSchema
+    if (schemaChanged && userId() > 0 && tenantId() > 0) {
+      const remote = await loadSourceExpanded(token, userId(), tenantId(), used, http())
+      if (remote?.length) ead.setExpanded(used, pruneExpanded(remote, tree))
     }
+    const selected = ead.sourcePath()
+    let paths = computeExpanded({
+      saved: ead.expanded(used),
+      roots: tree,
+      expandByDefaultPaths: only ? defaults : undefined,
+      selectedPath: selected,
+      eadCountByNodeId: eads,
+    })
+    if (selected) {
+      paths = mergeExpanded(paths, tree, [...ancestorPaths(selected), selected])
+    }
+    if (schemaChanged || !ead.expanded(used).length) ead.setExpanded(used, paths)
+    loadedSchema = used
+  }
+
+  const scopeSource = (only: boolean) => {
+    ead.setEadsOnly(only)
+    persistRun()
+    closeMenus()
+    void loadSource(only)
   }
 
   let gen = 0
+  let loadedSchema = 0
+  let expandTimer: ReturnType<typeof setTimeout> | undefined
+
   const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
     const soft = opts?.soft === true
     // Soft poll must not cancel an in-flight full refresh (that left the loading banner stuck).
@@ -1002,22 +1190,24 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     beginDiag()
     noteDiag("Startup", true, soft ? "Soft refresh" : "Loading product list from API")
     if (!token) {
-      setProducts([])
-      setGroups([])
-      setRoot(undefined)
-      setSource([])
-      setSchemas([])
-      setJobIds(undefined)
-      setBaseMapId(0)
-      setMapName("")
-      clearCounts()
-      setUser("")
-      setEmail("")
-      setUserId(0)
-      setTenantId(0)
-      setHint(undefined)
-      setBanner(null)
-      setPipeline(formatDiag())
+      if (!overlay()) {
+        setProducts([])
+        setGroups([])
+        setRoot(undefined)
+        setSource([])
+        setSchemas([])
+        setJobIds(undefined)
+        setBaseMapId(0)
+        setMapName("")
+        clearCounts()
+        setUser("")
+        setEmail("")
+        setUserId(0)
+        setTenantId(0)
+        setHint(undefined)
+        setBanner(null)
+      }
+      bumpPipeline()
       return
     }
     if (!soft) {
@@ -1052,7 +1242,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         if (!live()) return
         setHint(hit ? { productId: hit.productId, name: hit.name } : undefined)
         noteDiag("Load complete", true, "No product selected")
-        setPipeline(formatDiag())
+        bumpPipeline()
         if (!soft) flash("ok", tx("refreshed"))
         return
       }
@@ -1067,7 +1257,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setMapName("")
         clearCounts()
         noteDiag("Load complete", true, "Selected product missing")
-        setPipeline(formatDiag())
+        bumpPipeline()
         if (!soft) flash("ok", tx("refreshed"))
         return
       }
@@ -1119,24 +1309,24 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         true,
         `PFM nodes: ${map.root ? collectIds([map.root]).length : 0}, view: ${ead.view()}`,
       )
-      setPipeline(formatDiag())
+      const count =
+        ead.view() === "source"
+          ? source().length
+          : map.root
+            ? collectIds([map.root]).length
+            : 0
+      markStartup(tx("refreshComplete", { count: String(count) }), "ok")
+      bumpPipeline()
       if (!soft) flash("ok", tx("refreshed"))
     } catch (e) {
       if (!live()) return
       const msg = e instanceof Error ? e.message : String(e)
       noteDiag("Error", false, msg)
-      setPipeline(formatDiag())
+      bumpPipeline()
       if (msg === "AUTH_EXPIRED") {
-        ead.signOut()
-        setProducts([])
-        setGroups([])
-        setRoot(undefined)
-        setSource([])
-        setSchemas([])
-        setJobIds(undefined)
-        setBaseMapId(0)
-        setMapName("")
-        clearCounts()
+        ead.clearToken()
+        setOverlay(true)
+        setTab("signin")
         setUser("")
         setEmail("")
         setUserId(0)
@@ -1257,6 +1447,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     const prev = ead.expanded(sid)
     const next = open ? [...new Set([...prev, path])] : prev.filter((p) => p !== path)
     ead.setExpanded(sid, next)
+    if (expandTimer) clearTimeout(expandTimer)
+    expandTimer = setTimeout(() => {
+      const token = ead.token()
+      if (!token || userId() <= 0 || tenantId() <= 0) return
+      void saveSourceExpanded(token, userId(), tenantId(), sid, ead.expanded(sid), http())
+    }, 400)
   }
 
   const pfmExpandKey = () => expandKey(ead.productId(), ead.mapId(), ead.subSchemaId())
@@ -1327,11 +1523,23 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   const openHelp = (tipId: TipId) => {
     closeMenus()
-    launch({ kind: "help", tipId })
+    setTip(tipId)
   }
+
+  const closeHelp = () => setTip(undefined)
+
+  createEffect(() => {
+    if (!tip()) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeHelp()
+    }
+    document.addEventListener("keydown", onKey)
+    onCleanup(() => document.removeEventListener("keydown", onKey))
+  })
 
   const afterAuth = async (token: string) => {
     ead.setToken(token)
+    setOverlay(false)
     setPass("")
     setNewPass("")
     setConfirmPass("")
@@ -1352,6 +1560,19 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       return ""
     })
     if (entry) ead.setMcpEntry(entry)
+    ead.bumpPilot()
+    if (!pendingOwner()) return
+    setPendingOwner(false)
+    if (!readOwner(ead.productId()).enabled) return
+    setMenu("owner")
+    const cur = readOwner(ead.productId())
+    setMulti(false)
+    setOq("")
+    setDraftMe(!!cur.includeMe && cur.active)
+    setDraftEmails(
+      cur.memberEmails.length ? [...cur.memberEmails] : cur.memberEmail ? [cur.memberEmail] : [],
+    )
+    await loadOwnerMembers()
   }
 
   const onLogin = async () => {
@@ -1455,6 +1676,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }).catch(() => undefined)
     ead.signOut()
     ead.bumpPilot()
+    setOverlay(false)
     setProducts([])
     setGroups([])
     setRoot(undefined)
@@ -1475,6 +1697,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const switchView = async (view: "pfm" | "source") => {
+    if (view === "source" && !hasSource()) return
     ead.setView(view)
     setQuery("")
     closeMenus()
@@ -1509,15 +1732,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
           payload={payload}
           text={text}
           lang={lang()}
-          onInject={async (body) =>
-            sendChat({
+          onInject={async (body) => {
+            await sendChat({
               text: body,
               set: (value) => prompt.set(value),
               client: sdk.client,
               sessionID: params.id,
               auto: true,
             })
-          }
+            setInjectStatus(tx("sent"), true)
+          }}
           onCreate={
             kind === "jobs" && type === "pfm"
               ? async (title, desc) => {
@@ -1531,7 +1755,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     sessionID: params.id,
                     auto: true,
                   })
-                  showToast({ title: "EAD", description: tx("sent"), variant: "success" })
+                  setInjectStatus(tx("sent"), true)
                   void refresh({ soft: true, syncLinked: false })
                 }
               : undefined
@@ -1541,6 +1765,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setErr(msg)
+      setInjectStatus(msg, false)
       flash("error", msg)
     } finally {
       setBusy(false)
@@ -1549,14 +1774,37 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   const askEdit = () => {
     closeMenus()
-    dialog.show(() => (
-      <ConfirmDialog
-        title={tx("editTitle")}
-        message={tx("editMessage")}
-        confirm={tx("continue")}
-        onConfirm={() => launch({ kind: "editProduct" })}
-      />
-    ))
+    setEditOpen(true)
+  }
+
+  const confirmEdit = () => {
+    setEditOpen(false)
+    launch({ kind: "editProduct" })
+  }
+
+  const loadOwnerMembers = async () => {
+    setOwnerBusy(true)
+    setOwnerErr("")
+    const token = ead.token()
+    const pid = ead.productId()
+    if (!token) {
+      setMembers([])
+      setOwnerBusy(false)
+      return
+    }
+    if (pid <= 0) {
+      setMembers([])
+      setOwnerBusy(false)
+      return
+    }
+    try {
+      setMembers(await loadTeamMembers(token, pid, http()))
+    } catch (e) {
+      setOwnerErr(e instanceof Error ? e.message : String(e))
+      setMembers([])
+    } finally {
+      setOwnerBusy(false)
+    }
   }
 
   const openOwner = async () => {
@@ -1569,14 +1817,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setOq("")
     setDraftMe(!!cur.includeMe && cur.active)
     setDraftEmails(cur.memberEmails.length ? [...cur.memberEmails] : cur.memberEmail ? [cur.memberEmail] : [])
-    const token = ead.token()
-    const pid = ead.productId()
-    if (!token || pid <= 0) return
-    try {
-      setMembers(await loadTeamMembers(token, pid, http()))
-    } catch {
-      setMembers([])
-    }
+    await loadOwnerMembers()
+  }
+
+  const openOwnerSignIn = () => {
+    setPendingOwner(true)
+    closeMenus()
+    setOverlay(true)
+    setTab("signin")
   }
 
   const writeOwnerChoice = (next: Parameters<typeof writeOwner>[1]) => {
@@ -1671,11 +1919,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
             <Show when={menu() === "product"}>
               <div class="product-menu-scrim" onClick={() => closeMenus()} />
             </Show>
-            <Show
-              when={ead.token()}
-              fallback={
-                <div class="login-panel">
-                  <div class="auth-card">
+            <Show when={!ead.token()}>
+              <div class="login-panel" classList={{ "login-panel--overlay": overlay() }}>
+                <div class="auth-card">
                   <div class="auth-brand">
                     <span aria-hidden="true">▣</span>
                     <span>EAD-PFM</span>
@@ -1744,8 +1990,27 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   <Show when={tab() === "signup-start"}>
                     <p class="auth-title">{tx("signUp")}</p>
                     <p class="auth-hint">{tx("signUpHint")}</p>
+                    <div class="auth-actions-row" style={{ "margin-bottom": "12px" }}>
+                      <button
+                        type="button"
+                        class="auth-secondary"
+                        classList={{ "is-active": via() === "email" }}
+                        onClick={() => setVia("email")}
+                      >
+                        {tx("viaEmail")}
+                      </button>
+                      <button
+                        type="button"
+                        class="auth-secondary"
+                        classList={{ "is-active": via() === "phone" }}
+                        onClick={() => setVia("phone")}
+                      >
+                        {tx("viaPhone")}
+                      </button>
+                    </div>
                     <input
                       class={field}
+                      type={via() === "phone" ? "tel" : "email"}
                       placeholder={tx("targetPlaceholder")}
                       value={target()}
                       onInput={(e) => setTarget(e.currentTarget.value)}
@@ -1769,6 +2034,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   <Show when={tab() === "signup-verify"}>
                     <p class="auth-title">{tx("verify")}</p>
                     <p class="auth-hint">{tx("verifyHint", { target: target() })}</p>
+                    <p class="auth-code-hint">{tx("codePlaceholder")}</p>
                     <input
                       class={field}
                       placeholder={tx("codePlaceholder")}
@@ -1816,8 +2082,27 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
                   <Show when={tab() === "forgot"}>
                     <p class="auth-title">{tx("forgotTitle")}</p>
+                    <div class="auth-actions-row" style={{ "margin-bottom": "12px" }}>
+                      <button
+                        type="button"
+                        class="auth-secondary"
+                        classList={{ "is-active": via() === "email" }}
+                        onClick={() => setVia("email")}
+                      >
+                        {tx("viaEmail")}
+                      </button>
+                      <button
+                        type="button"
+                        class="auth-secondary"
+                        classList={{ "is-active": via() === "phone" }}
+                        onClick={() => setVia("phone")}
+                      >
+                        {tx("viaPhone")}
+                      </button>
+                    </div>
                     <input
                       class={field}
+                      type={via() === "phone" ? "tel" : "email"}
                       placeholder={tx("targetPlaceholder")}
                       value={target()}
                       onInput={(e) => setTarget(e.currentTarget.value)}
@@ -1832,6 +2117,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
                   <Show when={tab() === "forgot-reset"}>
                     <p class="auth-title">{tx("resetTitle")}</p>
+                    <p class="auth-code-hint">{tx("verifyHint", { target: target() })}</p>
                     <input
                       class={field}
                       placeholder={tx("codePlaceholder")}
@@ -1859,7 +2145,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
                   <Show when={tab() === "forgot-success"}>
                     <p class="auth-title">{tx("passwordUpdated")}</p>
-                    <p class="auth-hint">{tx("passwordUpdatedHint")}</p>
+                    <p class="auth-success">{tx("passwordUpdatedHint")}</p>
                     <button type="button" class="auth-primary" onClick={() => setTab("signin")}>
                       {tx("backSignIn")}
                     </button>
@@ -1868,128 +2154,162 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   <Show when={err()}>
                     <p class="auth-error">{err()}</p>
                   </Show>
-                  </div>
                 </div>
-              }
-            >
+              </div>
+            </Show>
+            <Show when={ead.token() || overlay()}>
               <div class="navigator-chrome" classList={{ "is-product-open": menu() === "product" }}>
-                <div class="product-label-row">
-                  <span class="ead-label">{tx("selectProduct")}</span>
-                  <div class="product-label-actions" data-ead-menu>
-                    <button type="button" class="ead-map-ai-find-btn" onClick={() => launch({ kind: "dashboard" })}>
-                      <IconSpark />
-                      <span>{tx("aiPilot")}</span>
-                    </button>
-                    <div class="relative">
+                <div
+                  class="product-wrap"
+                  classList={{
+                    "product-wrap--menu-open": menu() === "product" || menu() === "schema",
+                    "product-wrap--user-menu-open": menu() === "user" || menu() === "lang",
+                  }}
+                >
+                  <div class="product-label-row">
+                    <span class="ead-label">{tx("selectProduct")}</span>
+                    <div class="product-label-actions" data-ead-menu>
                       <button
                         type="button"
-                        class="ead-icon-btn"
-                        classList={{ open: menu() === "user" || menu() === "lang" }}
-                        aria-label={tx("menu")}
-                        onClick={() => setMenu(menu() === "user" ? "" : "user")}
+                        class="ead-map-ai-find-btn"
+                        disabled={ead.productId() <= 0 || ead.mapId() <= 0}
+                        onClick={() => launch({ kind: "dashboard" })}
                       >
-                        <IconMenu />
+                        <IconSpark />
+                        <span>{tx("aiPilot")}</span>
                       </button>
-                      <Show when={menu() === "user" || menu() === "lang"}>
-                        <div class={`${drop} right-0 w-52`}>
-                          <button
-                            type="button"
-                            class={item}
-                            onClick={() => {
-                              closeMenus()
-                              void refresh({ syncLinked: true })
-                            }}
-                          >
-                            {tx("refresh")}
-                          </button>
-                          <div class="ead-drop-sep" />
-                          <button
-                            type="button"
-                            class={item}
-                            disabled={ead.productId() <= 0}
-                            onClick={askEdit}
-                          >
-                            {tx("editProduct")}
-                          </button>
-                          <div class="ead-drop-sep" />
-                          <button
-                            type="button"
-                            class={item}
-                            onClick={() => {
-                              closeMenus()
-                              window.open(`${eadServer()}/welcome/profile`, "_blank")
-                            }}
-                          >
-                            {tx("profile")}
-                          </button>
-                          <div class="ead-drop-sep" />
-                          <button
-                            type="button"
-                            class={item}
-                            aria-expanded={menu() === "lang"}
-                            onClick={() => setMenu(menu() === "lang" ? "user" : "lang")}
-                          >
-                            <span>{tx("language")}</span>
-                            <span class="nav-user-menu-item-meta">
-                              <span>
-                                {tx(
-                                  lang() === "en"
-                                    ? "langEn"
-                                    : lang() === "zh"
-                                      ? "langZh"
-                                      : lang() === "ja"
-                                        ? "langJa"
-                                        : "langKo",
-                                )}
-                              </span>
-                              <span class="nav-user-menu-caret" aria-hidden="true">▼</span>
-                            </span>
-                          </button>
-                          <Show when={menu() === "lang"}>
-                            <div class="nav-lang-menu">
-                              <div class="nav-lang-menu-header">{tx("selectLang")}</div>
-                              <For each={["en", "zh", "ja", "ko"] as Lang[]}>
-                                {(code) => (
-                                  <button
-                                    type="button"
-                                    class="nav-lang-menu-item"
-                                    classList={{ "is-active": ead.language() === code }}
-                                    onClick={() => {
-                                      ead.setLanguage(code)
-                                      closeMenus()
-                                    }}
-                                  >
+                      <div
+                        class="nav-user-menu-wrap"
+                        classList={{ "is-open": menu() === "user" || menu() === "lang" }}
+                        data-ead-menu
+                      >
+                        <button
+                          type="button"
+                          class="ead-icon-btn nav-user-menu-btn"
+                          classList={{ open: menu() === "user" || menu() === "lang" }}
+                          aria-label={tx("menu")}
+                          aria-haspopup="menu"
+                          aria-expanded={menu() === "user" || menu() === "lang"}
+                          onClick={() => setMenu(menu() === "user" ? "" : "user")}
+                        >
+                          <IconMenu />
+                        </button>
+                        <Show when={menu() === "user" || menu() === "lang"}>
+                          <ul class="nav-user-menu" role="menu">
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                class="nav-user-menu-item"
+                                onClick={() => {
+                                  closeMenus()
+                                  void refresh({ syncLinked: true })
+                                }}
+                              >
+                                {tx("refreshMap")}
+                              </button>
+                            </li>
+                            <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                class="nav-user-menu-item"
+                                disabled={ead.productId() <= 0}
+                                onClick={askEdit}
+                              >
+                                {tx("editProduct")}
+                              </button>
+                            </li>
+                            <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                class="nav-user-menu-item"
+                                onClick={() => {
+                                  closeMenus()
+                                  window.open(`${eadServer()}/welcome/profile`, "_blank")
+                                }}
+                              >
+                                {tx("profile")}
+                              </button>
+                            </li>
+                            <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                class="nav-user-menu-item"
+                                aria-haspopup="menu"
+                                aria-expanded={menu() === "lang"}
+                                onClick={() => setMenu(menu() === "lang" ? "user" : "lang")}
+                              >
+                                <span>{tx("language")}</span>
+                                <span class="nav-user-menu-item-meta">
+                                  <span>
                                     {tx(
-                                      code === "en"
+                                      lang() === "en"
                                         ? "langEn"
-                                        : code === "zh"
+                                        : lang() === "zh"
                                           ? "langZh"
-                                          : code === "ja"
+                                          : lang() === "ja"
                                             ? "langJa"
                                             : "langKo",
                                     )}
-                                    <span class="nav-lang-menu-check">
-                                      {ead.language() === code ? "✓" : ""}
-                                    </span>
-                                  </button>
-                                )}
-                              </For>
-                            </div>
-                          </Show>
-                          <div class="ead-drop-sep" />
-                          <button type="button" class={`${item} is-logout`} onClick={onSignOut}>
-                            {tx("logout")}
-                          </button>
-                          <Show when={user()}>
-                            <div class="px-2.5 py-1 truncate" style={{ color: "var(--ead-muted)", "font-size": "11px" }}>{user()}</div>
-                          </Show>
-                        </div>
-                      </Show>
+                                  </span>
+                                  <span class="nav-user-menu-caret" aria-hidden="true">
+                                    ▼
+                                  </span>
+                                </span>
+                              </button>
+                            </li>
+                            <Show when={menu() === "lang"}>
+                              <li role="none">
+                                <div class="nav-lang-menu">
+                                  <div class="nav-lang-menu-header">{tx("selectLang")}</div>
+                                  <For each={["en", "zh", "ja", "ko"] as Lang[]}>
+                                    {(code) => (
+                                      <button
+                                        type="button"
+                                        class="nav-lang-menu-item"
+                                        classList={{ "is-active": ead.language() === code }}
+                                        onClick={() => {
+                                          ead.setLanguage(code)
+                                          closeMenus()
+                                        }}
+                                      >
+                                        {tx(
+                                          code === "en"
+                                            ? "langEn"
+                                            : code === "zh"
+                                              ? "langZh"
+                                              : code === "ja"
+                                                ? "langJa"
+                                                : "langKo",
+                                        )}
+                                        <span class="nav-lang-menu-check">
+                                          {ead.language() === code ? "✓" : ""}
+                                        </span>
+                                      </button>
+                                    )}
+                                  </For>
+                                </div>
+                              </li>
+                            </Show>
+                            <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <li role="none">
+                              <button type="button" role="menuitem" class="nav-user-menu-item is-logout" onClick={onSignOut}>
+                                {tx("logout")}
+                              </button>
+                            </li>
+                          </ul>
+                        </Show>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div class="product-row" classList={{ "is-open": menu() === "product" }} data-ead-menu>
+                  <div class="product-row" classList={{ "is-open": menu() === "product" }} data-ead-menu>
                   <div class="relative flex-1 min-w-0">
                     <button
                       type="button"
@@ -2012,7 +2332,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       <div class={`${drop} is-product`}>
                         <div class="product-menu-search-wrap">
                           <input
-                            class={`${field} product-menu-search`}
+                            class="product-menu-search"
                             placeholder={tx("searchProduct")}
                             value={pq()}
                             onInput={(e) => setPq(e.currentTarget.value)}
@@ -2023,7 +2343,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           <Show
                             when={grouped().length}
                             fallback={
-                              <For each={filtered()} fallback={<div class="px-2.5 py-2" style={{ color: "var(--ead-muted)" }}>{tx("noProducts")}</div>}>
+                              <For each={filtered()} fallback={<div class="product-empty">{tx("noProducts")}</div>}>
                                 {(p) => (
                                   <Choice
                                     product={p}
@@ -2075,30 +2395,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </button>
                 </div>
 
-                <Show when={hint() && ead.productId() <= 0}>
-                  <div class="product-suggestion">
-                    <span class="min-w-0 flex-1 truncate">
-                      {tx("suggested")} <strong>{hint()!.name}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      class="ead-map-ai-find-btn"
-                      onClick={() => {
-                        const hit = hint()
-                        if (!hit) return
-                        pickProduct({ productId: hit.productId, name: hit.name })
-                      }}
-                    >
-                      {tx("use")}
-                    </button>
-                    <button type="button" class="auth-link" onClick={() => setHint(undefined)}>
-                      {tx("dismiss")}
-                    </button>
-                  </div>
-                </Show>
-
                 <Show when={ead.mapId() > 0}>
-                  <div class="active-pfm-wrap" data-ead-menu>
+                  <div class="active-pfm-wrap" classList={{ "is-open": menu() === "schema" }} data-ead-menu>
                     <button
                       type="button"
                       class="active-pfm-btn"
@@ -2113,9 +2411,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       <span class="active-pfm-value-map">
                         <bdi>{mapName() || `Map ${ead.mapId()}`}</bdi>
                       </span>
-                      <span class="active-pfm-prefix" style={{ color: "#60a5fa" }}>–</span>
-                      <span class="active-pfm-value-type">{schemaType()}</span>
-                      <Show when={schemas().length}>
+                      <Show when={ead.subSchemaId() > 0 && schemaType()}>
+                        <span class="active-pfm-value-sep">–</span>
+                        <span class="active-pfm-value-type">{schemaType()}</span>
                         <span class="job-owner-filter-caret">▾</span>
                       </Show>
                     </button>
@@ -2124,19 +2422,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     </Show>
                     <Show when={menu() === "schema"}>
                       <div class="pfm-schema-filter-menu">
-                        <button
-                          type="button"
-                          class="pfm-schema-filter-option"
-                          classList={{ "is-selected": ead.subSchemaId() <= 0 }}
-                          onClick={() => {
-                            ead.setSubSchema(0)
-                            closeMenus()
-                            void refresh()
-                          }}
-                        >
-                          <span class="pfm-schema-filter-check">{ead.subSchemaId() <= 0 ? "✓" : ""}</span>
-                          {tx("baseMap")}
-                        </button>
                         <For each={schemas()}>
                           {(s) => (
                             <button
@@ -2150,20 +2435,36 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               }}
                             >
                               <span class="pfm-schema-filter-check">{ead.subSchemaId() === s.id ? "✓" : ""}</span>
-                              {s.name}
+                              {`${mapName() || `Map ${ead.mapId()}`} – ${s.name}`}
                             </button>
                           )}
                         </For>
-                        <div class="ead-drop-sep" />
-                        <button
-                          type="button"
-                          class="pfm-schema-filter-option"
-                          onClick={() => openHelp("pfm-schema-filter")}
-                        >
-                          {tx("help")}
-                        </button>
+                        <HelpMenu lang={lang()} onClick={() => openHelp("pfm-schema-filter")} />
                       </div>
                     </Show>
+                  </div>
+                </Show>
+                </div>
+
+                <Show when={hint() && ead.productId() <= 0}>
+                  <div class="product-suggestion">
+                    <span class="min-w-0 flex-1 truncate">
+                      {tx("suggested")} <strong>{hint()!.name}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      class="product-suggestion-btn"
+                      onClick={() => {
+                        const hit = hint()
+                        if (!hit) return
+                        pickProduct({ productId: hit.productId, name: hit.name })
+                      }}
+                    >
+                      {tx("use")}
+                    </button>
+                    <button type="button" class="product-suggestion-dismiss" onClick={() => setHint(undefined)}>
+                      {tx("dismiss")}
+                    </button>
                   </div>
                 </Show>
 
@@ -2171,12 +2472,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   <div class="search-input-wrap">
                     <input
                       class="search"
-                      placeholder={ead.view() === "source" ? tx("searchSource") : tx("searchPfm")}
+                      placeholder={tx("searchPlaceholder")}
                       value={query()}
                       onInput={(e) => setQuery(e.currentTarget.value)}
                     />
                   </div>
-                  <div class="relative shrink-0">
+                  <div class="search-setup-menu-wrap" classList={{ "is-open": menu() === "setup" }}>
                     <button
                       type="button"
                       class="search-mindmap-btn"
@@ -2185,6 +2486,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         "is-filter-on": pfmFilter().active,
                       }}
                       aria-label={tx("setup")}
+                      disabled={ead.productId() <= 0}
                       onClick={() => {
                         setMenu(menu() === "setup" ? "" : "setup")
                         setChip(0)
@@ -2205,7 +2507,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("viewSetup")}
                         </button>
-                        <div class="ead-drop-sep" />
+                        <div class="search-setup-menu-sep" aria-hidden="true" />
                         <button
                           type="button"
                           class="search-setup-menu-item"
@@ -2217,20 +2519,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         >
                           {tx("setupFilter")}
                         </button>
-                        <div class="ead-drop-sep" />
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          disabled={ead.productId() <= 0}
-                          onClick={() => {
-                            closeMenus()
-                            launch({ kind: "crawl" })
-                          }}
-                          title={tx("crawlVisionHint")}
-                        >
-                          {tx("crawlVision")}
-                        </button>
-                        <div class="ead-drop-sep" />
+                        <div class="search-setup-menu-sep" aria-hidden="true" />
                         <button
                           type="button"
                           class="search-setup-menu-item"
@@ -2247,7 +2536,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           </span>
                           <span>{tx("enableOwner")}</span>
                         </button>
-                        <div class="ead-drop-sep" />
+                        <div class="search-setup-menu-sep" aria-hidden="true" />
                         <button
                           type="button"
                           class="search-setup-menu-item"
@@ -2261,14 +2550,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           </span>
                           <span>{tx("showDebug")}</span>
                         </button>
-                        <div class="ead-drop-sep" />
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          onClick={() => openHelp("ead-map-search-setup")}
-                        >
-                          {tx("help")}
-                        </button>
+                        <HelpMenu lang={lang()} onClick={() => openHelp("ead-map-search-setup")} />
                       </div>
                     </Show>
                   </div>
@@ -2276,48 +2558,58 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
                 <Show when={pfmFilter().ids.length > 0}>
                   <div class="pfm-filter-status">
-                    <span>{tx("pfmFilterPrefix", { count: pfmFilter().ids.length })}</span>
-                    <button
-                      type="button"
-                      class="pfm-filter-state"
-                      classList={{ "is-off": !pfmFilter().active }}
-                      onClick={() => {
-                        const cur = pfmFilter()
-                        const pid = ead.productId()
-                        const next = !cur.active
-                        writePfmFilter(cur.ids, next, cur.paths, pid)
-                        bump()
-                        if (next && !cur.paths.length) void fillPaths(cur.ids, pid)
-                      }}
-                    >
-                      {pfmFilter().active ? tx("on") : tx("off")}
-                    </button>
+                    <span class="pfm-filter-status-line">
+                      <span class="pfm-filter-status-text">
+                        {tx("pfmFilterPrefix", { count: pfmFilter().ids.length })}
+                      </span>
+                      <button
+                        type="button"
+                        class="pfm-filter-state"
+                        classList={{ "is-off": !pfmFilter().active }}
+                        onClick={() => {
+                          const cur = pfmFilter()
+                          const pid = ead.productId()
+                          const next = !cur.active
+                          writePfmFilter(cur.ids, next, cur.paths, pid)
+                          bump()
+                          if (next && !cur.paths.length) void fillPaths(cur.ids, pid)
+                        }}
+                      >
+                        {pfmFilter().active ? tx("on") : tx("off")}
+                      </button>
+                    </span>
                   </div>
                 </Show>
 
                 <Show when={owner().enabled}>
-                  <div class="job-owner-row" data-ead-menu>
+                  <div class="job-owner-row" classList={{ "is-open": menu() === "owner" }} data-ead-menu>
                     <span class="job-owner-filter-label">{tx("jobOwner")}</span>
                     <button
                       type="button"
-                      class="job-owner-filter-value"
+                      class="job-owner-filter-trigger"
+                      classList={{ open: menu() === "owner" }}
                       onClick={() => void openOwner()}
                     >
-                      {ownerSummary(owner())} ▾
+                      <span class="job-owner-filter-value-text">{ownerSummary(owner(), lang())}</span>
+                      <span class="job-owner-filter-caret">▾</span>
                     </button>
                     <Show when={menu() === "owner"}>
+                      <div class="job-owner-filter-scrim" onClick={() => closeMenus()} />
                       <div class="job-owner-filter-menu">
-                        <div class="px-2 pb-1.5 border-b border-border-weaker-base flex items-center gap-1">
+                        <div class="job-owner-filter-search-row">
                           <input
-                            class={`${field} flex-1 py-1`}
+                            class="job-owner-filter-search"
                             placeholder={tx("searchMembers")}
                             value={oq()}
                             onInput={(e) => setOq(e.currentTarget.value)}
                           />
                           <button
                             type="button"
-                            class="shrink-0 px-2 py-1 rounded border border-border-weaker-base text-11-regular hover:bg-surface-base-hover"
-                            classList={{ "bg-surface-base-active": multi() }}
+                            class="job-owner-filter-mode-toggle"
+                            classList={{ "is-multi": multi() }}
+                            title={multi() ? tx("ownerSingleMode") : tx("ownerMultiMode")}
+                            aria-label={multi() ? tx("ownerSingleMode") : tx("ownerMultiMode")}
+                            aria-pressed={multi()}
                             onClick={() => {
                               const next = !multi()
                               setMulti(next)
@@ -2333,17 +2625,18 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               )
                             }}
                           >
-                            {multi() ? tx("multi") : tx("single")}
+                            {multi() ? <IconOwnerSingle /> : <IconOwnerMulti />}
                           </button>
                         </div>
 
                         <Show
                           when={multi()}
                           fallback={
-                            <>
+                            <div class="job-owner-filter-list">
                               <button
                                 type="button"
-                                class={`${item} ${!owner().active ? itemActive : ""}`}
+                                class="job-owner-filter-option"
+                                classList={{ "is-selected": !owner().active }}
                                 onClick={() => {
                                   writeOwnerChoice({
                                     active: false,
@@ -2360,7 +2653,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               <Show when={email()}>
                                 <button
                                   type="button"
-                                  class={`${item} ${owner().active && owner().includeMe && !owner().memberEmails.length ? itemActive : ""}`}
+                                  class="job-owner-filter-option"
+                                  classList={{
+                                    "is-selected":
+                                      owner().active && owner().includeMe && !owner().memberEmails.length,
+                                  }}
                                   onClick={() => {
                                     writeOwnerChoice({
                                       active: true,
@@ -2375,37 +2672,68 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                                   {tx("me")}
                                 </button>
                               </Show>
-                              <For each={ownerMembers()}>
-                                {(m) => (
-                                  <button
-                                    type="button"
-                                    class={`${item} ${owner().memberEmail === m.email && !owner().includeMe ? itemActive : ""}`}
-                                    onClick={() => {
-                                      writeOwnerChoice({
-                                        active: true,
-                                        memberEmail: m.email,
-                                        memberLabel: m.label,
-                                        memberEmails: [m.email],
-                                        includeMe: false,
-                                      })
-                                      closeMenus()
-                                    }}
+                              <Show
+                                when={ownerSearchEmpty()}
+                                fallback={
+                                  <Show
+                                    when={ownerMemberGap()}
+                                    fallback={
+                                      <For each={ownerMembers()}>
+                                        {(m) => (
+                                          <button
+                                            type="button"
+                                            class="job-owner-filter-option"
+                                            classList={{
+                                              "is-selected": owner().memberEmail === m.email && !owner().includeMe,
+                                            }}
+                                            onClick={() => {
+                                              writeOwnerChoice({
+                                                active: true,
+                                                memberEmail: m.email,
+                                                memberLabel: m.label,
+                                                memberEmails: [m.email],
+                                                includeMe: false,
+                                              })
+                                              closeMenus()
+                                            }}
+                                          >
+                                            {m.label}
+                                          </button>
+                                        )}
+                                      </For>
+                                    }
                                   >
-                                    {m.label}
-                                  </button>
-                                )}
-                              </For>
-                            </>
+                                    <Show
+                                      when={!ead.token()}
+                                      fallback={<div class="job-owner-filter-empty">{ownerEmptyMsg()}</div>}
+                                    >
+                                      <div class="job-owner-filter-empty job-owner-filter-empty--auth">
+                                        <div>{ownerEmptyMsg()}</div>
+                                        <button
+                                          type="button"
+                                          class="job-owner-filter-signin-btn"
+                                          onClick={openOwnerSignIn}
+                                        >
+                                          {tx("ownerSignIn")}
+                                        </button>
+                                      </div>
+                                    </Show>
+                                  </Show>
+                                }
+                              >
+                                <div class="job-owner-filter-empty">{tx("ownerNoMembers")}</div>
+                              </Show>
+                            </div>
                           }
                         >
-                          <div class="px-2 py-1.5 flex items-center justify-between gap-2 border-b border-border-weaker-base">
+                          <div class="job-owner-filter-multi-toolbar">
                             <button
                               type="button"
-                              class="text-11-regular text-text-weak hover:underline"
+                              class="job-owner-filter-check-row"
+                              classList={{ "is-checked": ownerAllSelected() }}
                               onClick={() => {
                                 const all = members().map((m) => m.email)
-                                const full = draftMe() && draftEmails().length === all.length && all.every((e) => draftEmails().includes(e))
-                                if (full) {
+                                if (ownerAllSelected()) {
                                   setDraftMe(false)
                                   setDraftEmails([])
                                   return
@@ -2414,52 +2742,90 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                                 setDraftEmails(all)
                               }}
                             >
-                              {tx("selectAll")}
+                              <span class="job-owner-filter-box" />
+                              <span>{tx("selectAll")}</span>
                             </button>
-                            <div class="flex gap-1">
-                              <Button size="small" variant="ghost" onClick={() => closeMenus()}>
-                                {tx("cancel")}
-                              </Button>
-                              <Button size="small" variant="secondary" onClick={applyOwner}>
-                                {tx("apply")}
-                              </Button>
+                            <div class="job-owner-filter-multi-actions">
+                              <button
+                                type="button"
+                                class="job-owner-filter-icon-btn"
+                                aria-label={tx("cancel")}
+                                onClick={() => closeMenus()}
+                              >
+                                ✕
+                              </button>
+                              <button
+                                type="button"
+                                class="job-owner-filter-icon-btn is-primary"
+                                aria-label={tx("apply")}
+                                onClick={applyOwner}
+                              >
+                                ✓
+                              </button>
                             </div>
                           </div>
-                          <label class={`${item} flex items-center gap-2 cursor-pointer`}>
-                            <input
-                              type="checkbox"
-                              checked={draftMe()}
-                              onChange={(e) => setDraftMe(e.currentTarget.checked)}
-                            />
-                            {tx("includeMe")}
-                            {email() ? ` (${email()})` : ""}
-                          </label>
-                          <For each={ownerMembers()}>
-                            {(m) => (
-                              <label class={`${item} flex items-center gap-2 cursor-pointer`}>
-                                <input
-                                  type="checkbox"
-                                  checked={draftEmails().includes(m.email)}
-                                  onChange={(e) => {
-                                    const on = e.currentTarget.checked
-                                    setDraftEmails((prev) =>
-                                      on ? [...new Set([...prev, m.email])] : prev.filter((x) => x !== m.email),
-                                    )
-                                  }}
-                                />
-                                <span class="truncate">{m.label}</span>
-                              </label>
-                            )}
-                          </For>
+                          <div class="job-owner-filter-list">
+                            <button
+                              type="button"
+                              class="job-owner-filter-check-row"
+                              classList={{ "is-checked": draftMe() }}
+                              onClick={() => setDraftMe((v) => !v)}
+                            >
+                              <span class="job-owner-filter-box" />
+                              <span>
+                                {tx("includeMe")}
+                                {email() ? ` (${email()})` : ""}
+                              </span>
+                            </button>
+                            <Show
+                              when={ownerSearchEmpty()}
+                              fallback={
+                                <Show
+                                  when={ownerMemberGap()}
+                                  fallback={
+                                    <For each={ownerMembers()}>
+                                      {(m) => (
+                                        <button
+                                          type="button"
+                                          class="job-owner-filter-check-row"
+                                          classList={{ "is-checked": draftEmails().includes(m.email) }}
+                                          onClick={() => {
+                                            const on = !draftEmails().includes(m.email)
+                                            setDraftEmails((prev) =>
+                                              on ? [...new Set([...prev, m.email])] : prev.filter((x) => x !== m.email),
+                                            )
+                                          }}
+                                        >
+                                          <span class="job-owner-filter-box" />
+                                          <span class="truncate">{m.label}</span>
+                                        </button>
+                                      )}
+                                    </For>
+                                  }
+                                >
+                                  <Show
+                                    when={!ead.token()}
+                                    fallback={<div class="job-owner-filter-empty">{ownerEmptyMsg()}</div>}
+                                  >
+                                    <div class="job-owner-filter-empty job-owner-filter-empty--auth">
+                                      <div>{ownerEmptyMsg()}</div>
+                                      <button
+                                        type="button"
+                                        class="job-owner-filter-signin-btn"
+                                        onClick={openOwnerSignIn}
+                                      >
+                                        {tx("ownerSignIn")}
+                                      </button>
+                                    </div>
+                                  </Show>
+                                </Show>
+                              }
+                            >
+                              <div class="job-owner-filter-empty">{tx("ownerNoMembers")}</div>
+                            </Show>
+                          </div>
                         </Show>
-                        <div class="ead-drop-sep" />
-                        <button
-                          type="button"
-                          class={`${item} text-text-weak`}
-                          onClick={() => openHelp("job-owner-filter")}
-                        >
-                          {tx("help")}
-                        </button>
+                        <HelpMenu lang={lang()} onClick={() => openHelp("job-owner-filter")} />
                       </div>
                     </Show>
                   </div>
@@ -2470,7 +2836,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       type="button"
                       class="tree-view-select"
                       classList={{ open: menu() === "view" }}
-                      onClick={() => setMenu(menu() === "view" ? "" : "view")}
+                      disabled={ead.productId() <= 0}
+                      title={ead.productId() <= 0 ? tx("selectProductHint") : !hasSource() ? tx("noSourceSchema") : undefined}
+                      onClick={() => {
+                        if (ead.productId() <= 0) return
+                        setMenu(menu() === "view" ? "" : "view")
+                      }}
                     >
                       <span class="tree-view-select-label">
                         {ead.view() === "source" ? tx("aiCode") : tx("pfmTree")}
@@ -2478,41 +2849,46 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       <span class="tree-view-select-caret" aria-hidden="true">&gt;</span>
                     </button>
                     <Show when={menu() === "view"}>
-                      <div class={`${drop} left-0 right-0 w-auto max-w-none`}>
+                      <div class="tree-view-menu">
                         <button
                           type="button"
-                          class={`${item} ${ead.view() === "pfm" ? itemActive : ""}`}
+                          class="tree-view-menu-item"
+                          classList={{ active: ead.view() === "pfm" }}
                           onClick={() => void switchView("pfm")}
                         >
+                          <span class="tree-view-menu-check">{ead.view() === "pfm" ? <IconCheck /> : null}</span>
                           {tx("pfmTree")}
                         </button>
                         <button
                           type="button"
-                          class={`${item} ${ead.view() === "source" ? itemActive : ""}`}
+                          class="tree-view-menu-item"
+                          classList={{ active: ead.view() === "source" }}
+                          disabled={!hasSource()}
                           onClick={() => void switchView("source")}
                         >
+                          <span class="tree-view-menu-check">{ead.view() === "source" ? <IconCheck /> : null}</span>
                           {tx("aiCode")}
                         </button>
-                        <div class="ead-drop-sep" />
-                        <button
-                          type="button"
-                          class={item}
-                          onClick={() => openHelp("navigator-view-mode")}
-                        >
-                          {tx("help")}
-                        </button>
+                        <HelpMenu lang={lang()} onClick={() => openHelp("navigator-view-mode")} />
                       </div>
                     </Show>
                   </div>
 
                   <Show when={ead.view() === "pfm"}>
-                    <div class="job-filter-wrap">
+                    <div
+                      class="job-filter-wrap"
+                      classList={{ "is-open": menu() === "job" }}
+                      onPointerDown={(e) => {
+                        e.preventDefault()
+                        setMenu(menu() === "job" ? "" : "job")
+                      }}
+                    >
                       <button
                         type="button"
                         class="job-filter-button"
                         classList={{ open: menu() === "job" }}
+                        tabindex="-1"
                         title={`${ead.badge()} · ${ead.jobsOnly() ? tx("filtered") : tx("all")}`}
-                        onClick={() => setMenu(menu() === "job" ? "" : "job")}
                       >
                         <span class="job-filter-icon">
                           <Show
@@ -2594,23 +2970,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             <span class="job-filter-check">{ead.jobsOnly() ? <IconCheck /> : null}</span>
                           </button>
                           <div class="job-filter-separator" />
-                          <button
-                            type="button"
-                            class="job-filter-option"
-                            onClick={() => openHelp("pfm-tree-filter")}
-                          >
-                            <span>{tx("help")}</span>
-                          </button>
+                          <HelpMenu lang={lang()} onClick={() => openHelp("pfm-tree-filter")} />
                         </div>
                       </Show>
                     </div>
                   </Show>
 
                   <Show when={ead.view() === "source"}>
-                    <div class="job-filter-wrap">
+                    <div class="ead-run-menu-wrap">
                       <button
                         type="button"
-                        class="ead-icon-btn"
+                        class="ead-run-menu-btn"
                         classList={{ open: menu() === "run" }}
                         aria-label="EAD run"
                         onClick={() => setMenu(menu() === "run" ? "" : "run")}
@@ -2618,83 +2988,90 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         <IconDots />
                       </button>
                       <Show when={menu() === "run"}>
-                        <div class={`${drop} right-0 w-52`}>
-                          <div class="px-2.5 py-1 text-11-regular text-text-weak">{tx("sourceTree")}</div>
+                        <div class="ead-run-menu">
+                          <div class="ead-run-menu-group-label">{tx("sourceTreeBadges")}</div>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "ead" ? itemActive : ""}`}
+                            class="ead-run-menu-item"
+                            classList={{ active: ead.badge() === "ead" }}
                             onClick={() => toggleBadge("ead")}
                           >
-                            {tx("ead")}
+                            <span class="ead-run-menu-check">{ead.badge() === "ead" ? <IconCheck /> : null}</span>
+                            {tx("sourceShowEadCount")}
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "jobs" ? itemActive : ""}`}
+                            class="ead-run-menu-item"
+                            classList={{ active: ead.badge() === "jobs" }}
                             onClick={() => toggleBadge("jobs")}
                           >
-                            {tx("jobs")}
+                            <span class="ead-run-menu-check">{ead.badge() === "jobs" ? <IconCheck /> : null}</span>
+                            {tx("sourceShowOpenJobs")}
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.badge() === "tests" ? itemActive : ""}`}
+                            class="ead-run-menu-item"
+                            classList={{ active: ead.badge() === "tests" }}
                             onClick={() => toggleBadge("tests")}
                           >
-                            {tx("tests")}
+                            <span class="ead-run-menu-check">{ead.badge() === "tests" ? <IconCheck /> : null}</span>
+                            {tx("sourceShowOpenTests")}
                           </button>
-                          <div class="ead-drop-sep" />
-                          <div class="px-2.5 py-1 text-11-regular text-text-weak">{tx("sourceTree")}</div>
+                          <div class="ead-run-menu-separator" />
+                          <div class="ead-run-menu-group-label">{tx("sourceTreeGroup")}</div>
                           <button
                             type="button"
-                            class={`${item} ${!ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => {
-                              ead.setEadsOnly(false)
-                              persistRun()
-                            }}
+                            class="ead-run-menu-item"
+                            classList={{ active: !ead.eadsOnly() }}
+                            onClick={() => scopeSource(false)}
                           >
-                            {tx("showAll")}
+                            <span class="ead-run-menu-check">{!ead.eadsOnly() ? <IconCheck /> : null}</span>
+                            {tx("showAllSource")}
                           </button>
                           <button
                             type="button"
-                            class={`${item} ${ead.eadsOnly() ? itemActive : ""}`}
-                            onClick={() => {
-                              ead.setEadsOnly(true)
-                              persistRun()
-                            }}
+                            class="ead-run-menu-item"
+                            classList={{ active: ead.eadsOnly() }}
+                            onClick={() => scopeSource(true)}
                           >
-                            {tx("withEads")}
+                            <span class="ead-run-menu-check">{ead.eadsOnly() ? <IconCheck /> : null}</span>
+                            {tx("showWithEads")}
                           </button>
-                          <div class="ead-drop-sep" />
+                          <div class="ead-run-menu-separator" />
                           <button
                             type="button"
-                            class={item}
+                            class="ead-run-menu-item"
                             disabled={ead.productId() <= 0}
                             onClick={() => {
                               closeMenus()
                               launch({ kind: "setupSource" })
                             }}
                           >
+                            <span class="ead-run-menu-check is-action">⚙</span>
                             {tx("setupSource")}
                           </button>
                           <button
                             type="button"
-                            class={item}
+                            class="ead-run-menu-item"
                             disabled={ead.productId() <= 0}
                             onClick={() => {
                               closeMenus()
                               launch({ kind: "find", ...sourceOpts() })
                             }}
                           >
+                            <span class="ead-run-menu-check is-action">⌕</span>
                             {tx("aiFind")}
                           </button>
                           <button
                             type="button"
-                            class={item}
+                            class="ead-run-menu-item"
                             disabled={ead.sourceId() <= 0}
                             onClick={() => {
                               closeMenus()
                               launch({ kind: "create", ...sourceOpts() })
                             }}
                           >
+                            <span class="ead-run-menu-check is-action">▶</span>
                             {tx("analyze")}
                           </button>
                         </div>
@@ -2705,11 +3082,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
               </div>
 
-              <div class="navigator-scroll">
-                <Show when={banner()}>
+              <div class="navigator-scroll" classList={{ "is-locked": menuOpen() }}>
+                <Show when={diag() && banner()}>
                   <div
                     class="refresh-banner"
                     classList={{
+                      "is-loading": banner()!.kind === "loading",
                       "is-ok": banner()!.kind === "ok",
                       "is-error": banner()!.kind === "error",
                     }}
@@ -2718,23 +3096,49 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
                 </Show>
 
+                <Show when={diag() && startup().text}>
+                  <div
+                    class="startup-status"
+                    classList={{
+                      "is-ok": startup().kind === "ok",
+                      "is-error": startup().kind === "error",
+                    }}
+                  >
+                    {startup().text}
+                  </div>
+                </Show>
+
                 <Show when={diag()}>
-                  <pre class="px-2 py-1.5 rounded border border-border-weaker-base text-11-regular font-mono text-text-weak whitespace-pre-wrap break-words">
-                    {`${tx("diagTitle")}
-env=${ead.env()}
-api=${eadApi()}
-auth=${ead.token() ? "yes" : "no"}
-mcp=${ead.mcpEntry() || "-"}
-productId=${ead.productId()}
-mapId=${ead.mapId()} schemaId=${ead.schemaId()} subSchemaId=${ead.subSchemaId()}
-nodeId=${ead.nodeId()} sourceId=${ead.sourceId()}
-view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}
-workContextId=${ead.workContextId()}
-pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}
-owner=${owner().enabled ? ownerSummary(owner()) : "off"}
-err=${err() || "-"}
-${pipeline()}`}
-                  </pre>
+                  <div
+                    class="diag-panel"
+                    classList={{
+                      "is-ok": diagOk(),
+                      "is-error": diagFail(),
+                    }}
+                  >
+                    <div class="diag-title">{tx("diagTitle")}</div>
+                    <div class="diag-line">{`env=${ead.env()}`}</div>
+                    <div class="diag-line">{`api=${eadApi()}`}</div>
+                    <div class="diag-line">{`auth=${ead.token() ? "yes" : "no"}`}</div>
+                    <div class="diag-line">{`mcp=${ead.mcpEntry() || "-"}`}</div>
+                    <div class="diag-line">{`productId=${ead.productId()}`}</div>
+                    <div class="diag-line">{`mapId=${ead.mapId()} schemaId=${ead.schemaId()} subSchemaId=${ead.subSchemaId()}`}</div>
+                    <div class="diag-line">{`nodeId=${ead.nodeId()} sourceId=${ead.sourceId()}`}</div>
+                    <div class="diag-line">{`view=${ead.view()} badge=${ead.badge()} jobsOnly=${ead.jobsOnly()}`}</div>
+                    <div class="diag-line">{`workContextId=${ead.workContextId()}`}</div>
+                    <div class="diag-line">{`pfmFilter=${pfmFilter().active ? "on" : "off"} ids=${pfmFilter().ids.length} paths=${pfmFilter().paths.length}`}</div>
+                    <div class="diag-line">{`owner=${owner().enabled ? ownerSummary(owner(), lang()) : "off"}`}</div>
+                    <Show when={err()}>
+                      <div class="diag-line fail">{`err=${err()}`}</div>
+                    </Show>
+                    <For each={diagSteps()}>
+                      {(s) => (
+                        <div class="diag-line" classList={{ fail: !s.ok }}>
+                          {`${s.ok ? "✓" : "✗"} ${s.name}: ${s.detail}`}
+                        </div>
+                      )}
+                    </For>
+                  </div>
                 </Show>
 
                 <Show when={ead.view() === "source"}>
@@ -2756,11 +3160,7 @@ ${pipeline()}`}
                           type="button"
                           class="source-scope-menu-item"
                           classList={{ active: !ead.eadsOnly() }}
-                          onClick={() => {
-                            ead.setEadsOnly(false)
-                            persistRun()
-                            closeMenus()
-                          }}
+                          onClick={() => scopeSource(false)}
                         >
                           <span class="job-filter-check">{!ead.eadsOnly() ? <IconCheck /> : null}</span>
                           {tx("showAllSource")}
@@ -2769,11 +3169,7 @@ ${pipeline()}`}
                           type="button"
                           class="source-scope-menu-item"
                           classList={{ active: ead.eadsOnly() }}
-                          onClick={() => {
-                            ead.setEadsOnly(true)
-                            persistRun()
-                            closeMenus()
-                          }}
+                          onClick={() => scopeSource(true)}
                         >
                           <span class="job-filter-check">{ead.eadsOnly() ? <IconCheck /> : null}</span>
                           {tx("showWithEads")}
@@ -2818,7 +3214,7 @@ ${pipeline()}`}
                     </div>
                   </Show>
                   <Show when={!busy() && ead.productId() > 0 && !root()}>
-                    <span class="text-12-regular text-text-weak">{tx("noMap")}</span>
+                    <Empty title={tx("noMap")} />
                   </Show>
                   <Show
                     when={
@@ -2831,20 +3227,19 @@ ${pipeline()}`}
                       schemas().length > 0
                     }
                   >
-                    <div class="flex flex-col gap-2">
-                      <span class="text-12-regular text-text-weak">{tx("emptyDynamic")}</span>
-                      <Button
-                        size="small"
-                        variant="secondary"
+                    <Empty title={tx("emptyDynamic")} hint={tx("crawlVisionHint")}>
+                      <button
+                        type="button"
+                        class="product-suggestion-btn"
                         onClick={() => launch({ kind: "crawl" })}
                         title={tx("crawlVisionHint")}
                       >
                         {tx("crawlVision")}
-                      </Button>
-                    </div>
+                      </button>
+                    </Empty>
                   </Show>
                   <Show when={!busy() && root() && pfmVisible().length === 0 && (query().trim() || ead.jobsOnly() || pfmFilter().active)}>
-                    <span class="text-12-regular text-text-weak">{tx("noMatch")}</span>
+                    <div class="empty">{tx("noMatch")}</div>
                   </Show>
                 </Show>
 
@@ -2855,7 +3250,10 @@ ${pipeline()}`}
                         nodes={sourceVisible()}
                         selected={ead.sourceId()}
                         onSelect={selectSource}
-                        counts={badgeCounts()}
+                        eads={eadCounts()}
+                        jobs={jobCounts()}
+                        tests={testCounts()}
+                        mode={ead.badge()}
                         pending={pendingPaths()}
                         expanded={ead.expanded(ead.schemaId())}
                         onExpand={onExpand}
@@ -2868,11 +3266,10 @@ ${pipeline()}`}
                     </div>
                   </Show>
                   <Show when={!busy() && ead.productId() > 0 && source().length === 0}>
-                    <div class="flex flex-col gap-2">
-                      <span class="text-12-regular text-text-weak">{tx("noSource")}</span>
-                      <Button
-                        size="small"
-                        variant="secondary"
+                    <Empty title={tx("noSource")}>
+                      <button
+                        type="button"
+                        class="product-suggestion-btn"
                         disabled={busy()}
                         onClick={() => {
                           setBusy(true)
@@ -2883,18 +3280,75 @@ ${pipeline()}`}
                         }}
                       >
                         {tx("syncSource")}
-                      </Button>
-                    </div>
+                      </button>
+                    </Empty>
                   </Show>
                   <Show when={!busy() && source().length > 0 && sourceVisible().length === 0 && (query().trim() || ead.eadsOnly() || pfmFilter().active)}>
-                    <span class="text-12-regular text-text-weak">{tx("noMatchSource")}</span>
+                    <div class="empty">{tx("noMatchSource")}</div>
                   </Show>
                 </Show>
 
+                <Show when={injectNote()}>
+                  <div
+                    class="inject-status"
+                    classList={{
+                      "is-ok": injectNote()!.ok,
+                      "is-error": !injectNote()!.ok,
+                    }}
+                  >
+                    {injectNote()!.text}
+                  </div>
+                </Show>
+
                 <Show when={err()}>
-                  <p class="text-12-regular text-text-weak break-words">{err()}</p>
+                  <p class="error break-words">{err()}</p>
                 </Show>
               </div>
+
+              <Show when={editOpen()}>
+                <div class="project-cute-popup-backdrop" onClick={() => setEditOpen(false)}>
+                  <div class="project-cute-popup" onClick={(e) => e.stopPropagation()}>
+                    <span class="project-cute-popup-badge">EAD</span>
+                    <p class="project-cute-popup-title">{tx("editTitle")}</p>
+                    <p class="project-cute-popup-text">{tx("editMessage")}</p>
+                    <div class="project-cute-popup-actions">
+                      <button type="button" class="context-btn" onClick={() => setEditOpen(false)}>
+                        {tx("cancel")}
+                      </button>
+                      <button type="button" class="context-btn primary" onClick={confirmEdit}>
+                        {tx("continue")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={tip()}>
+                <div
+                  class="help-tip-overlay"
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) closeHelp()
+                  }}
+                >
+                  <div class="help-tip-popup" role="dialog" aria-modal="true">
+                    <div class="help-tip-header">
+                      <span class="help-tip-title">{tipDialogTitle(tip()!, lang())}</span>
+                      <button
+                        type="button"
+                        class="help-tip-close"
+                        aria-label={language.t("common.close")}
+                        onClick={closeHelp}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div
+                      class="help-tip-body"
+                      innerHTML={markdownToHelpHtml(tipBody(tip()!, lang()))}
+                    />
+                  </div>
+                </div>
+              </Show>
             </Show>
           </div>
         </div>
