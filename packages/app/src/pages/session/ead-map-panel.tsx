@@ -1302,7 +1302,15 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setPfmJobs({})
         setPfmTests({})
       }
-      if (ead.view() === "source" || opts?.syncLinked === true) await loadSource(opts?.syncLinked === true)
+      if (ead.view() === "source" || opts?.syncLinked === true) {
+        await loadSource(opts?.syncLinked === true)
+      } else {
+        // Probe schema so AI Code stays selectable while on PFM (matches extension aiCodeViewAvailable).
+        const schema = await loadSourceSchema(token, selected.productId, fetcher).catch(() => undefined)
+        if (!live()) return
+        if (schema) ead.setSchema(schema.schemaId, schema.name)
+        else ead.setSchema(0, "")
+      }
       if (!live()) return
       noteDiag(
         "Load complete",
@@ -1697,7 +1705,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const switchView = async (view: "pfm" | "source") => {
-    if (view === "source" && !hasSource()) return
+    if (view === "source") {
+      if (!hasSource()) {
+        const token = ead.token()
+        const pid = ead.productId()
+        if (token && pid > 0) {
+          const schema = await loadSourceSchema(token, pid, http()).catch(() => undefined)
+          if (schema) ead.setSchema(schema.schemaId, schema.name)
+        }
+      }
+      if (!hasSource()) return
+    }
     ead.setView(view)
     setQuery("")
     closeMenus()
@@ -2840,7 +2858,17 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       title={ead.productId() <= 0 ? tx("selectProductHint") : !hasSource() ? tx("noSourceSchema") : undefined}
                       onClick={() => {
                         if (ead.productId() <= 0) return
-                        setMenu(menu() === "view" ? "" : "view")
+                        const next = menu() === "view" ? "" : "view"
+                        setMenu(next)
+                        if (next !== "view" || hasSource()) return
+                        const token = ead.token()
+                        const pid = ead.productId()
+                        if (!token || pid <= 0) return
+                        void loadSourceSchema(token, pid, http())
+                          .then((schema) => {
+                            if (schema) ead.setSchema(schema.schemaId, schema.name)
+                          })
+                          .catch(() => undefined)
                       }}
                     >
                       <span class="tree-view-select-label">
