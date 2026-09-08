@@ -1007,6 +1007,20 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const toggleBadge = (next: "ead" | "jobs" | "tests") => {
     ead.setBadge(ead.badge() === next ? "none" : next)
     persistRun()
+    setMenu("")
+  }
+
+  const jobTitle = () => {
+    const badge =
+      ead.badge() === "ead"
+        ? tx("badgeEadCount")
+        : ead.badge() === "jobs"
+          ? tx("badgeOpenJobs")
+          : ead.badge() === "tests"
+            ? tx("badgeOpenTests")
+            : tx("badgeNone")
+    const scope = ead.jobsOnly() ? tx("scopeFiltered") : tx("scopeAll")
+    return `${tx("jobFilterPrefix")}${badge} · ${scope}`
   }
 
   const soon = (name: string) => {
@@ -2916,7 +2930,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         class="job-filter-button"
                         classList={{ open: menu() === "job" }}
                         tabindex="-1"
-                        title={`${ead.badge()} · ${ead.jobsOnly() ? tx("filtered") : tx("all")}`}
+                        title={jobTitle()}
                       >
                         <span class="job-filter-icon">
                           <Show
@@ -2937,8 +2951,31 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         <IconCaret />
                       </button>
                       <Show when={menu() === "job"}>
-                        <div class="job-filter-menu">
-                          <div class="job-filter-group-label">{tx("badge")}</div>
+                        <div class="job-filter-menu" onPointerDown={(e) => e.stopPropagation()}>
+                          <div class="job-filter-group-label">{tx("groupPfmVsSource")}</div>
+                          <button
+                            type="button"
+                            class="job-filter-option"
+                            classList={{ active: ead.view() === "pfm" }}
+                            onClick={() => void switchView("pfm")}
+                          >
+                            <span class="job-filter-icon"><IconFolders /></span>
+                            <span>{tx("pfmTree")}</span>
+                            <span class="job-filter-check">{ead.view() === "pfm" ? <IconCheck /> : null}</span>
+                          </button>
+                          <button
+                            type="button"
+                            class="job-filter-option"
+                            classList={{ active: ead.view() === "source" }}
+                            disabled={!hasSource()}
+                            onClick={() => void switchView("source")}
+                          >
+                            <span class="job-filter-icon"><IconFile /></span>
+                            <span>{tx("aiCode")}</span>
+                            <span class="job-filter-check">{ead.view() === "source" ? <IconCheck /> : null}</span>
+                          </button>
+                          <div class="job-filter-separator" />
+                          <div class="job-filter-group-label">{tx("groupEadJobs")}</div>
                           <button
                             type="button"
                             class="job-filter-option"
@@ -2946,7 +2983,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             onClick={() => toggleBadge("ead")}
                           >
                             <span class="job-filter-icon"><IconEad /></span>
-                            <span>{tx("ead")}</span>
+                            <span>{tx("showEadCount")}</span>
                             <span class="job-filter-check">{ead.badge() === "ead" ? <IconCheck /> : null}</span>
                           </button>
                           <button
@@ -2956,7 +2993,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             onClick={() => toggleBadge("jobs")}
                           >
                             <span class="job-filter-icon"><IconJobs /></span>
-                            <span>{tx("jobs")}</span>
+                            <span>{tx("showOpenJobs")}</span>
                             <span class="job-filter-check">{ead.badge() === "jobs" ? <IconCheck /> : null}</span>
                           </button>
                           <button
@@ -2966,11 +3003,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             onClick={() => toggleBadge("tests")}
                           >
                             <span class="job-filter-icon"><IconTests /></span>
-                            <span>{tx("tests")}</span>
+                            <span>{tx("showOpenTests")}</span>
                             <span class="job-filter-check">{ead.badge() === "tests" ? <IconCheck /> : null}</span>
                           </button>
                           <div class="job-filter-separator" />
-                          <div class="job-filter-group-label">{tx("filter")}</div>
+                          <div class="job-filter-group-label">{tx("groupTreeView")}</div>
                           <button
                             type="button"
                             class="job-filter-option"
@@ -2981,7 +3018,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             }}
                           >
                             <span class="job-filter-icon"><IconFolders /></span>
-                            <span>{tx("all")}</span>
+                            <span>{tx("showAllNodes")}</span>
                             <span class="job-filter-check">{!ead.jobsOnly() ? <IconCheck /> : null}</span>
                           </button>
                           <button
@@ -2994,7 +3031,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             }}
                           >
                             <span class="job-filter-icon"><IconFilter /></span>
-                            <span>{tx("filtered")}</span>
+                            <span>{tx("showFilteredOnly")}</span>
                             <span class="job-filter-check">{ead.jobsOnly() ? <IconCheck /> : null}</span>
                           </button>
                           <div class="job-filter-separator" />
@@ -3090,18 +3127,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             <span class="ead-run-menu-check is-action">⌕</span>
                             {tx("aiFind")}
                           </button>
-                          <button
-                            type="button"
-                            class="ead-run-menu-item"
-                            disabled={ead.sourceId() <= 0}
-                            onClick={() => {
-                              closeMenus()
-                              launch({ kind: "create", ...sourceOpts() })
-                            }}
-                          >
-                            <span class="ead-run-menu-check is-action">▶</span>
-                            {tx("analyze")}
-                          </button>
                         </div>
                       </Show>
                     </div>
@@ -3178,7 +3203,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       onClick={() => setMenu(menu() === "scope" ? "" : "scope")}
                     >
                       <span class="source-scope-select-label">
-                        {ead.eadsOnly() ? tx("showWithEads") : tx("showAllSource")}
+                        {ead.eadsOnly() ? tx("sourceWithPfm") : tx("showAllSourceCode")}
                       </span>
                       <span class="source-scope-select-caret">&gt;</span>
                     </button>
@@ -3191,7 +3216,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           onClick={() => scopeSource(false)}
                         >
                           <span class="job-filter-check">{!ead.eadsOnly() ? <IconCheck /> : null}</span>
-                          {tx("showAllSource")}
+                          {tx("showAllSourceCode")}
                         </button>
                         <button
                           type="button"
@@ -3200,7 +3225,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                           onClick={() => scopeSource(true)}
                         >
                           <span class="job-filter-check">{ead.eadsOnly() ? <IconCheck /> : null}</span>
-                          {tx("showWithEads")}
+                          {tx("sourceWithPfm")}
                         </button>
                       </div>
                     </Show>

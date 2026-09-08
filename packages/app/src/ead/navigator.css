@@ -1,4 +1,4 @@
-/* EAD Map — visual parity with Cursor extension navigator-webview (v1.0.201). */
+/* EAD Map — visual parity with Cursor extension navigator-webview (v1.0.204). */
 [data-ead-map] {
   --ead-bg: #07111f;
   --ead-panel: #0b1324;
@@ -1876,10 +1876,15 @@
   cursor: pointer;
 }
 
-[data-ead-map] .job-filter-option:hover,
+[data-ead-map] .job-filter-option:hover:not(:disabled),
 [data-ead-map] .job-filter-option.active {
   background: rgba(124, 58, 237, 0.22);
   color: #f5f3ff;
+}
+
+[data-ead-map] .job-filter-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 [data-ead-map] .job-filter-check {

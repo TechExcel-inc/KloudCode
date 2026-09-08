@@ -45,7 +45,7 @@ import { mcpCandidates } from "./mcp"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.201")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.204")
   })
 })
 
@@ -488,6 +488,14 @@ describe("ead i18n + env + mcp", () => {
     expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
     expect(t("zh", "confirmPassword")).toBe("确认密码")
     expect(t("en", "createTask")).toContain("task")
+    expect(t("en", "aiCode")).toBe("AI Code View")
+    expect(t("zh", "aiCode")).toBe("AI 代码视图")
+    expect(t("en", "groupPfmVsSource")).toBe("PFM vs. Source Code")
+    expect(t("zh", "showFilteredOnly")).toBe("仅显示已筛选的 PFM 节点")
+    expect(t("zh", "showDebug")).toBe("显示调试消息")
+    expect(t("en", "scopeFiltered")).toBe("Filtered PFM nodes only")
+    expect(t("zh", "sourceWithPfm")).toBe("显示含 PFM 节点的源代码")
+    expect(t("zh", "badgePending")).toBe("待创建")
   })
 
   test("applyEnv switches api and origin", () => {
