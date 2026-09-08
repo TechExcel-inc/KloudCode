@@ -42,10 +42,62 @@ import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, isEadHost } from "./urls"
 import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
+import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.204")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.211")
+  })
+})
+
+describe("ead top-level", () => {
+  const json = JSON.stringify([
+    { name: "PPM Project Base", nodeId: 221, clientId: "dyn", isDynamic: true, sortOrder: 0 },
+    { name: "User Manager", nodeId: 1143, clientId: "tl-um", isDynamic: false, sortOrder: 1 },
+    { name: "System Settings", nodeId: 223, clientId: "tl-ss", isDynamic: false, sortOrder: 2 },
+  ])
+
+  test("orders configured tops and buckets extras", () => {
+    const cfgs = parseJson(json, "PPM Project Base")
+    expect(configured(cfgs)).toBe(true)
+    expect(cfgs.map((n) => n.name)).toEqual(["PPM Project Base", "User Manager", "System Settings"])
+    const next = enforce(
+      [
+        { nodeId: 221, nodeName: "PPM Project Base", children: [] },
+        { nodeId: 1143, nodeName: "User Manager", children: [] },
+        { nodeId: 223, nodeName: "System Settings", children: [{ nodeId: 1, nodeName: "Site Info" }] },
+        { nodeId: 1546, nodeName: "Product Features", children: [] },
+        { nodeId: 1547, nodeName: "Views", children: [] },
+        { nodeId: 1543, nodeName: "To be moved", children: [{ nodeId: 99, nodeName: "Status Group" }] },
+      ],
+      {
+        supportSubSchemas: true,
+        topLevelNodesJson: json,
+        dynamicTopLevelDisplayName: "PPM Project Base",
+        dynamicTopLevelNodeId: 221,
+      },
+    )
+    expect(next.map((n) => n.nodeName)).toEqual(["PPM Project Base", "User Manager", "System Settings", "To be moved"])
+    expect(Number(next[3]?.nodeId)).toBe(1543)
+    const names = (next[3]?.children || []).map((c) => c.nodeName)
+    expect(names).toEqual(expect.arrayContaining(["Product Features", "Views", "Status Group"]))
+    expect(names).not.toContain("System Settings")
+  })
+
+  test("uses virtual To be moved when no bucket exists", () => {
+    const next = enforce(
+      [
+        { nodeId: 221, nodeName: "PPM Project Base", children: [] },
+        { nodeId: 1143, nodeName: "User Manager", children: [] },
+        { nodeId: 999, nodeName: "Orphan Module", children: [] },
+      ],
+      {
+        supportSubSchemas: true,
+        topLevelNodesJson: json,
+        dynamicTopLevelDisplayName: "PPM Project Base",
+      },
+    )
+    expect(Number(next[next.length - 1]?.nodeId)).toBe(VIRTUAL_MOVED)
   })
 })
 

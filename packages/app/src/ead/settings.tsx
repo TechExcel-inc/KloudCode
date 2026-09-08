@@ -106,7 +106,11 @@ export function expandKey(productId: number, mapId = 0, subSchemaId = 0) {
 }
 
 function normalizeApi(url: string) {
-  return url.trim().replace(/\/+$/, "").toLowerCase()
+  return url
+    .trim()
+    .replace(/\/+$/, "")
+    .toLowerCase()
+    .replace(/^(https?:\/\/)127\.0\.0\.1(?=:\d+|$)/, "$1localhost")
 }
 
 export const { use: useEad, provider: EadProvider } = createSimpleContext({

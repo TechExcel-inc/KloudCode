@@ -30,7 +30,6 @@ import {
   loadRunPrefs,
   loadSourceExpanded,
   loadSourceSchema,
-  loadSubSchemas,
   loadSubtreePaths,
   loadTeamMembers,
   login,
@@ -1286,13 +1285,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setBaseMapId(map.baseMapId)
       setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
       noteDiag("Map", true, `mapId=${map.mapId} name=${map.mapName || map.root?.name || "-"}`)
-      if (map.supportSubSchemas && map.mapId > 0) {
-        const next = await loadSubSchemas(token, map.mapId, fetcher)
-        if (!live()) return
-        setSchemas(next)
-      } else {
-        setSchemas([])
-      }
+      setSchemas(map.schemas)
       if (map.mapId > 0) {
         const ids = await loadOpenFilterNodeIds(token, map.mapId, fetcher)
         if (!live()) return

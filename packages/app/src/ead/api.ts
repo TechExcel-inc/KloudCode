@@ -1,4 +1,5 @@
 import { eadHttp } from "./http"
+import { applyTopLevel, VIRTUAL_MOVED, type Raw } from "./top-level"
 import { eadApi } from "./urls"
 
 export type Product = {
@@ -56,6 +57,9 @@ type MapPayload = {
   rootNode?: unknown
   dynamicTopLevelNodeId?: number | string | null
   dynamicTopLevelDisplayName?: string | null
+  topLevelNodesJson?: string | null
+  subSchemaTypeNames?: string[] | null
+  subSchemaTypes?: Array<{ id?: number | string; name?: string }> | null
 }
 
 type ContextPayload = {
@@ -192,7 +196,8 @@ function asNode(
   if (!raw || typeof raw !== "object") return
   const row = raw as Record<string, unknown>
   const id = Number(row.nodeId ?? row.id ?? 0)
-  if (!Number.isFinite(id) || id <= 0) return
+  if (!Number.isFinite(id) || id === 0) return
+  if (id < 0 && id !== VIRTUAL_MOVED) return
   const kids = Array.isArray(row.children) ? row.children : []
   const dyn =
     row.isDynamicTopLevel === true ||
@@ -349,6 +354,20 @@ export async function loadProducts(token: string, http: Http = eadHttp()) {
   return (await loadCatalog(token, http)).products
 }
 
+export type SubSchema = { id: number; name: string }
+
+export async function loadSubSchemas(token: string, mapId: number, http: Http = eadHttp()) {
+  const data = (await call(http, `/pfm-map-sub/maps/${mapId}`, token).catch(() => null)) as {
+    subSchemas?: Array<{ id?: number | string; name?: string }>
+  } | null
+  if (!data) return [] as SubSchema[]
+  return (data.subSchemas ?? []).flatMap((row) => {
+    const id = Number(row.id)
+    if (!Number.isFinite(id) || id <= 0) return []
+    return [{ id, name: String(row.name || `Schema ${id}`) }]
+  })
+}
+
 export async function loadActiveMap(
   token: string,
   productId: number,
@@ -364,8 +383,28 @@ export async function loadActiveMap(
   const mapId = Number(map.mapId ?? 0)
   const base = Number(map.baseMapId ?? 0)
   const dynId = Number(map.dynamicTopLevelNodeId ?? 0)
-  const dynName = String(map.dynamicTopLevelDisplayName || "").trim()
-  const root = asNode(map.rootNode, {
+  const support = map.supportSubSchemas === true || map.supportSubSchemas === 1
+  const schemas = support && Number.isFinite(mapId) && mapId > 0 ? await loadSubSchemas(token, mapId, http) : []
+  const dynFromSchema =
+    subSchemaId && subSchemaId > 0 ? schemas.find((s) => s.id === subSchemaId)?.name : undefined
+  const dynName = String(map.dynamicTopLevelDisplayName || dynFromSchema || "").trim()
+  const types = (Array.isArray(map.subSchemaTypes) ? map.subSchemaTypes : [])
+    .map((row) => {
+      const id = Number(row?.id)
+      const name = String(row?.name || "").trim()
+      if (!Number.isFinite(id) || id <= 0 || !name) return null
+      return { id, name }
+    })
+    .filter((row): row is { id: number; name: string } => row != null)
+  const enforced = applyTopLevel((map.rootNode ?? null) as Raw | null, {
+    topLevelNodesJson: map.topLevelNodesJson,
+    supportSubSchemas: map.supportSubSchemas,
+    dynamicTopLevelNodeId: map.dynamicTopLevelNodeId,
+    dynamicTopLevelDisplayName: dynName || null,
+    dynamicSchemaTypeNames: map.subSchemaTypeNames ?? schemas.map((s) => s.name),
+    subSchemaTypes: types.length ? types : schemas,
+  })
+  const root = asNode(enforced, {
     dynId: Number.isFinite(dynId) && dynId > 0 ? dynId : undefined,
     dynName: dynName || undefined,
   })
@@ -373,24 +412,11 @@ export async function loadActiveMap(
   return {
     mapId: Number.isFinite(mapId) && mapId > 0 ? mapId : 0,
     root,
-    supportSubSchemas: map.supportSubSchemas === true || map.supportSubSchemas === 1,
+    supportSubSchemas: support,
     baseMapId: Number.isFinite(base) && base > 0 ? base : 0,
     mapName: name,
+    schemas,
   }
-}
-
-export type SubSchema = { id: number; name: string }
-
-export async function loadSubSchemas(token: string, mapId: number, http: Http = eadHttp()) {
-  const data = (await call(http, `/pfm-map-sub/maps/${mapId}`, token).catch(() => null)) as {
-    subSchemas?: Array<{ id?: number | string; name?: string }>
-  } | null
-  if (!data) return [] as SubSchema[]
-  return (data.subSchemas ?? []).flatMap((row) => {
-    const id = Number(row.id)
-    if (!Number.isFinite(id) || id <= 0) return []
-    return [{ id, name: String(row.name || `Schema ${id}`) }]
-  })
 }
 
 export type LinkedBundle = {
