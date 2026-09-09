@@ -1,6 +1,7 @@
 import { eadOrigin, eadServer, EAD_PILOT_ID, EAD_PILOT_WIDTH, isEadHost } from "./urls"
 import type { PilotAction } from "./actions"
 import type { Lang } from "./i18n"
+import type { Step } from "./step-signal"
 
 export type PilotContext = {
   productId?: number
@@ -64,6 +65,7 @@ export type BridgeHooks = {
   ownerOptions?: (msg: Record<string, unknown>) => void
   ownerFilter?: (msg: Record<string, unknown>) => void
   pfmFilter?: (msg: Record<string, unknown>) => void
+  stepComplete?: (msg: Record<string, unknown>) => void
 }
 
 type Panel = {
@@ -149,6 +151,16 @@ export function flagsFromAction(action: PilotAction | undefined): Pick<
 export function postToFrame(frame: HTMLIFrameElement | undefined, payload: Record<string, unknown>) {
   if (!frame?.contentWindow) return
   frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, eadOrigin())
+}
+
+/** Cursor 1.0.222 host event — advance Auto Improve / AI Find waiting pages. */
+export function postStep(frame: HTMLIFrameElement | undefined, step: Step) {
+  postToFrame(frame, {
+    type: step.type,
+    pfmNodeId: step.pfmNodeId,
+    reason: step.reason,
+    at: step.at || new Date().toISOString(),
+  })
 }
 
 /** Match Cursor shell: iframe listens for authTokenSync / authSyncComplete. */
@@ -547,6 +559,11 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
 
   if (type === "pluginHeartbeat") {
     hooks.noteHeartbeat?.()
+    return true
+  }
+
+  if (type === "autoImproveStepComplete" || type === "aiFindStepComplete") {
+    hooks.stepComplete?.(msg)
     return true
   }
 

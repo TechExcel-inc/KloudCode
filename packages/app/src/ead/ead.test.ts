@@ -43,10 +43,11 @@ import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VE
 import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
+import { matches, parseBody, parseStep, SIGNAL, watch } from "./step-signal"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.211")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.222")
   })
 })
 
@@ -364,6 +365,25 @@ describe("ead bridge", () => {
     expect(calls).toEqual(["ext:https://eadfm.com:ead", "web:2:true"])
   })
 
+  test("autoImproveStepComplete routes to hook", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "autoImproveStepComplete", pfmNodeId: 42, reason: "done", at: "t1" },
+      {
+        setToken: () => {},
+        stepComplete: (msg) => calls.push(`${msg.type}:${msg.pfmNodeId}`),
+      },
+    )
+    handlePluginMessage(
+      { type: "aiFindStepComplete", pfmNodeId: 7 },
+      {
+        setToken: () => {},
+        stepComplete: (msg) => calls.push(`${msg.type}:${msg.pfmNodeId}`),
+      },
+    )
+    expect(calls).toEqual(["autoImproveStepComplete:42", "aiFindStepComplete:7"])
+  })
+
   test("writeClipboardText routes to hook", () => {
     const calls: string[] = []
     handlePluginMessage(
@@ -573,5 +593,36 @@ describe("ead i18n + env + mcp", () => {
     noteDiag("Map", false, "timeout")
     expect(formatDiag()).toBe("ok Auth: ok\nfail Map: timeout")
     expect(readStartup()).toEqual({ text: "✗ Map: timeout", kind: "error" })
+  })
+})
+
+describe("ead step-signal", () => {
+  test("parses MCP payload and path", () => {
+    const step = parseBody(
+      `{"type":"autoImproveStepComplete","pfmNodeId":9,"reason":"ok","at":"2026-09-09T01:00:00.000Z"}`,
+    )
+    expect(step?.pfmNodeId).toBe(9)
+    expect(parseStep({ type: "nope" })).toBeUndefined()
+    expect(parseBody("{")).toBeUndefined()
+    expect(matches(SIGNAL)).toBe(true)
+    expect(matches(`/tmp/${SIGNAL}`)).toBe(true)
+    expect(matches("other.json")).toBe(false)
+  })
+
+  test("skips leftover then fires on new at", () => {
+    const seen = watch()
+    const a = parseStep({ type: "autoImproveStepComplete", pfmNodeId: 1, at: "t1", reason: "a" })!
+    const b = parseStep({ type: "autoImproveStepComplete", pfmNodeId: 1, at: "t2", reason: "b" })!
+    expect(seen.hit(a, 1000)).toBe(false)
+    expect(seen.hit(a, 3000)).toBe(false)
+    expect(seen.hit(b, 3000)).toBe(true)
+    expect(seen.hit(b, 5000)).toBe(false)
+  })
+
+  test("fires first write after miss", () => {
+    const seen = watch()
+    seen.miss()
+    const a = parseStep({ type: "autoImproveStepComplete", pfmNodeId: null, at: "t1", reason: "new" })!
+    expect(seen.hit(a, 1000)).toBe(true)
   })
 })

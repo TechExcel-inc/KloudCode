@@ -1,4 +1,4 @@
-/** Map chrome help tips — keep in sync with Cursor extension v1.0.211 navigator-help-tips.js */
+/** Map chrome help tips — keep in sync with Cursor extension v1.0.222 navigator-help-tips.js */
 
 export type TipId =
   | "pfm-schema-filter"

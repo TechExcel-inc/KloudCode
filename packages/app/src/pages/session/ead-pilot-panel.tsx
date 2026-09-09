@@ -30,6 +30,7 @@ import {
   replyClipboard,
   replyWriteClipboard,
   replyTeamMembers,
+  postStep,
   requestSessionSync,
   selectPfmSubSchema,
   setUiLanguage,
@@ -37,6 +38,7 @@ import {
   syncAuthStatus,
   type SourceOpts,
 } from "@/ead/bridge"
+import { matches, parseBody, parseStep, SIGNAL, watch } from "@/ead/step-signal"
 import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
@@ -274,6 +276,46 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   })
 
   createEffect(() => {
+    if (!alive()) return
+    const seen = watch()
+    const load = () =>
+      sdk.client.file
+        .read({ path: SIGNAL })
+        .then((res) => {
+          const data = res.data
+          if (!data || data.type !== "text") {
+            seen.miss()
+            return
+          }
+          const step = parseBody(data.content || "")
+          if (!step) {
+            seen.miss()
+            return
+          }
+          if (seen.hit(step)) postStep(frame(), step)
+        })
+        .catch(() => {
+          seen.miss()
+        })
+    void load()
+    const stop = sdk.event.listen((evt) => {
+      if (evt.details.type !== "file.watcher.updated") return
+      const props =
+        typeof evt.details.properties === "object" && evt.details.properties
+          ? (evt.details.properties as Record<string, unknown>)
+          : undefined
+      const file = typeof props?.file === "string" ? props.file : ""
+      if (!matches(file)) return
+      void load()
+    })
+    const timer = window.setInterval(() => void load(), 1500)
+    onCleanup(() => {
+      stop()
+      window.clearInterval(timer)
+    })
+  })
+
+  createEffect(() => {
     if (!panelOpen()) return
     const timer = window.setInterval(() => {
       const el = frame()
@@ -360,6 +402,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
           requestSessionSync(el)
         },
         noteHeartbeat: () => setBeat(Date.now()),
+        stepComplete: (msg) => {
+          const step = parseStep(msg)
+          if (step) postStep(el, step)
+        },
         bridgeReady: () => {
           setBeat(Date.now())
           push(el)
