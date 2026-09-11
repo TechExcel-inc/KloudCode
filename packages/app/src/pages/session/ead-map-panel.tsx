@@ -111,6 +111,33 @@ type Menu =
 const KINDS: ContextKind[] = ["jobs", "skills", "api", "source"]
 
 const field = "ead-field"
+
+function AuthPass(props: {
+  value: string
+  show: boolean
+  placeholder: string
+  onInput: (v: string) => void
+  onToggle: () => void
+  onEnter?: () => void
+}) {
+  return (
+    <div class="auth-input-wrap">
+      <input
+        type={props.show ? "text" : "password"}
+        class={field}
+        placeholder={props.placeholder}
+        value={props.value}
+        onInput={(e) => props.onInput(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") props.onEnter?.()
+        }}
+      />
+      <button type="button" class="auth-eye" onClick={props.onToggle}>
+        {props.show ? "◌" : "◎"}
+      </button>
+    </div>
+  )
+}
 const drop = "ead-drop"
 const item = "ead-drop-item"
 const itemActive = "is-active"
@@ -775,6 +802,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [id, setId] = createSignal("")
   const [pass, setPass] = createSignal("")
   const [showPass, setShowPass] = createSignal(false)
+  const [showConfirm, setShowConfirm] = createSignal(false)
   const [target, setTarget] = createSignal("")
   const [code, setCode] = createSignal("")
   const [username, setUsername] = createSignal("")
@@ -1396,6 +1424,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void ead.productId()
     void ead.subSchemaId()
     void refresh()
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const n = ead.treeTick()
+    if (!(n > 0)) return
+    void refresh({ syncLinked: true })
   })
 
   createEffect(() => {
@@ -2022,25 +2057,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         {tx("forgot")}
                       </button>
                     </div>
-                    <div class="auth-input-wrap">
-                      <input
-                        type={showPass() ? "text" : "password"}
-                        class={field}
-                        placeholder={tx("password")}
-                        value={pass()}
-                        onInput={(e) => setPass(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void onLogin()
-                        }}
-                      />
-                      <button
-                        type="button"
-                        class="auth-eye"
-                        onClick={() => setShowPass((v) => !v)}
-                      >
-                        {showPass() ? "◌" : "◎"}
-                      </button>
-                    </div>
+                    <AuthPass
+                      value={pass()}
+                      show={showPass()}
+                      placeholder={tx("password")}
+                      onInput={setPass}
+                      onToggle={() => setShowPass((v) => !v)}
+                      onEnter={() => void onLogin()}
+                    />
                     <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onLogin()}>
                       {tx("signIn")}
                     </button>
@@ -2135,19 +2159,21 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={username()}
                       onInput={(e) => setUsername(e.currentTarget.value)}
                     />
-                    <input
-                      type="password"
-                      class={field}
-                      placeholder={tx("password")}
+                    <AuthPass
                       value={pass()}
-                      onInput={(e) => setPass(e.currentTarget.value)}
+                      show={showPass()}
+                      placeholder={tx("password")}
+                      onInput={setPass}
+                      onToggle={() => setShowPass((v) => !v)}
+                      onEnter={() => void onSignup()}
                     />
-                    <input
-                      type="password"
-                      class={field}
-                      placeholder={tx("confirmPassword")}
+                    <AuthPass
                       value={confirmPass()}
-                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
+                      show={showConfirm()}
+                      placeholder={tx("confirmPassword")}
+                      onInput={setConfirmPass}
+                      onToggle={() => setShowConfirm((v) => !v)}
+                      onEnter={() => void onSignup()}
                     />
                     <button type="button" class="auth-primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
                       {tx("create")}
@@ -2198,19 +2224,21 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       value={code()}
                       onInput={(e) => setCode(e.currentTarget.value)}
                     />
-                    <input
-                      type="password"
-                      class={field}
-                      placeholder={tx("newPassword")}
+                    <AuthPass
                       value={newPass()}
-                      onInput={(e) => setNewPass(e.currentTarget.value)}
+                      show={showPass()}
+                      placeholder={tx("newPassword")}
+                      onInput={setNewPass}
+                      onToggle={() => setShowPass((v) => !v)}
+                      onEnter={() => void onReset()}
                     />
-                    <input
-                      type="password"
-                      class={field}
-                      placeholder={tx("confirmPassword")}
+                    <AuthPass
                       value={confirmPass()}
-                      onInput={(e) => setConfirmPass(e.currentTarget.value)}
+                      show={showConfirm()}
+                      placeholder={tx("confirmPassword")}
+                      onInput={setConfirmPass}
+                      onToggle={() => setShowConfirm((v) => !v)}
+                      onEnter={() => void onReset()}
                     />
                     <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onReset()}>
                       {tx("resetPassword")}

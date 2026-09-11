@@ -47,7 +47,7 @@ import { matches, parseBody, parseStep, SIGNAL, watch } from "./step-signal"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.227")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.228")
   })
 })
 
@@ -428,6 +428,19 @@ describe("ead bridge", () => {
       },
     )
     expect(calls).toEqual(["w1:hello"])
+  })
+
+  test("aiFindApplied hard-refreshes the map tree", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "aiFindApplied", productId: 2 },
+      {
+        setToken: () => {},
+        bumpTree: () => calls.push("tree"),
+        bumpMap: () => calls.push("map"),
+      },
+    )
+    expect(calls).toEqual(["tree", "map"])
   })
 
   test("flags include crawl and help", () => {

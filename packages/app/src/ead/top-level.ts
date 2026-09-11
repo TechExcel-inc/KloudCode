@@ -1,4 +1,4 @@
-/** Cursor extension 1.0.227 pfmTopLevelEnforce — top-level skeleton + "To be moved". */
+/** Cursor extension 1.0.228 pfmTopLevelEnforce — top-level skeleton + "To be moved". */
 
 export const MOVED = "To be moved"
 export const UNPLACED = "Unplaced"

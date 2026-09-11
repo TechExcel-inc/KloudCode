@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createEffect } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
@@ -118,6 +118,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
   init: () => {
     bindEadHttp(usePlatform())
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
+    const [treeTick, setTreeTick] = createSignal(0)
 
     const flushFilters = () => {
       bindFilters(
@@ -423,6 +424,10 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       bumpMap() {
         setStore("mapTick", (n) => (n ?? 0) + 1)
+      },
+      treeTick,
+      bumpTree() {
+        setTreeTick((n) => n + 1)
       },
     }
   },

@@ -376,6 +376,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         },
         clearToken: () => ead.signOut(),
         bumpMap: () => ead.bumpMap(),
+        bumpTree: () => ead.bumpTree(),
         bumpPilot: () => ead.bumpPilot(),
         openPilot: () => launch({ kind: "dashboard" }),
         queueFind: (opts?: SourceOpts) =>

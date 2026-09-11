@@ -42,6 +42,7 @@ export type BridgeHooks = {
   setWorkContext?: (id: number) => void
   clearToken?: () => void
   bumpMap?: () => void
+  bumpTree?: () => void
   bumpPilot?: () => void
   openPilot?: () => void
   queueFind?: (opts?: SourceOpts) => void
@@ -573,11 +574,16 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
+  if (type === "aiFindApplied") {
+    hooks.bumpTree?.()
+    hooks.bumpMap?.()
+    return true
+  }
+
   if (
     type === "setupTreeClosed" ||
     type === "setupTreeSaved" ||
     type === "autoCreateEadSaved" ||
-    type === "aiFindApplied" ||
     type === "aiJobsChanged" ||
     type === "aiPromptRegenerated"
   ) {
