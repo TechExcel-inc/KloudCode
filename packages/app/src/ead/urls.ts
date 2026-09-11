@@ -1,8 +1,8 @@
-/** Production EAD endpoints — aligned with Cursor extension v1.0.222. */
+/** Production EAD endpoints — aligned with Cursor extension v1.0.227. */
 export type Env = "production" | "localhost"
 
 /** Cursor extension release this desktop build tracks (EAD_PFM-Editor/cursor-extension). */
-export const EAD_CURSOR_EXTENSION_VERSION = "1.0.222"
+export const EAD_CURSOR_EXTENSION_VERSION = "1.0.227"
 
 export const PROD_SERVER = "https://eadfm.com"
 export const PROD_API = "https://eadfm.com/api"

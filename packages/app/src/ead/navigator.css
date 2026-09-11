@@ -1,4 +1,4 @@
-/* EAD Map — visual parity with Cursor extension navigator-webview (v1.0.222). */
+/* EAD Map — visual parity with Cursor extension navigator-webview (v1.0.227). */
 [data-ead-map] {
   --ead-bg: #07111f;
   --ead-panel: #0b1324;
@@ -405,6 +405,10 @@
   font-weight: 640;
 }
 
+[data-ead-map] .search-input-wrap .search {
+  padding: 8px 30px 8px 10px;
+}
+
 [data-ead-map] .ead-field {
   min-height: 36px;
   border-radius: 10px;
@@ -533,9 +537,24 @@
   color: #f5f3ff;
 }
 
-[data-ead-map] .nav-user-menu-item:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+[data-ead-map] .nav-user-menu-item.is-check {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+[data-ead-map] .nav-user-menu-check {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #d8b4fe;
+  font-size: 10px;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 [data-ead-map] .nav-user-menu-item.is-logout {
@@ -1196,6 +1215,42 @@
   font-weight: 600;
 }
 
+[data-ead-map] .dyn-subschema-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+
+[data-ead-map] .dyn-subschema-spin {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  border-top-color: #5eead4;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: dynSubSchemaSpin 0.7s linear infinite;
+}
+
+[data-ead-map] .dyn-subschema-loading-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes dynSubSchemaSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 [data-ead-map] .ead-work-dot {
   display: none;
   width: 7px;
@@ -1574,6 +1629,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+[data-ead-map] .search-toolbar-label {
+  flex: 0 0 auto;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 [data-ead-map] .search-setup-menu-wrap {
@@ -1587,8 +1652,38 @@
 }
 
 [data-ead-map] .search-input-wrap {
+  position: relative;
   flex: 1;
   min-width: 0;
+}
+
+[data-ead-map] .search-input-wrap.has-value .search-clear-btn {
+  display: inline-flex;
+}
+
+[data-ead-map] .search-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+[data-ead-map] .search-clear-btn:hover {
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.16);
 }
 
 [data-ead-map] .search-mindmap-btn {

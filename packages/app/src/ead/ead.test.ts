@@ -47,7 +47,7 @@ import { matches, parseBody, parseStep, SIGNAL, watch } from "./step-signal"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.222")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.227")
   })
 })
 
@@ -99,6 +99,40 @@ describe("ead top-level", () => {
       },
     )
     expect(Number(next[next.length - 1]?.nodeId)).toBe(VIRTUAL_MOVED)
+  })
+
+  test("prefers API dynId over stale placeholder", () => {
+    const json = JSON.stringify([
+      { name: "PPM Project Base", nodeId: 2030, clientId: "dyn", isDynamic: true, sortOrder: 0 },
+      { name: "User Manager", nodeId: 1143, clientId: "tl-um", isDynamic: false, sortOrder: 1 },
+    ])
+    const next = enforce(
+      [
+        {
+          nodeId: 2030,
+          nodeName: "PPM Project Base",
+          children: [{ nodeId: 1207, nodeName: "Time Settings" }],
+        },
+        {
+          nodeId: 2220,
+          nodeName: "Requirement Project Base",
+          isDynamicTopLevel: true,
+          isDynamicPfmSchema: true,
+          children: [{ nodeId: 2221, nodeName: "General" }],
+        },
+        { nodeId: 1143, nodeName: "User Manager", children: [] },
+      ],
+      {
+        supportSubSchemas: true,
+        topLevelNodesJson: json,
+        dynamicTopLevelDisplayName: "Requirement Project Base",
+        dynamicTopLevelNodeId: 2220,
+      },
+    )
+    expect(Number(next[0]?.nodeId)).toBe(2220)
+    const names = (next[0]?.children || []).map((c) => c.nodeName)
+    expect(names).toContain("General")
+    expect(names).not.toContain("Time Settings")
   })
 })
 
@@ -473,6 +507,12 @@ describe("ead context-modal + jobs + filters + actions", () => {
   test("owner + pfm filters persist per product and keep paths", () => {
     writeOwner(2, { enabled: true, active: true, memberEmail: "a@b.c" })
     expect(ownerSummary(readOwner(2), "en")).toContain("a@b.c")
+    expect(readOwner(2).enabled).toBe(true)
+    writeOwner(2, { enabled: false })
+    expect(readOwner(2).enabled).toBe(true)
+    writeOwner(2, { active: false, includeMe: false, memberEmail: "", memberEmails: [] })
+    expect(readOwner(2).active).toBe(false)
+    expect(ownerSummary(readOwner(2), "en")).toBe("All")
     writePfmFilter([10, 11], true, ["src/a.ts"], 2)
     expect(readPfmFilter(2)).toEqual({ ids: [10, 11], active: true, paths: ["src/a.ts"] })
     writePfmFilter([10, 11], false, undefined, 2)
@@ -565,6 +605,8 @@ describe("ead i18n + env + mcp", () => {
     expect(t("en", "groupPfmVsSource")).toBe("PFM vs. Source Code")
     expect(t("zh", "showFilteredOnly")).toBe("仅显示已筛选的 PFM 节点")
     expect(t("zh", "showDebug")).toBe("显示调试消息")
+    expect(t("en", "searchPlaceholder")).toBe("Search PFM nodes")
+    expect(t("zh", "searchLabel")).toBe("搜索")
     expect(t("en", "scopeFiltered")).toBe("Filtered PFM nodes only")
     expect(t("zh", "sourceWithPfm")).toBe("显示含 PFM 节点的源代码")
     expect(t("zh", "badgePending")).toBe("待创建")

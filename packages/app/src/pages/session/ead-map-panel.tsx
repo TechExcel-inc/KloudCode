@@ -329,6 +329,7 @@ function Tree(props: {
   onSchemaOpen?: (id: number) => void
   onSchema?: (id: number) => void
   schemaLabel?: string
+  loadName?: string
 }) {
   const depth = () => props.depth ?? 0
   return (
@@ -337,12 +338,13 @@ function Tree(props: {
         const controlled = () => Array.isArray(props.expanded)
         const [local, setLocal] = createSignal(depth() < 2)
         const open = () => (controlled() ? props.expanded!.includes(node.nodeId) : local())
-        const kids = () => node.children.length > 0
+        const dyn = () => !!node.isDynamicTopLevel
+        const loading = () => dyn() && !!props.loadName
+        const kids = () => node.children.length > 0 || loading()
         const on = () => props.selected === node.nodeId
         const work = () => !!props.work && props.work === node.nodeId && !on()
-        const shown = () => !!props.force?.includes(node.nodeId) || open()
+        const shown = () => loading() || !!props.force?.includes(node.nodeId) || open()
         const flash = () => !!props.pulse && props.pulse === node.nodeId
-        const dyn = () => !!node.isDynamicTopLevel
         const canSchema = () => dyn() && (props.schemas?.length ?? 0) > 0
         const count = () => Number(props.counts?.[String(node.nodeId)] || 0)
         const label = () => {
@@ -489,7 +491,20 @@ function Tree(props: {
                 </div>
               </Show>
             </div>
-            <Show when={kids() && shown()}>
+            <Show when={loading() && shown()}>
+              <div
+                class="dyn-subschema-loading"
+                style={{ "padding-left": `${8 + (depth() + 1) * 18}px` }}
+                role="status"
+                aria-live="polite"
+              >
+                <span class="dyn-subschema-spin" aria-hidden="true" />
+                <span class="dyn-subschema-loading-label">
+                  {t(props.lang, "loadingSubSchemaForType", { name: props.loadName || "" })}
+                </span>
+              </div>
+            </Show>
+            <Show when={node.children.length > 0 && shown() && !loading()}>
               <Tree
                 nodes={node.children}
                 selected={props.selected}
@@ -512,6 +527,7 @@ function Tree(props: {
                 onSchemaOpen={props.onSchemaOpen}
                 onSchema={props.onSchema}
                 schemaLabel={props.schemaLabel}
+                loadName={props.loadName}
               />
             </Show>
           </div>
@@ -749,6 +765,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [banner, setBanner] = createSignal<Banner | null>(null)
   const [diag, setDiag] = createSignal(false)
   const [query, setQuery] = createSignal("")
+  const [schemaLoad, setSchemaLoad] = createSignal("")
   const [pq, setPq] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [err, setErr] = createSignal("")
@@ -1196,7 +1213,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
     const soft = opts?.soft === true
     // Soft poll must not cancel an in-flight full refresh (that left the loading banner stuck).
-    if (soft && busy()) return
+    if (soft && (busy() || schemaLoad())) return
     const run = ++gen
     const live = () => run === gen
     const token = ead.token()
@@ -1224,9 +1241,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       return
     }
     if (!soft) {
-      setBusy(true)
-      setErr("")
-      flash("loading", tx("refreshing"))
+      if (!schemaLoad()) {
+        setBusy(true)
+        setErr("")
+        flash("loading", tx("refreshing"))
+      }
     }
     try {
       const fetcher = http()
@@ -1353,16 +1372,19 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
       setErr(msg)
       if (!soft) flash("error", msg)
-      setRoot(undefined)
-      setSource([])
-      setSchemas([])
-      setJobIds(undefined)
-      setBaseMapId(0)
-      setMapName("")
-      clearCounts()
+      if (!schemaLoad()) {
+        setRoot(undefined)
+        setSource([])
+        setSchemas([])
+        setJobIds(undefined)
+        setBaseMapId(0)
+        setMapName("")
+        clearCounts()
+      }
     } finally {
       if (!live()) return
       if (!soft) setBusy(false)
+      if (schemaLoad()) setSchemaLoad("")
       // Soft refresh bumps gen and can supersede a non-soft run that left the loading banner up.
       if (banner()?.kind === "loading") setBanner(null)
     }
@@ -1542,6 +1564,33 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   const closeHelp = () => setTip(undefined)
+
+  const pickSchema = (id: number) => {
+    if (!(id > 0) || id === ead.subSchemaId()) return
+    const name = schemas().find((s) => s.id === id)?.name || ""
+    setSchemaLoad(name)
+    const next = (() => {
+      const cur = root()
+      if (!cur) return cur
+      return {
+        ...cur,
+        children: (cur.children || []).map((n) =>
+          n.isDynamicTopLevel ? { ...n, name: name || n.name, children: [] } : n,
+        ),
+      }
+    })()
+    if (next) {
+      setRoot(next)
+      const dyn = next.children.find((n) => n.isDynamicTopLevel)
+      if (dyn) {
+        const key = pfmExpandKey()
+        const prev = ead.pfmExpanded(key) ?? seedOpen(pfmVisible())
+        ead.setPfmExpanded(key, [...new Set([...prev, dyn.nodeId])])
+      }
+    }
+    ead.setSubSchema(id)
+    closeMenus()
+  }
 
   createEffect(() => {
     if (!tip()) return
@@ -2324,6 +2373,24 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                             </Show>
                             <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
                             <li role="none">
+                              <button
+                                type="button"
+                                role="menuitemcheckbox"
+                                aria-checked={diag()}
+                                class="nav-user-menu-item is-check"
+                                onClick={() => {
+                                  setDiag((v) => !v)
+                                  closeMenus()
+                                }}
+                              >
+                                <span class="nav-user-menu-check" aria-hidden="true">
+                                  {diag() ? "✓" : ""}
+                                </span>
+                                <span>{tx("showDebug")}</span>
+                              </button>
+                            </li>
+                            <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <li role="none">
                               <button type="button" role="menuitem" class="nav-user-menu-item is-logout" onClick={onSignOut}>
                                 {tx("logout")}
                               </button>
@@ -2453,11 +2520,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               type="button"
                               class="pfm-schema-filter-option"
                               classList={{ "is-selected": ead.subSchemaId() === s.id }}
-                              onClick={() => {
-                                ead.setSubSchema(s.id)
-                                closeMenus()
-                                void refresh()
-                              }}
+                              onClick={() => pickSchema(s.id)}
                             >
                               <span class="pfm-schema-filter-check">{ead.subSchemaId() === s.id ? "✓" : ""}</span>
                               {`${mapName() || `Map ${ead.mapId()}`} – ${s.name}`}
@@ -2493,91 +2556,26 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
                 </Show>
 
-                <div class="search-toolbar-row" data-ead-menu>
-                  <div class="search-input-wrap">
+                <div class="search-toolbar-row">
+                  <span class="search-toolbar-label">{tx("searchLabel")}</span>
+                  <div class="search-input-wrap" classList={{ "has-value": !!query().trim() }}>
                     <input
                       class="search"
                       placeholder={tx("searchPlaceholder")}
+                      aria-label={tx("searchLabel")}
                       value={query()}
                       onInput={(e) => setQuery(e.currentTarget.value)}
                     />
-                  </div>
-                  <div class="search-setup-menu-wrap" classList={{ "is-open": menu() === "setup" }}>
                     <button
                       type="button"
-                      class="search-mindmap-btn"
-                      classList={{
-                        open: menu() === "setup",
-                        "is-filter-on": pfmFilter().active,
-                      }}
-                      aria-label={tx("setup")}
-                      disabled={ead.productId() <= 0}
-                      onClick={() => {
-                        setMenu(menu() === "setup" ? "" : "setup")
-                        setChip(0)
-                      }}
+                      class="search-clear-btn"
+                      title={tx("searchClear")}
+                      aria-label={tx("searchClear")}
+                      hidden={!query().trim()}
+                      onClick={() => setQuery("")}
                     >
-                      <IconDots />
+                      ×
                     </button>
-                    <Show when={menu() === "setup"}>
-                      <div class="search-setup-menu">
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          disabled={ead.productId() <= 0}
-                          onClick={() => {
-                            closeMenus()
-                            launch({ kind: "setup" })
-                          }}
-                        >
-                          {tx("viewSetup")}
-                        </button>
-                        <div class="search-setup-menu-sep" aria-hidden="true" />
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          disabled={ead.productId() <= 0}
-                          onClick={() => {
-                            closeMenus()
-                            launch({ kind: "mindmap" })
-                          }}
-                        >
-                          {tx("setupFilter")}
-                        </button>
-                        <div class="search-setup-menu-sep" aria-hidden="true" />
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          disabled={ead.productId() <= 0}
-                          onClick={() => {
-                            const pid = ead.productId()
-                            if (pid <= 0) return
-                            writeOwner(pid, { enabled: !owner().enabled })
-                            bump()
-                          }}
-                        >
-                          <span class="search-setup-menu-check" classList={{ "is-on": owner().enabled }}>
-                            {owner().enabled ? "✓" : ""}
-                          </span>
-                          <span>{tx("enableOwner")}</span>
-                        </button>
-                        <div class="search-setup-menu-sep" aria-hidden="true" />
-                        <button
-                          type="button"
-                          class="search-setup-menu-item"
-                          onClick={() => {
-                            setDiag((v) => !v)
-                            closeMenus()
-                          }}
-                        >
-                          <span class="search-setup-menu-check" classList={{ "is-on": diag() }}>
-                            {diag() ? "✓" : ""}
-                          </span>
-                          <span>{tx("showDebug")}</span>
-                        </button>
-                        <HelpMenu lang={lang()} onClick={() => openHelp("ead-map-search-setup")} />
-                      </div>
-                    </Show>
                   </div>
                 </div>
 
@@ -2606,8 +2604,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </div>
                 </Show>
 
-                <Show when={owner().enabled}>
-                  <div class="job-owner-row" classList={{ "is-open": menu() === "owner" }} data-ead-menu>
+                <div class="job-owner-row" classList={{ "is-open": menu() === "owner" }} data-ead-menu>
                     <span class="job-owner-filter-label">{tx("jobOwner")}</span>
                     <button
                       type="button"
@@ -2854,7 +2851,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       </div>
                     </Show>
                   </div>
-                </Show>
                 <div class="tree-toolbar-row" data-ead-menu>
                   <div class="tree-view-switch-wrap">
                     <button
@@ -3251,11 +3247,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         subId={ead.subSchemaId()}
                         schemaOpen={dynMenu()}
                         onSchemaOpen={setDynMenu}
-                        onSchema={(id) => {
-                          ead.setSubSchema(id)
-                          void refresh()
-                        }}
+                        onSchema={pickSchema}
                         schemaLabel={schemas().length ? schemaType() : undefined}
+                        loadName={schemaLoad()}
                       />
                     </div>
                   </Show>

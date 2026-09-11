@@ -17,7 +17,7 @@ export type PfmFilter = {
 }
 
 export const emptyOwner: OwnerFilter = {
-  enabled: false,
+  enabled: true,
   active: false,
   mode: "include",
   memberEmail: "",
@@ -116,7 +116,8 @@ function flush() {
 }
 
 export function readOwner(productId: number): OwnerFilter {
-  return owners[String(productId)] ?? { ...emptyOwner }
+  const row = owners[String(productId)] ?? { ...emptyOwner }
+  return { ...row, enabled: true }
 }
 
 export function writeOwner(productId: number, next: Partial<OwnerFilter>) {

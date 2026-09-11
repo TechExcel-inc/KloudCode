@@ -1,4 +1,4 @@
-/** Cursor extension 1.0.211 pfmTopLevelEnforce — top-level skeleton + "To be moved". */
+/** Cursor extension 1.0.227 pfmTopLevelEnforce — top-level skeleton + "To be moved". */
 
 export const MOVED = "To be moved"
 export const UNPLACED = "Unplaced"
@@ -123,14 +123,23 @@ function sid(node: Raw) {
 
 function matches(node: Raw, cfg: Cfg, opts: Opts) {
   const nid = Number(node.nodeId)
-  if (cfg.nodeId != null && cfg.nodeId > 0 && nid === cfg.nodeId) return true
   if (cfg.dyn) {
+    const apiDynId = Number(opts.dynamicTopLevelNodeId)
+    if (
+      cfg.nodeId != null &&
+      cfg.nodeId > 0 &&
+      nid === cfg.nodeId &&
+      !(Number.isFinite(apiDynId) && apiDynId > 0 && apiDynId !== cfg.nodeId)
+    ) {
+      return true
+    }
     if (node.isDynamicTopLevel === true || node.isDynamicTopLevel === 1) return true
-    const dynId = Number(opts.dynamicTopLevelNodeId)
-    if (Number.isFinite(dynId) && dynId > 0 && nid === dynId) return true
+    if (Number.isFinite(apiDynId) && apiDynId > 0 && nid === apiDynId) return true
     const label = norm(opts.dynamicTopLevelDisplayName || cfg.name)
     if (label && norm(node.nodeName) === label) return true
+    return false
   }
+  if (cfg.nodeId != null && cfg.nodeId > 0 && nid === cfg.nodeId) return true
   const cfgName = norm(cfg.name)
   return cfgName.length > 0 && norm(node.nodeName) === cfgName
 }
@@ -138,20 +147,25 @@ function matches(node: Raw, cfg: Cfg, opts: Opts) {
 function pick<T extends Raw>(nodes: T[], cfg: Cfg, opts: Opts): T | null {
   const hits = nodes.filter((n) => matches(n, cfg, opts))
   if (!hits.length) return null
-  if (cfg.nodeId != null && cfg.nodeId > 0) {
-    const byId = hits.find((n) => Number(n.nodeId) === cfg.nodeId)
-    if (byId) return byId
-  }
   if (cfg.dyn) {
+    const apiDynId = Number(opts.dynamicTopLevelNodeId)
+    if (Number.isFinite(apiDynId) && apiDynId > 0) {
+      const byDynId = hits.find((n) => Number(n.nodeId) === apiDynId)
+      if (byDynId) return byDynId
+    }
     const sub = hits.find((n) => n.isDynamicPfmSchema === true || n.isDynamicPfmSchema === 1)
     if (sub) return sub
     const dyn = hits.find((n) => n.isDynamicTopLevel === true || n.isDynamicTopLevel === 1)
     if (dyn) return dyn
-    const dynId = Number(opts.dynamicTopLevelNodeId)
-    if (Number.isFinite(dynId) && dynId > 0) {
-      const byDynId = hits.find((n) => Number(n.nodeId) === dynId)
-      if (byDynId) return byDynId
+    const label = norm(opts.dynamicTopLevelDisplayName || cfg.name)
+    if (label) {
+      const byName = hits.find((n) => norm(n.nodeName) === label)
+      if (byName) return byName
     }
+  }
+  if (cfg.nodeId != null && cfg.nodeId > 0) {
+    const byId = hits.find((n) => Number(n.nodeId) === cfg.nodeId)
+    if (byId) return byId
   }
   return hits[0] ?? null
 }
