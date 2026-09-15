@@ -33,6 +33,8 @@ import {
   pathMatches,
   pathTrail,
   rollupCounts,
+  tops,
+  cue,
   underFolder,
 } from "./source-tree"
 import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
@@ -180,6 +182,41 @@ describe("ead source-tree", () => {
     expect(filterPfm(nodes, "child")[0]?.children[0]?.name).toBe("Child")
     const source = buildTree(parseRows([{ nodeId: 9, nodePath: "x/y.ts", nodeName: "y.ts", nodeType: "FILE" }]))
     expect(filterSource(source, "y.ts")).toHaveLength(1)
+  })
+
+  test("tops skips map root when it has children", () => {
+    const root = {
+      nodeId: 1,
+      name: "SW Admin PFM Map",
+      children: [
+        { nodeId: 2, name: "Team Portal", children: [] },
+        { nodeId: 3, name: "User Manager", children: [] },
+      ],
+    }
+    expect(tops(root).map((n) => n.name)).toEqual(["Team Portal", "User Manager"])
+    expect(tops({ nodeId: 9, name: "Lone", children: [] }).map((n) => n.name)).toEqual(["Lone"])
+    expect(tops(undefined)).toEqual([])
+  })
+
+  test("cue is stable for the same tree and changes on rename", () => {
+    const base = {
+      pid: 2,
+      schema: 1,
+      view: "pfm",
+      map: "SW Admin PFM Map",
+      sibling: false,
+      support: true,
+      sub: 0,
+      types: [] as Array<{ id: number; name: string }>,
+      filter: [] as number[],
+      paths: [] as string[],
+      eadsOnly: true,
+      nodes: [{ nodeId: 2, name: "Team Portal", children: [] }],
+      files: [] as Array<{ nodeId: number; nodePath: string; children: never[] }>,
+      products: [{ productId: 2, baseId: undefined as number | undefined, siblings: false }],
+    }
+    expect(cue(base)).toBe(cue({ ...base }))
+    expect(cue(base)).not.toBe(cue({ ...base, nodes: [{ nodeId: 2, name: "Renamed", children: [] }] }))
   })
 
   test("rollupCounts + pathIds + collectIds", () => {

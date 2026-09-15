@@ -1,12 +1,9 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
-import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
-import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import type { Sizing } from "@/pages/session/helpers"
 import { resizeEadPanel } from "@/pages/session/helpers"
@@ -14,11 +11,9 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { queuePilot } from "@/ead/actions"
 import "@/ead/navigator.css"
 import {
-  createJob,
   loadActiveMap,
   loadCatalog,
   loadContext,
-  loadJobsForNode,
   loadLinkPaths,
   loadLinkedBundle,
   loadFullBundle,
@@ -26,7 +21,6 @@ import {
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
-  loadRawContext,
   loadRunPrefs,
   loadSourceExpanded,
   loadSourceSchema,
@@ -50,13 +44,10 @@ import {
   type TeamMember,
 } from "@/ead/api"
 import { openPilot } from "@/ead/bridge"
-import { sendChat } from "@/ead/composer"
-import { ContextDialog } from "@/ead/context-dialog"
-import { buildModal, formatModal, kindLabel, type ContextKind } from "@/ead/context-modal"
 import { beginDiag, markStartup, noteDiag, readDiag, readStartup } from "@/ead/diag"
 import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
-import { type TipId, markdownToHelpHtml, tipBody, tipDialogTitle } from "@/ead/help-tips"
+import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
 import { expandKey, useEad } from "@/ead/settings"
 import { eadHttp } from "@/ead/http"
@@ -65,6 +56,7 @@ import {
   buildTree,
   collectIds,
   computeExpanded,
+  cue,
   filterByCount,
   filterByIds,
   filterDisplay,
@@ -72,6 +64,7 @@ import {
   filterLinkedTree,
   filterPfm,
   filterSource,
+  tops,
   filteredCounts,
   idCounts,
   mergeExpanded,
@@ -106,11 +99,9 @@ type Menu =
   | "view"
   | "scope"
   | "owner"
-  | "chip"
-
-const KINDS: ContextKind[] = ["jobs", "skills", "api", "source"]
 
 const field = "ead-field"
+const SOFT_GAP = 120_000
 
 function AuthPass(props: {
   value: string
@@ -139,8 +130,6 @@ function AuthPass(props: {
   )
 }
 const drop = "ead-drop"
-const item = "ead-drop-item"
-const itemActive = "is-active"
 
 const IconSpark = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -343,13 +332,10 @@ function Tree(props: {
   counts?: Record<string, number>
   work?: number
   force?: number[]
-  chip?: number
   pulse?: number
   lang: Lang
   expanded?: number[]
   onToggle?: (id: number, open: boolean) => void
-  onChip: (id: number) => void
-  onInject: (kind: ContextKind, node: PfmNode) => void
   schemas?: SubSchema[]
   subId?: number
   schemaOpen?: number
@@ -413,12 +399,6 @@ function Tree(props: {
               title={title()}
               data-ead-node={node.nodeId}
               data-ead-pfm={node.nodeId}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                props.onSelect(node)
-                props.onSchemaOpen?.(0)
-                props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
-              }}
             >
               <Show when={kids()} fallback={<span class="ead-chevron" />}>
                 <button type="button" class="ead-chevron is-toggle" onClick={toggle}>
@@ -457,7 +437,7 @@ function Tree(props: {
                 </span>
               </Show>
               <Show when={canSchema()}>
-                <span class="dyn-switch-wrap">
+                <span class="dyn-switch-wrap" data-ead-menu>
                   <button
                     type="button"
                     class="generate-dyn-btn"
@@ -466,7 +446,6 @@ function Tree(props: {
                     aria-label={t(props.lang, "switchDyn")}
                     onClick={(e) => {
                       e.stopPropagation()
-                      props.onChip(0)
                       props.onSchemaOpen?.(props.schemaOpen === node.nodeId ? 0 : node.nodeId)
                     }}
                   >
@@ -496,27 +475,6 @@ function Tree(props: {
                   </Show>
                 </span>
               </Show>
-              <Show when={props.chip === node.nodeId}>
-                <div class="ead-row-inject">
-                  <div class={`${drop} right-0`}>
-                    <For each={KINDS}>
-                      {(k) => (
-                        <button
-                          type="button"
-                          class={item}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            props.onChip(0)
-                            props.onInject(k, node)
-                          }}
-                        >
-                          {kindLabel(k, props.lang)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
             </div>
             <Show when={loading() && shown()}>
               <div
@@ -541,13 +499,10 @@ function Tree(props: {
                 counts={props.counts}
                 work={props.work}
                 force={props.force}
-                chip={props.chip}
                 pulse={props.pulse}
                 lang={props.lang}
                 expanded={props.expanded}
                 onToggle={props.onToggle}
-                onChip={props.onChip}
-                onInject={props.onInject}
                 schemas={props.schemas}
                 subId={props.subId}
                 schemaOpen={props.schemaOpen}
@@ -576,11 +531,8 @@ function SourceTree(props: {
   pending?: Record<string, boolean>
   expanded?: string[]
   onExpand?: (path: string, open: boolean) => void
-  chip?: number
   pulse?: number
   lang: Lang
-  onChip: (id: number) => void
-  onInject: (kind: ContextKind, node: SourceNode) => void
 }) {
   const depth = () => props.depth ?? 0
   const mode = () => props.mode ?? "ead"
@@ -618,11 +570,6 @@ function SourceTree(props: {
               style={{ "padding-left": `${depth() * 18}px` }}
               title={node.nodePath}
               data-ead-source={node.nodeId}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                props.onSelect(node)
-                props.onChip(props.chip === node.nodeId ? 0 : node.nodeId)
-              }}
             >
               <Show when={kids()} fallback={<span class="source-tree-expand-spacer" />}>
                 <button type="button" class="source-tree-expand" onClick={toggle}>
@@ -651,27 +598,6 @@ function SourceTree(props: {
                   </Show>
                 </span>
               </button>
-              <Show when={props.chip === node.nodeId}>
-                <div class="ead-row-inject">
-                  <div class={`${drop} right-0`}>
-                    <For each={KINDS}>
-                      {(k) => (
-                        <button
-                          type="button"
-                          class={item}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            props.onChip(0)
-                            props.onInject(k, node)
-                          }}
-                        >
-                          {kindLabel(k, props.lang)}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
             </div>
             <Show when={kids() && open()}>
               <SourceTree
@@ -686,11 +612,8 @@ function SourceTree(props: {
                 pending={props.pending}
                 expanded={props.expanded}
                 onExpand={props.onExpand}
-                chip={props.chip}
                 pulse={props.pulse}
                 lang={props.lang}
-                onChip={props.onChip}
-                onInject={props.onInject}
               />
             </Show>
           </div>
@@ -757,11 +680,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const layout = useLayout()
   const { view } = useSessionLayout()
   const language = useLanguage()
-  const prompt = usePrompt()
-  const params = useParams()
   const ead = useEad()
   const sdk = useSDK()
-  const dialog = useDialog()
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const http = () => eadHttp()
   const lang = () => ead.language()
@@ -813,9 +733,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [tenantId, setTenantId] = createSignal(0)
   const [pipelineTick, setPipelineTick] = createSignal(0)
   const [startup, setStartup] = createSignal(readStartup())
-  const [injectNote, setInjectNote] = createSignal<{ text: string; ok: boolean } | undefined>()
   const [menu, setMenu] = createSignal<Menu>("")
-  const [chip, setChip] = createSignal(0)
   const [dynMenu, setDynMenu] = createSignal(0)
   const [members, setMembers] = createSignal<TeamMember[]>([])
   const [ownerBusy, setOwnerBusy] = createSignal(false)
@@ -829,28 +747,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [overlay, setOverlay] = createSignal(false)
   const [editOpen, setEditOpen] = createSignal(false)
   const [via, setVia] = createSignal<"email" | "phone">("email")
-  const [tip, setTip] = createSignal<TipId | undefined>()
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let pulseTimer: ReturnType<typeof setTimeout> | undefined
-  let injectTimer: ReturnType<typeof setTimeout> | undefined
 
   const bumpPipeline = () => {
     setStartup(readStartup())
     setPipelineTick((n) => n + 1)
   }
 
-  const setInjectStatus = (message: string, ok: boolean) => {
-    if (!message.trim()) {
-      setInjectNote(undefined)
-      return
-    }
-    setInjectNote({ text: message, ok })
-    if (injectTimer) clearTimeout(injectTimer)
-    injectTimer = setTimeout(() => setInjectNote(undefined), 5000)
-  }
-
-  const menuOpen = () => !!menu() || chip() > 0 || dynMenu() > 0 || editOpen()
+  const menuOpen = () => !!menu() || dynMenu() > 0 || editOpen()
 
   const pfmBadgeCounts = createMemo(() => {
     const mode = ead.badge()
@@ -882,7 +788,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void ead.mapTick()
     const node = root()
     if (!node) return [] as PfmNode[]
-    let nodes = [node]
+    let nodes = tops(node)
     const jobs = jobIds()
     if (ead.jobsOnly()) {
       const mode = ead.badge()
@@ -1006,7 +912,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   const closeMenus = () => {
     setMenu("")
-    setChip(0)
     setDynMenu(0)
   }
 
@@ -1235,6 +1140,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   }
 
   let gen = 0
+  let lastCue = ""
+  let lastAt = 0
   let loadedSchema = 0
   let expandTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -1265,6 +1172,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setHint(undefined)
         setBanner(null)
       }
+      lastCue = ""
+      lastAt = Date.now()
       bumpPipeline()
       return
     }
@@ -1302,6 +1211,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         if (!live()) return
         setHint(hit ? { productId: hit.productId, name: hit.name } : undefined)
         noteDiag("Load complete", true, "No product selected")
+        lastCue = ""
+        lastAt = Date.now()
         bumpPipeline()
         if (!soft) flash("ok", tx("refreshed"))
         return
@@ -1317,6 +1228,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setMapName("")
         clearCounts()
         noteDiag("Load complete", true, "Selected product missing")
+        lastCue = ""
+        lastAt = Date.now()
         bumpPipeline()
         if (!soft) flash("ok", tx("refreshed"))
         return
@@ -1327,45 +1240,69 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       const sub = ead.subSchemaId()
       const map = await loadActiveMap(token, selected.productId, fetcher, sub > 0 ? sub : undefined)
       if (!live()) return
-      ead.setMapId(map.mapId)
-      setRoot(map.root)
-      setBaseMapId(map.baseMapId)
-      setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
-      noteDiag("Map", true, `mapId=${map.mapId} name=${map.mapName || map.root?.name || "-"}`)
-      setSchemas(map.schemas)
+      let openIds: Set<number> | undefined
       if (map.mapId > 0) {
-        const ids = await loadOpenFilterNodeIds(token, map.mapId, fetcher)
+        openIds = new Set(await loadOpenFilterNodeIds(token, map.mapId, fetcher))
         if (!live()) return
-        setJobIds(new Set(ids))
-      } else {
-        setJobIds(undefined)
       }
+      let eads: Record<string, number> = {}
+      let jobs: Record<string, number> = {}
+      let tests: Record<string, number> = {}
       if (map.root) {
         const ids = collectIds([map.root])
-        const [eads, jobs, tests] = await Promise.all([
+        const [a, b, c] = await Promise.all([
           loadPfmEadCounts(token, ids, fetcher),
           loadPfmJobCounts(token, ids, fetcher),
           loadPfmTestCounts(token, ids, fetcher),
         ])
         if (!live()) return
-        setPfmEad(rollupCounts([map.root], eads))
-        setPfmJobs(rollupCounts([map.root], jobs))
-        setPfmTests(rollupCounts([map.root], tests))
-      } else {
-        setPfmEad({})
-        setPfmJobs({})
-        setPfmTests({})
+        eads = rollupCounts([map.root], a)
+        jobs = rollupCounts([map.root], b)
+        tests = rollupCounts([map.root], c)
       }
       if (ead.view() === "source" || opts?.syncLinked === true) {
         await loadSource(opts?.syncLinked === true)
       } else {
-        // Probe schema so AI Code stays selectable while on PFM (matches extension aiCodeViewAvailable).
         const schema = await loadSourceSchema(token, selected.productId, fetcher).catch(() => undefined)
         if (!live()) return
         if (schema) ead.setSchema(schema.schemaId, schema.name)
         else ead.setSchema(0, "")
       }
       if (!live()) return
+      const filter = readPfmFilter(selected.productId)
+      const next = cue({
+        pid: selected.productId,
+        schema: ead.schemaId(),
+        view: ead.view(),
+        map: map.mapName || map.root?.name || "",
+        sibling: map.baseMapId > 0,
+        support: map.supportSubSchemas,
+        sub: ead.subSchemaId(),
+        types: map.schemas,
+        filter: filter.active ? filter.ids : [],
+        paths: filter.paths,
+        eadsOnly: ead.eadsOnly(),
+        nodes: map.root ? tops(map.root) : [],
+        files: source(),
+        products: catalog.products,
+      })
+      lastAt = Date.now()
+      if (soft && next === lastCue) {
+        noteDiag("Load complete", true, "unchanged")
+        bumpPipeline()
+        return
+      }
+      lastCue = next
+      ead.setMapId(map.mapId)
+      setRoot(map.root)
+      setBaseMapId(map.baseMapId)
+      setMapName(map.mapName || map.root?.name || (map.mapId > 0 ? `Map ${map.mapId}` : ""))
+      noteDiag("Map", true, `mapId=${map.mapId} name=${map.mapName || map.root?.name || "-"}`)
+      setSchemas(map.schemas)
+      setJobIds(openIds)
+      setPfmEad(eads)
+      setPfmJobs(jobs)
+      setPfmTests(tests)
       noteDiag(
         "Load complete",
         true,
@@ -1385,6 +1322,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       const msg = e instanceof Error ? e.message : String(e)
       noteDiag("Error", false, msg)
       bumpPipeline()
+      lastCue = ""
+      lastAt = Date.now()
       if (msg === "AUTH_EXPIRED") {
         ead.clearToken()
         setOverlay(true)
@@ -1435,25 +1374,27 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   createEffect(() => {
     if (!panelOpen()) return
-    const timer = window.setInterval(() => {
+    const tick = () => {
       if (!ead.token()) return
+      if (Date.now() - lastAt < SOFT_GAP) return
       void refresh({ soft: true })
-    }, 8_000)
+    }
+    const timer = window.setInterval(tick, SOFT_GAP)
     onCleanup(() => window.clearInterval(timer))
   })
 
   createEffect(() => {
     const open = menu()
-    const id = chip()
-    if (!open && !id) return
-    const onDoc = (e: MouseEvent) => {
+    const dyn = dynMenu()
+    if (!open && !dyn) return
+    const onDoc = (e: Event) => {
       const el = e.target
       if (!(el instanceof Element)) return
       if (el.closest("[data-ead-menu]")) return
       closeMenus()
     }
-    document.addEventListener("mousedown", onDoc)
-    onCleanup(() => document.removeEventListener("mousedown", onDoc))
+    document.addEventListener("pointerdown", onDoc, true)
+    onCleanup(() => document.removeEventListener("pointerdown", onDoc, true))
   })
 
   onCleanup(() => {
@@ -1595,10 +1536,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
 
   const openHelp = (tipId: TipId) => {
     closeMenus()
-    setTip(tipId)
+    launch({ kind: "help", tipId })
   }
-
-  const closeHelp = () => setTip(undefined)
 
   const pickSchema = (id: number) => {
     if (!(id > 0) || id === ead.subSchemaId()) return
@@ -1626,15 +1565,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     ead.setSubSchema(id)
     closeMenus()
   }
-
-  createEffect(() => {
-    if (!tip()) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeHelp()
-    }
-    document.addEventListener("keydown", onKey)
-    onCleanup(() => document.removeEventListener("keydown", onKey))
-  })
 
   const afterAuth = async (token: string) => {
     ead.setToken(token)
@@ -1824,63 +1754,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     }
   }
 
-  const inject = async (kind: ContextKind, nodeId: number, name: string, type: "pfm" | "source") => {
-    const token = ead.token()
-    if (!token || nodeId <= 0) return
-    closeMenus()
-    setBusy(true)
-    setErr("")
-    try {
-      const raw = await loadRawContext(token, nodeId, http(), type)
-      const jobs = kind === "jobs" ? await loadJobsForNode(token, nodeId, http()) : []
-      const payload = buildModal(kind, nodeId, name, raw, jobs as never)
-      const text = formatModal(payload)
-      dialog.show(() => (
-        <ContextDialog
-          title={kindLabel(kind, lang())}
-          payload={payload}
-          text={text}
-          lang={lang()}
-          onInject={async (body) => {
-            await sendChat({
-              text: body,
-              set: (value) => prompt.set(value),
-              client: sdk.client,
-              sessionID: params.id,
-              auto: true,
-            })
-            setInjectStatus(tx("sent"), true)
-          }}
-          onCreate={
-            kind === "jobs" && type === "pfm"
-              ? async (title, desc) => {
-                  await createJob(token, { pfmNodeId: nodeId, title, description: desc }, http())
-                  const next = await loadJobsForNode(token, nodeId, http())
-                  const body = formatModal(buildModal("jobs", nodeId, name, raw, next as never))
-                  await sendChat({
-                    text: body,
-                    set: (value) => prompt.set(value),
-                    client: sdk.client,
-                    sessionID: params.id,
-                    auto: true,
-                  })
-                  setInjectStatus(tx("sent"), true)
-                  void refresh({ soft: true, syncLinked: false })
-                }
-              : undefined
-          }
-        />
-      ))
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setErr(msg)
-      setInjectStatus(msg, false)
-      flash("error", msg)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const askEdit = () => {
     closeMenus()
     setEditOpen(true)
@@ -1919,7 +1792,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const openOwner = async () => {
     const next = menu() === "owner" ? "" : "owner"
     setMenu(next)
-    setChip(0)
     if (next !== "owner") return
     const cur = owner()
     setMulti(false)
@@ -2438,7 +2310,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       onClick={() => {
                         setMenu(menu() === "product" ? "" : "product")
                         setPq("")
-                        setChip(0)
                       }}
                     >
                       <span class="product-select-label">
@@ -2524,7 +2395,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       onClick={() => {
                         if (!schemas().length) return
                         setMenu(menu() === "schema" ? "" : "schema")
-                        setChip(0)
                       }}
                     >
                       <span class="active-pfm-prefix">{tx("pfmPrefix")}</span>
@@ -2879,8 +2749,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       </div>
                     </Show>
                   </div>
-                <div class="tree-toolbar-row" data-ead-menu>
-                  <div class="tree-view-switch-wrap">
+                <div class="tree-toolbar-row">
+                  <div class="tree-view-switch-wrap" data-ead-menu>
                     <button
                       type="button"
                       class="tree-view-select"
@@ -2937,6 +2807,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     <div
                       class="job-filter-wrap"
                       classList={{ "is-open": menu() === "job" }}
+                      data-ead-menu
                       onPointerDown={(e) => {
                         e.preventDefault()
                         setMenu(menu() === "job" ? "" : "job")
@@ -3059,7 +2930,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Show>
 
                   <Show when={ead.view() === "source"}>
-                    <div class="ead-run-menu-wrap">
+                    <div class="ead-run-menu-wrap" data-ead-menu>
                       <button
                         type="button"
                         class="ead-run-menu-btn"
@@ -3264,13 +3135,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         counts={pfmBadgeCounts()}
                         work={ead.workContextId()}
                         force={openPath()}
-                        chip={chip()}
                         pulse={pulse()}
                         lang={lang()}
                         expanded={pfmExpandedIds()}
                         onToggle={onPfmToggle}
-                        onChip={setChip}
-                        onInject={(kind, node) => void inject(kind, node.nodeId, node.name, "pfm")}
                         schemas={schemas()}
                         subId={ead.subSchemaId()}
                         schemaOpen={dynMenu()}
@@ -3325,11 +3193,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         pending={pendingPaths()}
                         expanded={ead.expanded(ead.schemaId())}
                         onExpand={onExpand}
-                        chip={chip()}
                         pulse={pulse()}
                         lang={lang()}
-                        onChip={setChip}
-                        onInject={(kind, node) => void inject(kind, node.nodeId, node.nodeName, "source")}
                       />
                     </div>
                   </Show>
@@ -3356,18 +3221,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   </Show>
                 </Show>
 
-                <Show when={injectNote()}>
-                  <div
-                    class="inject-status"
-                    classList={{
-                      "is-ok": injectNote()!.ok,
-                      "is-error": !injectNote()!.ok,
-                    }}
-                  >
-                    {injectNote()!.text}
-                  </div>
-                </Show>
-
                 <Show when={err()}>
                   <p class="error break-words">{err()}</p>
                 </Show>
@@ -3387,33 +3240,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                         {tx("continue")}
                       </button>
                     </div>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={tip()}>
-                <div
-                  class="help-tip-overlay"
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) closeHelp()
-                  }}
-                >
-                  <div class="help-tip-popup" role="dialog" aria-modal="true">
-                    <div class="help-tip-header">
-                      <span class="help-tip-title">{tipDialogTitle(tip()!, lang())}</span>
-                      <button
-                        type="button"
-                        class="help-tip-close"
-                        aria-label={language.t("common.close")}
-                        onClick={closeHelp}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div
-                      class="help-tip-body"
-                      innerHTML={markdownToHelpHtml(tipBody(tip()!, lang()))}
-                    />
                   </div>
                 </div>
               </Show>

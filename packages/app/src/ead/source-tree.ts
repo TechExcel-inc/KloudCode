@@ -126,6 +126,63 @@ export function filterByIds<T extends { nodeId: number; children: T[] }>(nodes: 
   })
 }
 
+/** Cursor flattenPfmMapNodes — skip map root when it has children. */
+export function tops<T extends { children: T[] }>(node: T | undefined): T[] {
+  if (!node) return []
+  return node.children.length > 0 ? node.children : [node]
+}
+
+type CueNode = { nodeId: number; name: string; children: CueNode[] }
+type CueFile = { nodeId: number; nodePath: string; children: CueFile[] }
+
+function walkCue<T>(nodes: T[], key: (n: T) => string, kids: (n: T) => T[]) {
+  const out: string[] = []
+  const visit = (list: T[]) => {
+    for (const n of list) {
+      out.push(key(n))
+      const next = kids(n)
+      if (next.length) visit(next)
+    }
+  }
+  visit(nodes)
+  return out
+}
+
+/** Cursor navigatorPayloadRenderKey — skip soft redraw when tree/catalog unchanged. */
+export function cue(row: {
+  pid: number
+  schema: number
+  view: string
+  map: string
+  sibling: boolean
+  support: boolean
+  sub: number
+  types: Array<{ id: number; name: string }>
+  filter: number[]
+  paths: string[]
+  eadsOnly: boolean
+  nodes: CueNode[]
+  files: CueFile[]
+  products: Array<{ productId: number; baseId?: number; siblings?: boolean }>
+}) {
+  return [
+    row.pid,
+    row.schema,
+    row.view,
+    row.map,
+    row.sibling ? "1" : "0",
+    row.support ? "1" : "0",
+    row.sub > 0 ? row.sub : "",
+    row.types.map((s) => `${s.id}:${s.name}`).join("|"),
+    row.filter.join(","),
+    row.paths.join("|"),
+    row.eadsOnly === false ? "0" : "1",
+    walkCue(row.files, (n) => `${n.nodeId}:${n.nodePath}`, (n) => n.children).join("|"),
+    walkCue(row.nodes, (n) => `${n.nodeId}:${n.name}`, (n) => n.children).join(","),
+    row.products.map((p) => `${p.productId}:${p.baseId ?? ""}:${p.siblings ? "1" : "0"}`).join(","),
+  ].join("::")
+}
+
 export function filterPfm<T extends { name: string; nodeId: number; children: T[] }>(nodes: T[], q: string): T[] {
   const needle = q.trim().toLowerCase()
   if (!needle) return nodes
