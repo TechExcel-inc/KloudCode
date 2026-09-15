@@ -43,11 +43,12 @@ import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VE
 import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
-import { matches, parseBody, parseStep, SIGNAL, watch } from "./step-signal"
+import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "./step-signal"
+import { lined, precheck } from "./precheck"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.228")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.238")
   })
 })
 
@@ -325,6 +326,8 @@ describe("ead bridge", () => {
     expect(flagsFromAction({ kind: "setup" }).openSetupEadMap).toBe(true)
     expect(flagsFromAction({ kind: "setupSource" }).openSetup).toBe(true)
     expect(flagsFromAction({ kind: "mindmap" }).openPfmFilter).toBe(true)
+    expect(flagsFromAction({ kind: "dashboard" }).openAiPilot).toBe(true)
+    expect(flagsFromAction(undefined).openAiPilot).toBe(true)
   })
 
   test("handlePluginMessage auth + find + jobs hooks", () => {
@@ -346,6 +349,13 @@ describe("ead bridge", () => {
       },
     )
     handlePluginMessage(
+      { type: "injectImproveTestCases", playbook: "pfmNodeId: 9", requestId: "r2" },
+      {
+        setToken: () => {},
+        improveTests: (msg) => calls.push(`improve:${msg.playbook}`),
+      },
+    )
+    handlePluginMessage(
       { type: "pluginSessionSync", token: "stale", productId: 2, productName: "SW" },
       {
         setToken: (t) => {
@@ -363,7 +373,7 @@ describe("ead bridge", () => {
         setProduct: (id, name) => calls.push(`product:${id}:${name}`),
       },
     )
-    expect(calls).toEqual(["beat", "find:5", "jobs:r1"])
+    expect(calls).toEqual(["beat", "find:5", "jobs:r1", "improve:pfmNodeId: 9"])
     expect(token).toBe("fresh")
   })
 
@@ -661,6 +671,8 @@ describe("ead step-signal", () => {
     expect(parseBody("{")).toBeUndefined()
     expect(matches(SIGNAL)).toBe(true)
     expect(matches(`/tmp/${SIGNAL}`)).toBe(true)
+    expect(matches(PROGRESS)).toBe(true)
+    expect(matches(RESULT)).toBe(true)
     expect(matches("other.json")).toBe(false)
   })
 
@@ -668,10 +680,12 @@ describe("ead step-signal", () => {
     const seen = watch()
     const a = parseStep({ type: "autoImproveStepComplete", pfmNodeId: 1, at: "t1", reason: "a" })!
     const b = parseStep({ type: "autoImproveStepComplete", pfmNodeId: 1, at: "t2", reason: "b" })!
+    const c = parseStep({ type: "autoImproveStepComplete", pfmNodeId: 1, at: "t3", reason: "c" })!
     expect(seen.hit(a, 1000)).toBe(false)
     expect(seen.hit(a, 3000)).toBe(false)
     expect(seen.hit(b, 3000)).toBe(true)
-    expect(seen.hit(b, 5000)).toBe(false)
+    expect(seen.hit(c, 3100)).toBe(false)
+    expect(seen.hit(c, 3250)).toBe(true)
   })
 
   test("fires first write after miss", () => {
@@ -679,5 +693,43 @@ describe("ead step-signal", () => {
     seen.miss()
     const a = parseStep({ type: "autoImproveStepComplete", pfmNodeId: null, at: "t1", reason: "new" })!
     expect(seen.hit(a, 1000)).toBe(true)
+  })
+
+  test("result watcher has no debounce", () => {
+    const seen = watch(0)
+    seen.miss()
+    expect(seen.hit({ at: "t1" }, 1)).toBe(true)
+    expect(seen.hit({ at: "t2" }, 2)).toBe(true)
+  })
+
+  test("progress and result payloads", () => {
+    const cue = parseCue(`{"type":"improveTestCasesProgress","pfmNodeId":9,"message":"ok","at":"t1"}`)
+    expect(progress(cue!).type).toBe("improveTestCasesProgress")
+    expect(progress(cue!).pfmNodeId).toBe(9)
+    expect(result({ ok: false, pfmNodeId: 3, message: "no" }).ok).toBe(false)
+  })
+})
+
+describe("ead precheck", () => {
+  test("lined requires features and transitions", () => {
+    expect(lined("short")).toBe(false)
+    const rows = [
+      "Feature 1",
+      "[Login] {Click} → [Home]",
+      "[Home] {Open} → [List]",
+      "Feature 2",
+      "[List] {Pick} → [Item]",
+      "[Item] {Edit} ↔ [Form]",
+      "Feature 3",
+      "[Form] {Save} → [Done]",
+      "[Done] {Back} → [Home]",
+    ]
+    const pad = `${rows.join("\n")}\n${"x".repeat(280)}`
+    expect(lined(pad)).toBe(true)
+  })
+
+  test("precheck fails closed without token", async () => {
+    const block = await precheck("", 9, null)
+    expect(block?.failures).toEqual(["EAD Script not found."])
   })
 })

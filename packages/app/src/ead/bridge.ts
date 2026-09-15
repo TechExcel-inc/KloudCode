@@ -61,6 +61,7 @@ export type BridgeHooks = {
   writeClipboard?: (requestId: string, text: string) => void
   teamMembers?: (requestId: string, productId: number, token?: string) => void
   inject?: (text: string, label: string) => void
+  improveTests?: (msg: Record<string, unknown>) => void
   codingJobs?: (msg: Record<string, unknown>) => void
   reconcile?: (msg: Record<string, unknown>) => void
   ownerOptions?: (msg: Record<string, unknown>) => void
@@ -164,6 +165,11 @@ export function postStep(frame: HTMLIFrameElement | undefined, step: Step) {
   })
 }
 
+/** Cursor 1.0.238 — Improve Test Cases wizard progress / result / refresh. */
+export function postCue(frame: HTMLIFrameElement | undefined, payload: Record<string, unknown>) {
+  postToFrame(frame, payload)
+}
+
 /** Match Cursor shell: iframe listens for authTokenSync / authSyncComplete. */
 export function syncAuth(frame: HTMLIFrameElement | undefined, token: string) {
   // Empty pushes wipe Pilot localStorage and flash the sign-in modal — skip unless explicit logout.
@@ -184,6 +190,7 @@ export function syncAuthStatus(frame: HTMLIFrameElement | undefined, token: stri
   postToFrame(frame, { type: "authSyncComplete", hasToken: false, token: "" })
 }
 
+/** Cursor 1.0.228 (2026-09-11): iframe opens the hub on first click — do not wait for map metadata. */
 export function openPilotDashboard(
   frame: HTMLIFrameElement | undefined,
   opts?: { productId?: number; productName?: string },
@@ -655,6 +662,11 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
+  if (type === "injectImproveTestCases") {
+    hooks.improveTests?.(msg)
+    return true
+  }
+
   if (type === "reconcileAiCodingJobsForNode") {
     hooks.reconcile?.(msg)
     return true
@@ -703,7 +715,6 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     type === "injectAiFindSource" ||
     type === "injectCrawlVisionPfm" ||
     type === "injectFieldMapAiFind" ||
-    type === "injectImproveTestCases" ||
     type === "injectAiTestCodingJobs"
   ) {
     const playbook = text(msg.playbook)

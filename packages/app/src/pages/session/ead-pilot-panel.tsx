@@ -30,6 +30,7 @@ import {
   replyClipboard,
   replyWriteClipboard,
   replyTeamMembers,
+  postCue,
   postStep,
   requestSessionSync,
   selectPfmSubSchema,
@@ -38,7 +39,8 @@ import {
   syncAuthStatus,
   type SourceOpts,
 } from "@/ead/bridge"
-import { matches, parseBody, parseStep, SIGNAL, watch } from "@/ead/step-signal"
+import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "@/ead/step-signal"
+import { precheck } from "@/ead/precheck"
 import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
@@ -277,26 +279,34 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
 
   createEffect(() => {
     if (!alive()) return
-    const seen = watch()
-    const load = () =>
+    const stepSeen = watch(200)
+    const progSeen = watch(150)
+    const doneSeen = watch(0)
+    const pull = (path: string) =>
       sdk.client.file
-        .read({ path: SIGNAL })
+        .read({ path })
         .then((res) => {
           const data = res.data
-          if (!data || data.type !== "text") {
-            seen.miss()
-            return
-          }
-          const step = parseBody(data.content || "")
-          if (!step) {
-            seen.miss()
-            return
-          }
-          if (seen.hit(step)) postStep(frame(), step)
+          if (!data || data.type !== "text") return ""
+          return data.content || ""
         })
-        .catch(() => {
-          seen.miss()
-        })
+        .catch(() => "")
+    const load = async () => {
+      const el = frame()
+      const [stepRaw, progRaw, doneRaw] = await Promise.all([pull(SIGNAL), pull(PROGRESS), pull(RESULT)])
+      const step = parseBody(stepRaw)
+      if (!step) stepSeen.miss()
+      else if (stepSeen.hit(step)) postStep(el, step)
+      const prog = parseCue(progRaw)
+      if (!prog) progSeen.miss()
+      else if (progSeen.hit({ at: typeof prog.at === "string" ? prog.at : "" })) postCue(el, progress(prog))
+      const done = parseCue(doneRaw)
+      if (!done) doneSeen.miss()
+      else if (doneSeen.hit({ at: typeof done.at === "string" ? done.at : "" })) {
+        postCue(el, result(done))
+        postTestsRefresh(el, typeof done.pfmNodeId === "number" ? done.pfmNodeId : null)
+      }
+    }
     void load()
     const stop = sdk.event.listen((evt) => {
       if (evt.details.type !== "file.watcher.updated") return
@@ -313,6 +323,14 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
       stop()
       window.clearInterval(timer)
     })
+  })
+
+  createEffect(() => {
+    if (!panelOpen()) return
+    const el = frame()
+    if (!el) return
+    postJobsRefresh(el)
+    postTestsRefresh(el, ead.nodeId() || null)
   })
 
   createEffect(() => {
@@ -488,6 +506,45 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             })
             if (label.includes("Test") || label.includes("test")) postTestsRefresh(el, ead.nodeId() || null)
           })
+        },
+        improveTests: (raw) => {
+          void (async () => {
+            const playbook = typeof raw.playbook === "string" ? raw.playbook.trim() : ""
+            if (!playbook) {
+              showToast({ title: "EAD", description: "Improve test cases playbook is empty.", variant: "error" })
+              return
+            }
+            const fromNode = playbook.match(/pfmNodeId:\s*(\d+)/i)
+            const fromEad = playbook.match(/eadEntityId:\s*(\d+)/i)
+            const nid = positive(raw.pfmNodeId) ?? (fromNode ? Number(fromNode[1]) : null)
+            const eid = positive(raw.eadEntityId) ?? (fromEad ? Number(fromEad[1]) : null)
+            const block = await precheck(ead.token(), nid, eid)
+            if (block) {
+              showToast({ title: "EAD", description: block.reason, variant: "error" })
+              postCue(el, {
+                type: "improveTestCasesPreconditionBlocked",
+                reason: block.reason,
+                failures: block.failures,
+                pfmNodeId: nid ?? undefined,
+                eadEntityId: eid ?? undefined,
+              })
+              return
+            }
+            postCue(el, {
+              type: "improveTestCasesPrerequisitePassed",
+              pfmNodeId: nid ?? undefined,
+              eadEntityId: eid ?? undefined,
+              message: "Prerequisite passed. Starting Test Case AI Improve…",
+            })
+            const ok = await chat(playbook)
+            showToast({
+              title: "EAD Pilot",
+              description: ok
+                ? "Improve test cases playbook sent to chat."
+                : "Improve test cases playbook drafted in composer.",
+              variant: "success",
+            })
+          })()
         },
         codingJobs: (raw) => {
           void (async () => {
