@@ -9,6 +9,7 @@ import {
   openFindWizard,
   openHelpTip,
   openSetupMap,
+  postFindApplied,
   selectPfmSubSchema,
   updatePfmSelection,
 } from "./bridge"
@@ -485,6 +486,46 @@ describe("ead bridge", () => {
         setToken: () => {},
         bumpTree: () => calls.push("tree"),
         bumpMap: () => calls.push("map"),
+        findApplied: () => calls.push("echo"),
+      },
+    )
+    expect(calls).toEqual(["tree", "map", "echo"])
+  })
+
+  test("selectPfmSubSchema inbound updates Map schema", () => {
+    const calls: number[] = []
+    handlePluginMessage(
+      { type: "selectPfmSubSchema", productId: 2, subSchemaId: 7 },
+      {
+        setToken: () => {},
+        setSchema: (id) => calls.push(id),
+      },
+    )
+    expect(calls).toEqual([7])
+  })
+
+  test("focusPfmNavigator opens Map and does not wipe a live token", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "focusPfmNavigator", requireSignIn: true },
+      {
+        setToken: () => {},
+        clearToken: () => calls.push("signout"),
+        focusMap: () => calls.push("map"),
+        needAuth: () => calls.push("auth"),
+      },
+    )
+    expect(calls).toEqual(["map", "auth"])
+  })
+
+  test("setupTreeSaved syncs source tree", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "setupTreeSaved" },
+      {
+        setToken: () => {},
+        bumpTree: () => calls.push("tree"),
+        bumpMap: () => calls.push("map"),
       },
     )
     expect(calls).toEqual(["tree", "map"])
@@ -533,6 +574,7 @@ describe("ead bridge", () => {
     } as unknown as HTMLIFrameElement
     selectPfmSubSchema(frame, { productId: 2, subSchemaId: 7 })
     hostClipboardCommand(frame, "copy")
+    postFindApplied(frame, { productId: 2, sourceId: 9, sourcePath: "src/a.ts", linkedPaths: ["src/a.ts"] })
     expect(posted[0]).toEqual({
       source: "ead-pfm-host",
       type: "selectPfmSubSchema",
@@ -544,6 +586,8 @@ describe("ead bridge", () => {
       type: "hostClipboardCommand",
       command: "copy",
     })
+    expect((posted[2] as { type: string; sourceLinkedFilePaths?: string }).type).toBe("aiFindApplied")
+    expect((posted[2] as { sourceLinkedFilePaths?: string }).sourceLinkedFilePaths).toBe('["src/a.ts"]')
   })
 })
 

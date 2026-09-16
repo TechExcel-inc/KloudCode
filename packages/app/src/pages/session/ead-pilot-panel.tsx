@@ -31,6 +31,7 @@ import {
   replyWriteClipboard,
   replyTeamMembers,
   postCue,
+  postFindApplied,
   postStep,
   requestSessionSync,
   selectPfmSubSchema,
@@ -45,7 +46,7 @@ import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
 import { useEad } from "@/ead/settings"
-import { EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer } from "@/ead/urls"
+import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer } from "@/ead/urls"
 
 const PING_MS = 30_000
 const STALE_MS = 120_000
@@ -396,6 +397,30 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         bumpMap: () => ead.bumpMap(),
         bumpTree: () => ead.bumpTree(),
         bumpPilot: () => ead.bumpPilot(),
+        setSchema: (id) => {
+          if (id === ead.subSchemaId()) return
+          ead.setSubSchema(id)
+        },
+        focusMap: () => layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH),
+        needAuth: () => {
+          if (ead.token()) {
+            syncAuth(el, ead.token())
+            requestSessionSync(el)
+            return
+          }
+          layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH)
+        },
+        findApplied: () => {
+          const pid = ead.productId()
+          const path = ead.sourcePath()
+          postFindApplied(el, {
+            productId: pid > 0 ? pid : undefined,
+            sourceId: ead.sourceId() > 0 ? ead.sourceId() : undefined,
+            sourcePath: path || undefined,
+            sourceName: ead.sourceName() || undefined,
+            linkedPaths: linkedUnder(readPfmFilter(pid).paths, path),
+          })
+        },
         openPilot: () => launch({ kind: "dashboard" }),
         queueFind: (opts?: SourceOpts) =>
           launch({
@@ -499,12 +524,13 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         },
         inject: (text, label) => {
           void chat(text).then((ok) => {
+            if (label.includes("Test") || label.includes("test")) postTestsRefresh(el, ead.nodeId() || null)
+            if (label === "injectAiFindApi") return
             showToast({
               title: "EAD Pilot",
               description: ok ? `${label} sent to chat.` : `${label} drafted in composer.`,
               variant: "success",
             })
-            if (label.includes("Test") || label.includes("test")) postTestsRefresh(el, ead.nodeId() || null)
           })
         },
         improveTests: (raw) => {

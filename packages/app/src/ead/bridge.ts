@@ -68,6 +68,10 @@ export type BridgeHooks = {
   ownerFilter?: (msg: Record<string, unknown>) => void
   pfmFilter?: (msg: Record<string, unknown>) => void
   stepComplete?: (msg: Record<string, unknown>) => void
+  setSchema?: (id: number) => void
+  focusMap?: () => void
+  needAuth?: () => void
+  findApplied?: (msg: Record<string, unknown>) => void
 }
 
 type Panel = {
@@ -316,6 +320,19 @@ export function openHelpTip(frame: HTMLIFrameElement | undefined, tipId: string)
   const id = tipId.trim()
   if (!id) return
   postToFrame(frame, { type: "openHelpTip", helpTipId: id })
+}
+
+/** Echo Find result into Pilot after Map hard-refresh (Cursor postAiFindAppliedToPanel). */
+export function postFindApplied(frame: HTMLIFrameElement | undefined, opts?: SourceOpts) {
+  const linked = opts?.linkedPaths?.filter((p) => p.trim().length > 0) ?? []
+  postToFrame(frame, {
+    type: "aiFindApplied",
+    productId: opts?.productId,
+    sourceCodeNodeId: opts?.sourceId ? String(opts.sourceId) : undefined,
+    sourceCodeNodePath: opts?.sourcePath,
+    sourceCodeNodeName: opts?.sourceName,
+    sourceLinkedFilePaths: linked.length ? JSON.stringify(linked) : undefined,
+  })
 }
 
 export function selectPfmSubSchema(
@@ -584,17 +601,25 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
   if (type === "aiFindApplied") {
     hooks.bumpTree?.()
     hooks.bumpMap?.()
+    hooks.findApplied?.(msg)
     return true
   }
 
-  if (
-    type === "setupTreeClosed" ||
-    type === "setupTreeSaved" ||
-    type === "autoCreateEadSaved" ||
-    type === "aiJobsChanged" ||
-    type === "aiPromptRegenerated"
-  ) {
+  if (type === "setupTreeSaved") {
+    hooks.bumpTree?.()
     hooks.bumpMap?.()
+    return true
+  }
+
+  if (type === "setupTreeClosed") return true
+
+  if (type === "autoCreateEadSaved" || type === "aiJobsChanged" || type === "aiPromptRegenerated") {
+    hooks.bumpMap?.()
+    return true
+  }
+
+  if (type === "selectPfmSubSchema") {
+    hooks.setSchema?.(num(msg.subSchemaId))
     return true
   }
 
@@ -714,6 +739,7 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     type === "injectAiFindApi" ||
     type === "injectAiFindSource" ||
     type === "injectCrawlVisionPfm" ||
+    type === "injectExploreEadFunctions" ||
     type === "injectFieldMapAiFind" ||
     type === "injectAiTestCodingJobs"
   ) {
@@ -729,8 +755,9 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
-  if (type === "focusPfmNavigator" && msg.requireSignIn) {
-    hooks.clearToken?.()
+  if (type === "focusPfmNavigator") {
+    hooks.focusMap?.()
+    if (msg.requireSignIn) hooks.needAuth?.()
     return true
   }
 
