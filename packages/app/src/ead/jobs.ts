@@ -1,4 +1,4 @@
-import { eadOrigin } from "./urls"
+import { frameOrigin } from "./urls"
 
 export type JobCounts = {
   created: number
@@ -10,7 +10,7 @@ export type JobCounts = {
 
 function post(frame: HTMLIFrameElement | undefined, payload: Record<string, unknown>) {
   if (!frame?.contentWindow) return
-  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, eadOrigin())
+  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, frameOrigin(frame))
 }
 
 export function formatJobCounts(counts: JobCounts) {

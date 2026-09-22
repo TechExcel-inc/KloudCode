@@ -14,6 +14,7 @@ import { Log } from "../../util/log"
 import { lazy } from "../../util/lazy"
 import { Config } from "../../config/config"
 import { errors } from "../error"
+import * as EadProxy from "@/ead/proxy"
 
 const log = Log.create({ service: "server" })
 
@@ -71,6 +72,38 @@ async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>
 
 export const GlobalRoutes = lazy(() =>
   new Hono()
+    .get(
+      "/ead/plugin-proxy",
+      describeRoute({
+        summary: "EAD Pilot plugin proxy",
+        description:
+          "Start or reuse the local HTTP proxy so the Pilot iframe origin is loopback. Needed for localhost Front End App reachability probes.",
+        operationId: "global.ead.pluginProxy",
+        responses: {
+          200: {
+            description: "Proxy origin",
+            content: {
+              "application/json": {
+                schema: resolver(
+                  z.object({
+                    origin: z.string(),
+                    port: z.number(),
+                    target: z.string(),
+                  }),
+                ),
+              },
+            },
+          },
+          ...errors(400),
+        },
+      }),
+      async (c) => {
+        const raw = c.req.query("target") || "https://eadfm.com"
+        const target = EadProxy.allowed(raw)
+        if (!target) return c.json({ error: "unsupported EAD proxy target" }, 400)
+        return c.json(await EadProxy.ensure(target))
+      },
+    )
     .get(
       "/health",
       describeRoute({

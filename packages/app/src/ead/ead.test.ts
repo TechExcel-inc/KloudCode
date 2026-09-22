@@ -42,7 +42,7 @@ import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKi
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
-import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, isEadHost } from "./urls"
+import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
 import { tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
@@ -52,6 +52,30 @@ import { lined, precheck } from "./precheck"
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
     expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.238")
+  })
+
+  test("rewrite puts the plugin path on the loopback proxy origin", () => {
+    expect(rewrite("https://eadfm.com/plugin/ai-code?mode=cursor", "http://127.0.0.1:5190")).toBe(
+      "http://127.0.0.1:5190/plugin/ai-code?mode=cursor",
+    )
+  })
+
+  test("isEadHost accepts plugin proxy origins", () => {
+    expect(isProxy("http://127.0.0.1:5190")).toBe(true)
+    expect(isEadHost("http://127.0.0.1:5190")).toBe(true)
+    expect(isEadHost("http://127.0.0.1:5180")).toBe(true)
+    expect(isEadHost("http://127.0.0.1:8088")).toBe(false)
+  })
+
+  test("frameOrigin follows the iframe src", () => {
+    applyEnv("production")
+    expect(frameOrigin({ src: "http://127.0.0.1:5190/plugin/ai-code" })).toBe("http://127.0.0.1:5190")
+    expect(frameOrigin({ src: "" })).toBe("https://eadfm.com")
+  })
+
+  test("proxyOrigin falls back when the host cannot serve a proxy", async () => {
+    expect(await proxyOrigin("", "https://eadfm.com")).toBe("https://eadfm.com")
+    expect(await proxyOrigin("http://127.0.0.1:1", "https://eadfm.com")).toBe("https://eadfm.com")
   })
 })
 

@@ -27,6 +27,9 @@ const LOCAL_ORIGINS = new Set([
   "http://localhost:3000",
 ])
 
+/** Cursor plugin proxy ports — production 5190–5195, localhost Vite 5180–5185. */
+const PROXY_PORTS = new Set([5180, 5181, 5182, 5183, 5184, 5185, 5190, 5191, 5192, 5193, 5194, 5195])
+
 let env: Env = "production"
 
 export function eadEnv(): Env {
@@ -49,10 +52,48 @@ export function eadOrigin() {
   return new URL(eadServer()).origin
 }
 
+export function isProxy(origin: string) {
+  const url = URL.canParse(origin) ? new URL(origin) : undefined
+  if (!url) return false
+  if (url.protocol !== "http:") return false
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") return false
+  return PROXY_PORTS.has(Number(url.port))
+}
+
 export function isEadHost(origin: string) {
   if (origin === new URL(PROD_SERVER).origin) return true
   if (LOCAL_ORIGINS.has(origin)) return true
+  if (isProxy(origin)) return true
   return origin === eadOrigin()
+}
+
+export function frameOrigin(frame?: { src?: string }) {
+  const src = frame?.src
+  if (!src || !URL.canParse(src)) return eadOrigin()
+  return new URL(src).origin
+}
+
+export function rewrite(plugin: string, origin: string) {
+  const url = new URL(plugin)
+  return `${origin.replace(/\/+$/, "")}${url.pathname}${url.search}`
+}
+
+function readOrigin(body: unknown) {
+  if (!body || typeof body !== "object" || !("origin" in body)) return ""
+  const origin = body.origin
+  if (typeof origin !== "string") return ""
+  return isProxy(origin) ? origin : ""
+}
+
+/** Ask OpenCode to start the Cursor-style loopback proxy; fall back to eadfm.com. */
+export async function proxyOrigin(host: string, target = eadServer()) {
+  if (!host) return target
+  const url = new URL("/global/ead/plugin-proxy", host)
+  url.searchParams.set("target", target)
+  const res = await fetch(url, { signal: AbortSignal.timeout(4000) }).catch(() => undefined)
+  if (!res?.ok) return target
+  const body: unknown = await res.json().catch(() => undefined)
+  return readOrigin(body) || target
 }
 
 /** @deprecated live via eadServer() — kept for tests that pin production. */

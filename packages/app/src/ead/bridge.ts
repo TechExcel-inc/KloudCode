@@ -1,4 +1,4 @@
-import { eadOrigin, eadServer, EAD_PILOT_ID, EAD_PILOT_WIDTH, isEadHost } from "./urls"
+import { eadServer, EAD_PILOT_ID, EAD_PILOT_WIDTH, frameOrigin, isEadHost } from "./urls"
 import type { PilotAction } from "./actions"
 import type { Lang } from "./i18n"
 import type { Step } from "./step-signal"
@@ -156,7 +156,7 @@ export function flagsFromAction(action: PilotAction | undefined): Pick<
 
 export function postToFrame(frame: HTMLIFrameElement | undefined, payload: Record<string, unknown>) {
   if (!frame?.contentWindow) return
-  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, eadOrigin())
+  frame.contentWindow.postMessage({ source: "ead-pfm-host", ...payload }, frameOrigin(frame))
 }
 
 /** Cursor 1.0.222 host event — advance Auto Improve / AI Find waiting pages. */

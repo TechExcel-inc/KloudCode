@@ -46,7 +46,7 @@ import { sendChat } from "@/ead/composer"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { formatJobCounts, postJobResult, postJobsRefresh, postLifecycle, postTestsRefresh } from "@/ead/jobs"
 import { useEad } from "@/ead/settings"
-import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer } from "@/ead/urls"
+import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_MAX, EAD_PILOT_MIN, EAD_PILOT_WIDTH, eadServer, proxyOrigin, rewrite } from "@/ead/urls"
 
 const PING_MS = 30_000
 const STALE_MS = 120_000
@@ -77,6 +77,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const [reloadAt, setReloadAt] = createSignal(0)
   const [action, setAction] = createSignal<PilotAction | undefined>()
   const [alive, setAlive] = createSignal(false)
+  const [shell, setShell] = createSignal("")
 
   const opened = layout.pluginPanel.opened(EAD_PILOT_ID)
   const width = layout.pluginPanel.width(EAD_PILOT_ID)
@@ -114,14 +115,24 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     return undefined
   }
 
-  const src = createMemo(() => {
-    return buildPilotShellUrl({
+  createEffect(() => {
+    const url = buildPilotShellUrl({
       productId: ead.productId(),
       productName: ead.productName(),
       subSchemaId: ead.subSchemaId() || undefined,
       language: ead.language(),
       mode: ead.pilotMode(),
       bust: ead.pilotBust(),
+    })
+    const host = sdk.url
+    const target = eadServer()
+    let gone = false
+    void proxyOrigin(host, target).then((origin) => {
+      if (gone) return
+      setShell(rewrite(url, origin))
+    })
+    onCleanup(() => {
+      gone = true
     })
   })
 
@@ -773,10 +784,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             </div>
           </div>
           <div class="flex-1 min-h-0 overflow-hidden">
-            <Show when={alive()}>
+            <Show when={alive() && !!shell()}>
               <iframe
                 ref={setFrame}
-                src={src()}
+                src={shell()}
                 class="size-full border-0"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
                 allow="clipboard-read; clipboard-write"
