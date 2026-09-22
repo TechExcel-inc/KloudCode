@@ -33,7 +33,10 @@ import {
   replyTeamMembers,
   postCue,
   postFindApplied,
+  postInjectResult,
+  postMapVisible,
   postStep,
+  postStepBurst,
   requestSessionSync,
   selectPfmSubSchema,
   setUiLanguage,
@@ -311,7 +314,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
       const [stepRaw, progRaw, doneRaw] = await Promise.all([pull(SIGNAL), pull(PROGRESS), pull(RESULT)])
       const step = parseBody(stepRaw)
       if (!step) stepSeen.miss()
-      else if (stepSeen.hit(step)) postStep(el, step)
+      else if (stepSeen.hit(step)) postStepBurst(el, step)
       const prog = parseCue(progRaw)
       if (!prog) progSeen.miss()
       else if (progSeen.hit({ at: typeof prog.at === "string" ? prog.at : "" })) postCue(el, progress(prog))
@@ -467,7 +470,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
         bridgeReady: () => {
           setBeat(Date.now())
           push(el)
+          postMapVisible(el, layout.pluginPanel.opened(EAD_MAP_ID)())
         },
+        mapVisible: () => postMapVisible(el, layout.pluginPanel.opened(EAD_MAP_ID)()),
+        injectAck: (ack) => postInjectResult(el, ack),
         openExternal: (url, name) => {
           if (name) {
             const win = window.open(url, name)
@@ -536,8 +542,19 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               }),
             )
         },
-        inject: (text, label) => {
+        inject: (text, label, requestId) => {
           void chat(text).then((ok) => {
+            if (label === "injectExploreEadFunctions") {
+              postInjectResult(el, {
+                requestId: requestId || "",
+                ok: true,
+                submitted: ok,
+                message: ok
+                  ? "Optimize EAD & PFM prompt sent to chat — complete discovery (POST coding-tool-discovery)."
+                  : "Optimize EAD & PFM is in chat — press Send if it did not auto-submit, then finish the playbook.",
+              })
+              return
+            }
             if (label.includes("Test") || label.includes("test")) postTestsRefresh(el, ead.nodeId() || null)
             if (label === "injectAiFindApi") return
             showToast({
@@ -793,7 +810,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
                 src={shell()}
                 class="size-full border-0"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
-                allow="clipboard-read; clipboard-write"
+                allow="clipboard-read; clipboard-write; fullscreen"
                 title="EAD Pilot"
                 onLoad={() => push(frame())}
               />

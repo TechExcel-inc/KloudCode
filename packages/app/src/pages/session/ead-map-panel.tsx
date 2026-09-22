@@ -414,6 +414,8 @@ function Tree(props: {
                 classList={{
                   dynamic: dyn(),
                   functional: node.workType === "functional",
+                  common: !dyn() && !!node.underDynamic && node.supportEadWorkflow !== false && !node.isHub && node.ifCommonStatus === 1,
+                  specific: !dyn() && !!node.underDynamic && node.supportEadWorkflow !== false && !node.isHub && node.ifCommonStatus === 0,
                   "is-toggle": kids(),
                 }}
                 onClick={(e) => {

@@ -60,7 +60,9 @@ export type BridgeHooks = {
   clipboard?: (requestId: string) => void
   writeClipboard?: (requestId: string, text: string) => void
   teamMembers?: (requestId: string, productId: number, token?: string) => void
-  inject?: (text: string, label: string) => void
+  inject?: (text: string, label: string, requestId?: string) => void
+  injectAck?: (ack: { requestId: string; ok: boolean; submitted: boolean; message: string }) => void
+  mapVisible?: () => void
   improveTests?: (msg: Record<string, unknown>) => void
   codingJobs?: (msg: Record<string, unknown>) => void
   reconcile?: (msg: Record<string, unknown>) => void
@@ -459,6 +461,26 @@ export function pingHost(frame: HTMLIFrameElement | undefined) {
   postToFrame(frame, { type: "hostHealthCheck", ts: Date.now() })
 }
 
+/** Cursor 1.0.244 — Pilot asks whether the EAD Map sidebar is open. */
+export function postMapVisible(frame: HTMLIFrameElement | undefined, visible: boolean) {
+  postToFrame(frame, { type: "eadMapSidebarVisibility", visible })
+}
+
+/** Cursor 1.0.244 — ack Optimize EAD inject so the waiting page does not hang. */
+export function postInjectResult(
+  frame: HTMLIFrameElement | undefined,
+  ack: { requestId: string; ok: boolean; submitted: boolean; message: string },
+) {
+  postToFrame(frame, { type: "codingToolInjectResult", ...ack })
+}
+
+/** Cursor 1.0.244 retries the step signal so a just-opened wizard still hears it. */
+export function postStepBurst(frame: HTMLIFrameElement | undefined, step: Step) {
+  postStep(frame, step)
+  setTimeout(() => postStep(frame, step), 80)
+  setTimeout(() => postStep(frame, step), 320)
+}
+
 export function requestSessionSync(frame: HTMLIFrameElement | undefined) {
   postToFrame(frame, { type: "requestPluginSessionSync" })
 }
@@ -595,6 +617,12 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
   if (type === "hostBridgeReady") {
     hooks.noteHeartbeat?.()
     hooks.bridgeReady?.()
+    hooks.mapVisible?.()
+    return true
+  }
+
+  if (type === "requestEadMapSidebarVisibility") {
+    hooks.mapVisible?.()
     return true
   }
 
@@ -735,11 +763,28 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
+  if (type === "injectCrawlVisionPfm" && text(msg.handoff) === "explore-ead-functions") return true
+
+  if (type === "injectExploreEadFunctions") {
+    const playbook = text(msg.playbook)
+    const requestId = text(msg.requestId)
+    if (!playbook) {
+      hooks.injectAck?.({
+        requestId,
+        ok: false,
+        submitted: false,
+        message: "Optimize EAD & PFM playbook is empty.",
+      })
+      return true
+    }
+    hooks.inject?.(playbook, type, requestId)
+    return true
+  }
+
   if (
     type === "injectAiFindApi" ||
     type === "injectAiFindSource" ||
     type === "injectCrawlVisionPfm" ||
-    type === "injectExploreEadFunctions" ||
     type === "injectFieldMapAiFind" ||
     type === "injectAiTestCodingJobs"
   ) {

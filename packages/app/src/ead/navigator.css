@@ -2298,8 +2298,13 @@
   font-size: 12px;
 }
 
-[data-ead-map] .ead-row-icon.functional {
+[data-ead-map] .ead-row-icon.functional,
+[data-ead-map] .ead-row-icon.specific {
   color: #e879f9;
+}
+
+[data-ead-map] .ead-row-icon.common {
+  color: #38bdf8;
 }
 
 [data-ead-map] .tree-view-menu {

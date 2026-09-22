@@ -38,7 +38,7 @@ import {
   cue,
   underFolder,
 } from "./source-tree"
-import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap } from "./api"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
@@ -51,7 +51,7 @@ import { lined, precheck } from "./precheck"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.238")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.244")
   })
 
   test("rewrite puts the plugin path on the loopback proxy origin", () => {
@@ -452,6 +452,39 @@ describe("ead bridge", () => {
     expect(calls).toEqual(["beat", "ready"])
   })
 
+  test("map visibility and explore inject ack", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "requestEadMapSidebarVisibility" },
+      {
+        setToken: () => {},
+        mapVisible: () => calls.push("map"),
+      },
+    )
+    handlePluginMessage(
+      { type: "injectExploreEadFunctions", requestId: "r1", playbook: "" },
+      {
+        setToken: () => {},
+        injectAck: (ack) => calls.push(`empty:${ack.requestId}:${ack.ok}`),
+      },
+    )
+    handlePluginMessage(
+      { type: "injectCrawlVisionPfm", handoff: "explore-ead-functions", playbook: "crawl" },
+      {
+        setToken: () => {},
+        inject: () => calls.push("crawl"),
+      },
+    )
+    handlePluginMessage(
+      { type: "injectExploreEadFunctions", requestId: "r2", playbook: "find nodes" },
+      {
+        setToken: () => {},
+        inject: (_text, label, requestId) => calls.push(`${label}:${requestId}`),
+      },
+    )
+    expect(calls).toEqual(["map", "empty:r1:false", "injectExploreEadFunctions:r2"])
+  })
+
   test("openExternalUrl and openEadPilotWebApp route to hooks", () => {
     const calls: string[] = []
     handlePluginMessage(
@@ -755,6 +788,39 @@ describe("ead i18n + env + mcp", () => {
   test("mcpCandidates walks to sibling EAD_PFM-Editor", () => {
     const list = mcpCandidates("/Users/me/Projects/TX/KloudCode", "")
     expect(list.some((p) => p.includes("EAD_PFM-Editor/mcp-eadpfm/dist/index.js"))).toBe(true)
+  })
+
+  test("loadActiveMap marks common and specific under a dynamic top", async () => {
+    const http = (async () =>
+      new Response(
+        JSON.stringify({
+          mapId: 1,
+          supportSubSchemas: false,
+          rootNode: {
+            nodeId: 1,
+            nodeName: "Map",
+            children: [
+              {
+                nodeId: 10,
+                nodeName: "PPM",
+                isDynamicTopLevel: true,
+                children: [
+                  { nodeId: 11, nodeName: "Overview", ifCommonStatus: 1, supportEadWorkflow: true, children: [] },
+                  { nodeId: 12, nodeName: "Spec Type", ifCommonStatus: 0, supportEadWorkflow: true, children: [] },
+                ],
+              },
+            ],
+          },
+        }),
+      )) as unknown as typeof fetch
+    const map = await loadActiveMap("token", 2, http)
+    const top = map.root?.children.find((n) => n.nodeId === 10)
+    expect(top?.isDynamicTopLevel).toBe(true)
+    expect(top?.underDynamic).toBeUndefined()
+    expect(top?.children.map((n) => [n.nodeId, n.underDynamic, n.ifCommonStatus])).toEqual([
+      [11, true, 1],
+      [12, true, 0],
+    ])
   })
 
   test("diag pipeline records ok and fail steps", () => {

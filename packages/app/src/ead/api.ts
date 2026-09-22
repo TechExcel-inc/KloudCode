@@ -22,6 +22,11 @@ export type PfmNode = {
   isDynamicTopLevel?: boolean
   subSchemaId?: number | null
   workType?: string
+  /** 1 common, 0 specific. Only meaningful under a Dynamic schema. */
+  ifCommonStatus?: 0 | 1
+  underDynamic?: boolean
+  isHub?: boolean
+  supportEadWorkflow?: boolean
 }
 
 export type ActiveContext = {
@@ -192,6 +197,7 @@ export function productRole(product: Product) {
 function asNode(
   raw: unknown,
   meta?: { dynId?: number; dynName?: string },
+  under = false,
 ): PfmNode | undefined {
   if (!raw || typeof raw !== "object") return
   const row = raw as Record<string, unknown>
@@ -205,6 +211,11 @@ function asNode(
     (!!meta?.dynId && meta.dynId === id)
   const sub = Number(row.subSchemaId)
   const wt = typeof row.workType === "string" ? row.workType : undefined
+  const rawCommon = Number(row.ifCommonStatus)
+  const common = rawCommon === 0 || rawCommon === 1 ? (rawCommon as 0 | 1) : undefined
+  const support = row.supportEadWorkflow !== false && row.supportEadWorkflow !== 0
+  const hub = kids.length > 0 && !support
+  const childUnder = under || dyn || (Number.isFinite(sub) && sub > 0)
   const name =
     dyn && meta?.dynName
       ? meta.dynName
@@ -215,8 +226,12 @@ function asNode(
     isDynamicTopLevel: dyn || undefined,
     subSchemaId: Number.isFinite(sub) && sub > 0 ? sub : null,
     workType: wt,
+    ifCommonStatus: common,
+    underDynamic: childUnder && !dyn ? true : undefined,
+    isHub: hub ? true : undefined,
+    supportEadWorkflow: support ? undefined : false,
     children: kids.flatMap((child) => {
-      const next = asNode(child, meta)
+      const next = asNode(child, meta, childUnder)
       return next ? [next] : []
     }),
   }
