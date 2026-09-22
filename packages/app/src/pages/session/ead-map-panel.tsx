@@ -1367,6 +1367,46 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void refresh()
   })
 
+  let linked = ""
+  createEffect(() => {
+    const token = ead.token().trim()
+    const dir = sdk.directory
+    if (!token || !dir) {
+      linked = ""
+      return
+    }
+    const key = `${dir}\0${token}`
+    if (linked === key) return
+    linked = key
+    const entry = untrack(() => ead.mcpEntry())
+    void (async () => {
+      let err: unknown
+      for (let i = 0; i < 4; i++) {
+        if (linked !== key) return
+        try {
+          const path = await ensureEadMcp({
+            client: sdk.client,
+            token,
+            entry,
+            worktree: dir,
+          })
+          if (linked !== key) return
+          if (path) ead.setMcpEntry(path)
+          return
+        } catch (e) {
+          err = e
+          if (i < 3) await new Promise((r) => setTimeout(r, 800))
+        }
+      }
+      if (linked !== key) return
+      showToast({
+        title: "MCP",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "error",
+      })
+    })()
+  })
+
   createEffect(() => {
     if (!panelOpen()) return
     const n = ead.treeTick()

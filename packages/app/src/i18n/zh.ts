@@ -771,7 +771,7 @@ export const dict = {
   "settings.ead.product.title": "当前产品",
   "settings.ead.product.description": "在 EAD Map 侧栏中选择。",
   "settings.ead.mcp.title": "MCP",
-  "settings.ead.mcp.description": "自动注册 eadpfm（node + 打包/相邻 MCP）。路径为空时点应用即可。",
+  "settings.ead.mcp.description": "打开项目时自动连接 eadpfm。路径改了再点应用。",
   "settings.ead.mcp.copy": "复制片段",
   "settings.ead.mcp.copied": "已复制",
   "settings.ead.mcp.apply": "应用到服务",

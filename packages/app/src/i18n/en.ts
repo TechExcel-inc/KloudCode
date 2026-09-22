@@ -882,7 +882,7 @@ export const dict = {
   "settings.ead.product.title": "Selected product",
   "settings.ead.product.description": "Chosen in the EAD Map panel.",
   "settings.ead.mcp.title": "MCP",
-  "settings.ead.mcp.description": "Register eadpfm automatically (node + bundled/sibling MCP). Apply if the path was empty.",
+  "settings.ead.mcp.description": "Connects eadpfm when a project opens. Apply again if the path changed.",
   "settings.ead.mcp.copy": "Copy snippet",
   "settings.ead.mcp.copied": "Copied",
   "settings.ead.mcp.apply": "Apply to server",
