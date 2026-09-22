@@ -86,11 +86,13 @@ function readOrigin(body: unknown) {
 }
 
 /** Ask OpenCode to start the Cursor-style loopback proxy; fall back to eadfm.com. */
-export async function proxyOrigin(host: string, target = eadServer()) {
+export async function proxyOrigin(host: string, target = eadServer(), auth?: { user?: string; pass?: string }) {
   if (!host) return target
   const url = new URL("/global/ead/plugin-proxy", host)
   url.searchParams.set("target", target)
-  const res = await fetch(url, { signal: AbortSignal.timeout(4000) }).catch(() => undefined)
+  const headers: Record<string, string> = {}
+  if (auth?.pass) headers.Authorization = `Basic ${btoa(`${auth.user || "opencode"}:${auth.pass}`)}`
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(4000) }).catch(() => undefined)
   if (!res?.ok) return target
   const body: unknown = await res.json().catch(() => undefined)
   return readOrigin(body) || target

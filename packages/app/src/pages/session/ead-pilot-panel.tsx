@@ -9,6 +9,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
 import type { Sizing } from "@/pages/session/helpers"
 import { resizeEadPanel } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -69,6 +70,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const platform = usePlatform()
   const prompt = usePrompt()
   const sdk = useSDK()
+  const server = useServer()
   const params = useParams()
   const ead = useEad()
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -124,10 +126,11 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
       mode: ead.pilotMode(),
       bust: ead.pilotBust(),
     })
-    const host = sdk.url
+    const http = server.current?.http
+    const host = http?.url || sdk.url
     const target = eadServer()
     let gone = false
-    void proxyOrigin(host, target).then((origin) => {
+    void proxyOrigin(host, target, { user: http?.username, pass: http?.password }).then((origin) => {
       if (gone) return
       setShell(rewrite(url, origin))
     })
