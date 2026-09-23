@@ -51,7 +51,7 @@ import { lined, precheck } from "./precheck"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.244")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.247")
   })
 
   test("rewrite puts the plugin path on the loopback proxy origin", () => {
