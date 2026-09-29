@@ -19,6 +19,7 @@ export type PilotContext = {
   openSetupEadMap?: boolean
   openPfmFilter?: boolean
   openCrawlVision?: boolean
+  openMyProfile?: boolean
   helpTipId?: string
   language?: Lang
   mode?: "opencode" | "cursor"
@@ -135,6 +136,7 @@ export function buildPilotUrl(ctx: PilotContext) {
   if (ctx.openSetupEadMap) url.searchParams.set("openSetupEadMap", "1")
   if (ctx.openPfmFilter) url.searchParams.set("openPfmFilter", "1")
   if (ctx.openCrawlVision) url.searchParams.set("openCrawlVision", "1")
+  if (ctx.openMyProfile) url.searchParams.set("openMyProfile", "1")
   if (ctx.helpTipId) url.searchParams.set("openHelpTip", ctx.helpTipId)
   if (ctx.language) url.searchParams.set("lang", ctx.language)
   if (ctx.bust) url.searchParams.set("_cb", String(ctx.bust))
@@ -143,7 +145,14 @@ export function buildPilotUrl(ctx: PilotContext) {
 
 export function flagsFromAction(action: PilotAction | undefined): Pick<
   PilotContext,
-  "openAiPilot" | "openAiFind" | "openSetup" | "openSetupEadMap" | "openPfmFilter" | "openCrawlVision" | "helpTipId"
+  | "openAiPilot"
+  | "openAiFind"
+  | "openSetup"
+  | "openSetupEadMap"
+  | "openPfmFilter"
+  | "openCrawlVision"
+  | "openMyProfile"
+  | "helpTipId"
 > {
   if (!action || action.kind === "dashboard") return { openAiPilot: true }
   if (action.kind === "find") return { openAiFind: true }
@@ -151,6 +160,7 @@ export function flagsFromAction(action: PilotAction | undefined): Pick<
   if (action.kind === "setup") return { openSetupEadMap: true }
   if (action.kind === "mindmap") return { openPfmFilter: true }
   if (action.kind === "crawl") return { openCrawlVision: true }
+  if (action.kind === "profile") return { openMyProfile: true }
   if (action.kind === "help") return { helpTipId: action.tipId || undefined }
   if (action.kind === "pfm" || action.kind === "source") return {}
   return { openAiPilot: true }
@@ -263,6 +273,11 @@ export function openEditProduct(
     productId: opts?.productId,
     productName: opts?.productName,
   })
+}
+
+/** Cursor 1.0.252 — open My Profile inside Pilot instead of /welcome/profile. */
+export function openProfile(frame: HTMLIFrameElement | undefined) {
+  postToFrame(frame, { type: "openMyProfile" })
 }
 
 export function openMindmap(
@@ -425,6 +440,10 @@ export function applyPilotAction(
     openEditProduct(frame, product)
     return
   }
+  if (action.kind === "profile") {
+    openProfile(frame)
+    return
+  }
   if (action.kind === "source") {
     updateSourceSelection(frame, opts)
     return
@@ -584,10 +603,12 @@ export function handlePluginMessage(msg: Record<string, unknown>, hooks: BridgeH
     return true
   }
 
-  if (type === "requestAuthSync") {
+  if (type === "requestAuthSync" || type === "requestAuthToken") {
     hooks.syncAuth?.()
     return true
   }
+
+  if (type === "closeMyProfile") return true
 
   if (type === "openExternalUrl") {
     const url = text(msg.url)

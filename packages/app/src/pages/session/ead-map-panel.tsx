@@ -21,6 +21,7 @@ import {
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
+  loadPlan,
   loadRunPrefs,
   loadSourceExpanded,
   loadSourceSchema,
@@ -75,7 +76,7 @@ import {
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
-import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, eadApi, eadServer } from "@/ead/urls"
+import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, eadApi } from "@/ead/urls"
 
 type AuthTab =
   | "signin"
@@ -720,6 +721,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [err, setErr] = createSignal("")
   const [user, setUser] = createSignal("")
   const [email, setEmail] = createSignal("")
+  const [plan, setPlan] = createSignal("")
+  const [suffix, setSuffix] = createSignal("")
   const [tab, setTab] = createSignal<AuthTab>("signin")
   const [id, setId] = createSignal("")
   const [pass, setPass] = createSignal("")
@@ -1169,6 +1172,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         clearCounts()
         setUser("")
         setEmail("")
+        setPlan("")
+        setSuffix("")
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1195,6 +1200,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setUserId(profile.userId)
       setTenantId(profile.tenantId)
       noteDiag("Auth", true, profile.email || profile.userName || "ok")
+      void loadPlan(token, fetcher).then((row) => {
+        if (!live()) return
+        setPlan(row?.name || "")
+        setSuffix(row?.suffix || "")
+      })
       const catalog = await loadCatalog(token, fetcher)
       if (!live()) return
       setProducts(catalog.products)
@@ -1332,6 +1342,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setTab("signin")
         setUser("")
         setEmail("")
+        setPlan("")
+        setSuffix("")
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1759,6 +1771,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     clearCounts()
     setUser("")
     setEmail("")
+    setPlan("")
+    setSuffix("")
     setHint(undefined)
     setBanner(null)
     setQuery("")
@@ -1799,6 +1813,11 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const askEdit = () => {
     closeMenus()
     setEditOpen(true)
+  }
+
+  const askProfile = () => {
+    closeMenus()
+    launch({ kind: "profile" })
   }
 
   const confirmEdit = () => {
@@ -2238,15 +2257,26 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               </button>
                             </li>
                             <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
+                            <Show when={plan()}>
+                              <li role="none">
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  class="nav-user-menu-item"
+                                  title={suffix() ? `${plan()} ${suffix()}` : plan()}
+                                  onClick={askProfile}
+                                >
+                                  <span>{tx("model")}</span>
+                                  <span class="nav-user-menu-item-meta">{plan()}</span>
+                                </button>
+                              </li>
+                            </Show>
                             <li role="none">
                               <button
                                 type="button"
                                 role="menuitem"
                                 class="nav-user-menu-item"
-                                onClick={() => {
-                                  closeMenus()
-                                  window.open(`${eadServer()}/welcome/profile`, "_blank")
-                                }}
+                                onClick={askProfile}
                               >
                                 {tx("profile")}
                               </button>

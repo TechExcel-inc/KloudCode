@@ -11,6 +11,7 @@ export type PilotAction = {
     | "pfm"
     | "crawl"
     | "help"
+    | "profile"
   sourceId?: number
   sourcePath?: string
   sourceName?: string

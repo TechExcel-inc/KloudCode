@@ -983,6 +983,26 @@ export async function me(token: string, http: Http = eadHttp()) {
   }
 }
 
+const PLAN = /^EAD \d+\.\d+$/
+
+/** Cursor 1.0.252 — account LLM plan shown in the Map user menu. */
+export async function loadPlan(token: string, http: Http = eadHttp()) {
+  try {
+    const data = (await call(http, `/account-settings/llm-plans/assignment`, token)) as {
+      effectivePlan?: { name?: string; nameSuffix?: string }
+    }
+    const name = String(data.effectivePlan?.name || "").trim()
+    if (!PLAN.test(name)) return
+    const suffix = String(data.effectivePlan?.nameSuffix || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 40)
+    return { name, suffix }
+  } catch {
+    return
+  }
+}
+
 export type RunPref = {
   showEadCount?: boolean
   eadsOnlyFilter?: boolean

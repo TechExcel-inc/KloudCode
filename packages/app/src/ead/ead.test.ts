@@ -9,6 +9,7 @@ import {
   openFindWizard,
   openHelpTip,
   openSetupMap,
+  openProfile,
   postFindApplied,
   selectPfmSubSchema,
   updatePfmSelection,
@@ -38,7 +39,8 @@ import {
   cue,
   underFolder,
 } from "./source-tree"
-import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlan } from "./api"
+import { apply, drop, gateway, match, PLAN, spec } from "./plan"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
@@ -48,10 +50,11 @@ import { mcpCandidates } from "./mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
 import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "./step-signal"
 import { lined, precheck } from "./precheck"
+import { sendChat } from "./composer"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.247")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.253")
   })
 
   test("rewrite puts the plugin path on the loopback proxy origin", () => {
@@ -368,6 +371,12 @@ describe("ead bridge", () => {
     expect(url.searchParams.get("subSchemaId")).toBe("7")
   })
 
+  test("buildPilotUrl includes openMyProfile", () => {
+    const url = new URL(buildPilotUrl({ openMyProfile: true, mode: "cursor" }))
+    expect(url.searchParams.get("openMyProfile")).toBe("1")
+    expect(url.searchParams.get("openAiPilot")).toBeNull()
+  })
+
   test("source selection prefers sourceCodeNodeId", () => {
     const url = new URL(
       buildPilotUrl({
@@ -389,6 +398,7 @@ describe("ead bridge", () => {
     expect(flagsFromAction({ kind: "setupSource" }).openSetup).toBe(true)
     expect(flagsFromAction({ kind: "mindmap" }).openPfmFilter).toBe(true)
     expect(flagsFromAction({ kind: "dashboard" }).openAiPilot).toBe(true)
+    expect(flagsFromAction({ kind: "profile" }).openMyProfile).toBe(true)
     expect(flagsFromAction(undefined).openAiPilot).toBe(true)
   })
 
@@ -450,6 +460,19 @@ describe("ead bridge", () => {
       },
     )
     expect(calls).toEqual(["beat", "ready"])
+  })
+
+  test("requestAuthToken syncs host token", () => {
+    const calls: string[] = []
+    handlePluginMessage(
+      { type: "requestAuthToken" },
+      {
+        setToken: () => {},
+        syncAuth: () => calls.push("sync"),
+      },
+    )
+    handlePluginMessage({ type: "closeMyProfile" }, { setToken: () => {} })
+    expect(calls).toEqual(["sync"])
   })
 
   test("map visibility and explore inject ack", () => {
@@ -620,6 +643,17 @@ describe("ead bridge", () => {
     openSetupMap(frame, { productId: 2, productName: "SW" })
     expect((posted[0] as { type: string }).type).toBe("openAiFindWizard")
     expect((posted[1] as { type: string }).type).toBe("openSetupEadMap")
+  })
+
+  test("openProfile posts openMyProfile", () => {
+    const posted: unknown[] = []
+    const frame = {
+      contentWindow: {
+        postMessage: (payload: unknown) => posted.push(payload),
+      },
+    } as unknown as HTMLIFrameElement
+    openProfile(frame)
+    expect(posted[0]).toEqual({ source: "ead-pfm-host", type: "openMyProfile" })
   })
 
   test("selectPfmSubSchema and hostClipboardCommand post host messages", () => {
@@ -821,6 +855,82 @@ describe("ead i18n + env + mcp", () => {
       [11, true, 1],
       [12, true, 0],
     ])
+  })
+
+  test("loadPlan reads EAD plan names only", async () => {
+    const ok = (async () =>
+      new Response(JSON.stringify({ effectivePlan: { name: "EAD 1.2", nameSuffix: "  Plus  " } }))) as unknown as typeof fetch
+    expect(await loadPlan("token", ok)).toEqual({ name: "EAD 1.2", suffix: "Plus" })
+    const skip = (async () =>
+      new Response(JSON.stringify({ effectivePlan: { name: "Premium" } }))) as unknown as typeof fetch
+    expect(await loadPlan("token", skip)).toBeUndefined()
+  })
+
+  test("sendChat drafts and does not auto-submit", async () => {
+    const drafts: string[] = []
+    const set = (prompt: { type: string; content?: string }[]) => {
+      drafts.push(prompt[0]?.content ?? "")
+    }
+    expect(await sendChat({ text: " playbook ", set })).toBe(true)
+    expect(drafts).toEqual(["playbook"])
+    expect(await sendChat({ text: "   ", set })).toBe(false)
+  })
+
+  test("plan spec is an openai-compatible EAD gateway", () => {
+    applyEnv("production")
+    expect(PLAN).toBe("ead")
+    expect(gateway()).toBe("https://eadfm.com/v1")
+    expect(spec("EAD 2.1")).toEqual({
+      npm: "@ai-sdk/openai-compatible",
+      name: "EAD",
+      options: { baseURL: "https://eadfm.com/v1" },
+      models: { "EAD 2.1": { name: "EAD 2.1" } },
+    })
+    expect(match(spec("EAD 2.1"), "EAD 2.1")).toBe(true)
+    expect(match(spec("EAD 2.1"), "EAD 1.2")).toBe(false)
+  })
+
+  test("apply registers the plan once", async () => {
+    let key = ""
+    const auth = {
+      set: async (input: { providerID: string; auth: { type: "api"; key: string } }) => {
+        key = `${input.providerID}:${input.auth.key}`
+      },
+      remove: async () => undefined,
+    }
+    const calls: unknown[] = []
+    const save = async (config: unknown) => {
+      calls.push(config)
+    }
+    await apply({ token: "tok", name: "EAD 2.1", auth, save })
+    expect(key).toBe("ead:tok")
+    expect(calls).toHaveLength(1)
+    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1") })
+    expect(calls).toHaveLength(1)
+    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1"), disabled: ["ead"] })
+    expect(calls).toEqual([
+      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
+      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
+    ])
+  })
+
+  test("drop disables the plan provider", async () => {
+    let gone = 0
+    const auth = {
+      set: async () => undefined,
+      remove: async () => {
+        gone++
+      },
+    }
+    const calls: unknown[] = []
+    const save = async (config: unknown) => {
+      calls.push(config)
+    }
+    await drop({ auth, save })
+    expect(gone).toBe(1)
+    expect(calls).toEqual([{ disabled_providers: ["ead"] }])
+    await drop({ auth, save, disabled: ["ead"] })
+    expect(calls).toHaveLength(1)
   })
 
   test("diag pipeline records ok and fail steps", () => {

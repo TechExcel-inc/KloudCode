@@ -1,13 +1,17 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createEffect, createSignal } from "solid-js"
+import { createEffect, createSignal, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
+import { loadPlan } from "./api"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
 import { tokenExpired } from "./auth"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
+import { apply as applyPlan, drop as dropPlan, PLAN } from "./plan"
 import { applyEnv, eadApi, type Env } from "./urls"
 
 type View = "pfm" | "source"
@@ -117,6 +121,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
   name: "Ead",
   init: () => {
     bindEadHttp(usePlatform())
+    const sdk = useGlobalSDK()
+    const sync = useGlobalSync()
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
     const [treeTick, setTreeTick] = createSignal(0)
 
@@ -151,6 +157,36 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       setStore("token", "")
       setStore("tokenApiUrl", "")
       setStore("pilotBust", (n) => (n ?? 0) + 1)
+    })
+
+    let linked = ""
+    let inflight = ""
+    createEffect(() => {
+      if (!ready() || !sync.ready) return
+      const token = (store.token ?? "").trim()
+      const auth = sdk.client.auth
+      const save = (config: Parameters<typeof sync.updateConfig>[0]) => sync.updateConfig(config)
+      if (!token) {
+        inflight = ""
+        if (!linked) return
+        linked = ""
+        const off = untrack(() => sync.data.config.disabled_providers)
+        void dropPlan({ auth, save, disabled: off })
+        return
+      }
+      if (linked === token || inflight === token) return
+      inflight = token
+      void (async () => {
+        const row = await loadPlan(token)
+        if ((store.token ?? "").trim() !== token) return
+        if (!row) return
+        const cfg = untrack(() => sync.data.config.provider?.[PLAN])
+        const off = untrack(() => sync.data.config.disabled_providers)
+        await applyPlan({ token, name: row.name, auth, save, cfg, disabled: off })
+        if ((store.token ?? "").trim() === token) linked = token
+      })().finally(() => {
+        if (inflight === token) inflight = ""
+      })
     })
 
     const writeChrome = () => {

@@ -1,5 +1,4 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import { useParams } from "@solidjs/router"
 import { createMediaQuery } from "@solid-primitives/media"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -74,7 +73,6 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
   const prompt = usePrompt()
   const sdk = useSDK()
   const server = useServer()
-  const params = useParams()
   const ead = useEad()
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const [frame, setFrame] = createSignal<HTMLIFrameElement>()
@@ -152,7 +150,9 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     queuePilot(next)
     setAction(next)
     openPilot(layout.pluginPanel)
-    applyPilotAction(frame(), next, product())
+    const fire = () => applyPilotAction(frame(), next, product())
+    fire()
+    if (next.kind === "profile") [80, 320, 900].forEach((ms) => window.setTimeout(fire, ms))
   }
 
   createEffect(() => {
@@ -165,13 +165,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     onCleanup(stop)
   })
 
-  const chat = async (text: string, auto = true) =>
+  const chat = async (text: string) =>
     sendChat({
       text,
       set: (next) => prompt.set(next),
-      client: sdk.client,
-      sessionID: params.id,
-      auto,
     })
 
   const push = (el: HTMLIFrameElement | undefined) => {
@@ -180,7 +177,8 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     setUiLanguage(el, ead.language())
     requestSessionSync(el)
     pingHost(el)
-    const pending = takePilot() ?? action() ?? selection()
+    const held = action()
+    const pending = held?.kind === "profile" ? held : (takePilot() ?? held ?? selection())
     if (pending) setAction(pending)
     applyPilotAction(el, pending ?? { kind: "dashboard" }, product())
     const pid = ead.productId()
@@ -547,11 +545,11 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             if (label === "injectExploreEadFunctions") {
               postInjectResult(el, {
                 requestId: requestId || "",
-                ok: true,
-                submitted: ok,
+                ok,
+                submitted: false,
                 message: ok
-                  ? "Optimize EAD & PFM prompt sent to chat — complete discovery (POST coding-tool-discovery)."
-                  : "Optimize EAD & PFM is in chat — press Send if it did not auto-submit, then finish the playbook.",
+                  ? "Optimize EAD & PFM is in chat — press Send if it did not auto-submit, then finish the playbook."
+                  : "Optimize EAD & PFM playbook is empty.",
               })
               return
             }
@@ -559,7 +557,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             if (label === "injectAiFindApi") return
             showToast({
               title: "EAD Pilot",
-              description: ok ? `${label} sent to chat.` : `${label} drafted in composer.`,
+              description: `${label} drafted in composer.`,
               variant: "success",
             })
           })
@@ -593,12 +591,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               eadEntityId: eid ?? undefined,
               message: "Prerequisite passed. Starting Test Case AI Improve…",
             })
-            const ok = await chat(playbook)
+            await chat(playbook)
             showToast({
               title: "EAD Pilot",
-              description: ok
-                ? "Improve test cases playbook sent to chat."
-                : "Improve test cases playbook drafted in composer.",
+              description: "Improve test cases playbook drafted in composer.",
               variant: "success",
             })
           })()
@@ -618,15 +614,13 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
               return
             }
             postLifecycle(el, requestId, "request_received", "AI coding jobs request received by plugin.")
-            postLifecycle(el, requestId, "dispatching", "Sending AI coding jobs request to chat...")
-            const submitted = await chat(playbook)
+            postLifecycle(el, requestId, "dispatching", "Drafting AI coding jobs request in chat...")
+            await chat(playbook)
             postLifecycle(
               el,
               requestId,
-              submitted ? "submitted" : "drafted",
-              submitted
-                ? "AI coding jobs request sent to chat. MCP tools can run now."
-                : "AI coding jobs request drafted in chat — review and submit.",
+              "drafted",
+              "AI coding jobs request drafted in chat — review and submit.",
             )
             if (raw.executeReconcile !== true) {
               postLifecycle(el, requestId, "execution_skipped", "AI coding jobs execution skipped (executeReconcile=false).")
