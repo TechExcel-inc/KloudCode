@@ -50,6 +50,7 @@ type State = {
   language: Lang
   env: Env
   mcpEntry: string
+  coding: boolean
   pilotBust: number
   eadScript: string
   aiPrompt: string
@@ -86,6 +87,7 @@ const empty: State = {
   language: "zh",
   env: "production",
   mcpEntry: DEFAULT_MCP_ENTRY,
+  coding: true,
   pilotBust: 0,
   eadScript: "",
   aiPrompt: "",
@@ -164,9 +166,10 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
     createEffect(() => {
       if (!ready() || !sync.ready) return
       const token = (store.token ?? "").trim()
+      const on = store.coding !== false
       const auth = sdk.client.auth
       const save = (config: Parameters<typeof sync.updateConfig>[0]) => sync.updateConfig(config)
-      if (!token) {
+      if (!token || !on) {
         inflight = ""
         if (!linked) return
         linked = ""
@@ -179,11 +182,14 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       void (async () => {
         const row = await loadPlan(token)
         if ((store.token ?? "").trim() !== token) return
+        if (untrack(() => store.coding) === false) return
         if (!row) return
         const cfg = untrack(() => sync.data.config.provider?.[PLAN])
         const off = untrack(() => sync.data.config.disabled_providers)
         await applyPlan({ token, name: row.name, auth, save, cfg, disabled: off })
-        if ((store.token ?? "").trim() === token) linked = token
+        if ((store.token ?? "").trim() !== token) return
+        if (untrack(() => store.coding) === false) return
+        linked = token
       })().finally(() => {
         if (inflight === token) inflight = ""
       })
@@ -271,6 +277,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       env: (): Env => (store.env === "localhost" ? "localhost" : "production"),
       mcpEntry: () => (store.mcpEntry?.trim() ? store.mcpEntry.trim() : DEFAULT_MCP_ENTRY),
+      coding: () => store.coding !== false,
       pilotBust: () => store.pilotBust ?? 0,
       eadScript: () => store.eadScript ?? "",
       aiPrompt: () => store.aiPrompt ?? "",
@@ -454,6 +461,9 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       setMcpEntry(path: string) {
         setStore("mcpEntry", path.trim())
+      },
+      setCoding(on: boolean) {
+        setStore("coding", on)
       },
       bumpPilot() {
         setStore("pilotBust", (n) => (n ?? 0) + 1)

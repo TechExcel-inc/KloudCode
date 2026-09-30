@@ -92,6 +92,7 @@ type Menu =
   | ""
   | "user"
   | "lang"
+  | "coding"
   | "product"
   | "schema"
   | "setup"
@@ -139,6 +140,20 @@ const IconSpark = () => (
     <path d="M22 5h-4" />
     <path d="M4 17v2" />
     <path d="M5 18H3" />
+  </svg>
+)
+const IconChip = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect width="16" height="16" x="4" y="4" rx="2" />
+    <rect width="6" height="6" x="9" y="9" rx="1" />
+    <path d="M15 2v2" />
+    <path d="M15 20v2" />
+    <path d="M2 15h2" />
+    <path d="M2 9h2" />
+    <path d="M20 15h2" />
+    <path d="M20 9h2" />
+    <path d="M9 2v2" />
+    <path d="M9 20v2" />
   </svg>
 )
 const IconMenu = () => (
@@ -2199,6 +2214,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   classList={{
                     "product-wrap--menu-open": menu() === "product" || menu() === "schema",
                     "product-wrap--user-menu-open": menu() === "user" || menu() === "lang",
+                    "product-wrap--ead-plan-open": menu() === "coding",
                   }}
                 >
                   <div class="product-label-row">
@@ -2206,13 +2222,56 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     <div class="product-label-actions" data-ead-menu>
                       <button
                         type="button"
-                        class="ead-map-ai-find-btn"
+                        class="ead-map-icon-btn"
                         disabled={ead.productId() <= 0 || ead.mapId() <= 0}
-                        onClick={() => launch({ kind: "dashboard" })}
+                        title={
+                          ead.productId() > 0 && ead.mapId() > 0 ? tx("aiPilotDashboardTooltip") : tx("aiPilotDisabled")
+                        }
+                        aria-label={tx("aiPilotDashboard")}
+                        onClick={() => {
+                          closeMenus()
+                          launch({ kind: "dashboard" })
+                        }}
                       >
                         <IconSpark />
-                        <span>{tx("aiPilot")}</span>
                       </button>
+                      <div class="ead-plan-menu-wrap" classList={{ "is-open": menu() === "coding" }} data-ead-menu>
+                        <button
+                          type="button"
+                          class="ead-map-icon-btn"
+                          classList={{ open: menu() === "coding", "is-on": ead.coding() }}
+                          title={tx("aiCodingPlanTooltip")}
+                          aria-label={tx("aiCodingPlan")}
+                          aria-haspopup="menu"
+                          aria-expanded={menu() === "coding"}
+                          onClick={() => setMenu(menu() === "coding" ? "" : "coding")}
+                        >
+                          <IconChip />
+                        </button>
+                        <Show when={menu() === "coding"}>
+                          <ul class="ead-plan-menu" role="menu">
+                            <Show when={plan()}>
+                              <li class="ead-plan-menu-name" title={suffix() ? `${plan()} ${suffix()}` : plan()}>
+                                {plan()}
+                              </li>
+                            </Show>
+                            <li role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                class="ead-plan-menu-item"
+                                disabled={!ead.token() || !plan()}
+                                onClick={() => {
+                                  closeMenus()
+                                  ead.setCoding(!ead.coding())
+                                }}
+                              >
+                                {ead.coding() ? tx("disableAiCodingPlan") : tx("enableAiCodingPlan")}
+                              </button>
+                            </li>
+                          </ul>
+                        </Show>
+                      </div>
                       <div
                         class="nav-user-menu-wrap"
                         classList={{ "is-open": menu() === "user" || menu() === "lang" }}
@@ -2257,20 +2316,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                               </button>
                             </li>
                             <li role="none" class="nav-user-menu-sep" aria-hidden="true" />
-                            <Show when={plan()}>
-                              <li role="none">
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  class="nav-user-menu-item"
-                                  title={suffix() ? `${plan()} ${suffix()}` : plan()}
-                                  onClick={askProfile}
-                                >
-                                  <span>{tx("model")}</span>
-                                  <span class="nav-user-menu-item-meta">{plan()}</span>
-                                </button>
-                              </li>
-                            </Show>
                             <li role="none">
                               <button
                                 type="button"

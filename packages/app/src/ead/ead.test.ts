@@ -54,7 +54,7 @@ import { sendChat } from "./composer"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.253")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.255")
   })
 
   test("rewrite puts the plugin path on the loopback proxy origin", () => {
@@ -792,6 +792,7 @@ describe("ead i18n + env + mcp", () => {
     expect(t("ja", "title")).toContain("マップ")
     expect(t("ko", "title")).toContain("맵")
     expect(t("zh", "aiPilot")).toBe("AI 领航")
+    expect(t("zh", "enableAiCodingPlan")).toContain("启用")
     expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
     expect(t("zh", "confirmPassword")).toBe("确认密码")
     expect(t("en", "createTask")).toContain("task")
