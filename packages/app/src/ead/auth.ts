@@ -1,3 +1,8 @@
+/** Provider API keys (DeepSeek, OpenAI, and similar) start with sk-. They are not sign-in passwords. */
+export function looksLikeProviderApiKey(value: string) {
+  return /^sk[-_]/i.test(value.trim())
+}
+
 export function tokenExpired(token: string) {
   const raw = token.trim()
   if (!raw) return false

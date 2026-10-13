@@ -985,11 +985,50 @@ export async function me(token: string, http: Http = eadHttp()) {
 
 const PLAN = /^EAD \d+\.\d+$/
 
-/** Cursor 1.0.252 — account LLM plan shown in the Map user menu. */
+export type PlanSlots = {
+  easy: string
+  reasoning: string
+  advanced: string
+  vision: string
+}
+
+function pretty(id: string) {
+  return id
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (/^\d/.test(part)) return part
+      if (/^v\d/i.test(part)) return part.charAt(0).toUpperCase() + part.slice(1)
+      if (/^deepseek$/i.test(part)) return "DeepSeek"
+      return part.charAt(0).toUpperCase() + part.slice(1)
+    })
+    .join(" ")
+}
+
+function slots(rows: Array<{ slotKey?: string; modelId?: string }> | undefined): PlanSlots {
+  const out: PlanSlots = { easy: "", reasoning: "", advanced: "", vision: "" }
+  if (!Array.isArray(rows)) return out
+  for (const row of rows) {
+    const key = String(row?.slotKey || "")
+    const id = String(row?.modelId || "").trim()
+    if (!id) continue
+    if (key === "easy") out.easy = pretty(id)
+    else if (key === "reasoning") out.reasoning = pretty(id)
+    else if (key === "advanced") out.advanced = pretty(id)
+    else if (key === "vision") out.vision = pretty(id)
+  }
+  return out
+}
+
+/** Cursor 1.0.279 — account LLM plan shown in the Map coding-plan dialog. */
 export async function loadPlan(token: string, http: Http = eadHttp()) {
   try {
     const data = (await call(http, `/account-settings/llm-plans/assignment`, token)) as {
-      effectivePlan?: { name?: string; nameSuffix?: string }
+      effectivePlan?: {
+        name?: string
+        nameSuffix?: string
+        slots?: Array<{ slotKey?: string; modelId?: string }>
+      }
     }
     const name = String(data.effectivePlan?.name || "").trim()
     if (!PLAN.test(name)) return
@@ -997,7 +1036,8 @@ export async function loadPlan(token: string, http: Http = eadHttp()) {
       .trim()
       .replace(/\s+/g, " ")
       .slice(0, 40)
-    return { name, suffix }
+    const row = slots(data.effectivePlan?.slots)
+    return { name, suffix, model: row.advanced || row.reasoning || row.easy, slots: row }
   } catch {
     return
   }

@@ -45,7 +45,7 @@ import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
-import { tokenExpired } from "./auth"
+import { looksLikeProviderApiKey, tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
 import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "./step-signal"
@@ -54,7 +54,7 @@ import { sendChat } from "./composer"
 
 describe("ead urls", () => {
   test("tracks cursor extension version", () => {
-    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.255")
+    expect(EAD_CURSOR_EXTENSION_VERSION).toBe("1.0.279")
   })
 
   test("rewrite puts the plugin path on the loopback proxy origin", () => {
@@ -174,6 +174,13 @@ describe("ead auth", () => {
     expect(tokenExpired(`${header}.${past}.`)).toBe(true)
     const future = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))
     expect(tokenExpired(`${header}.${future}.`)).toBe(false)
+  })
+
+  test("looksLikeProviderApiKey rejects sk- keys as passwords", () => {
+    expect(looksLikeProviderApiKey("sk-9738d5c0f2de40a3a15adbf5e0d")).toBe(true)
+    expect(looksLikeProviderApiKey("  SK-abc  ")).toBe(true)
+    expect(looksLikeProviderApiKey("secret")).toBe(false)
+    expect(looksLikeProviderApiKey("")).toBe(false)
   })
 })
 
@@ -793,6 +800,8 @@ describe("ead i18n + env + mcp", () => {
     expect(t("ko", "title")).toContain("맵")
     expect(t("zh", "aiPilot")).toBe("AI 领航")
     expect(t("zh", "enableAiCodingPlan")).toContain("启用")
+    expect(t("zh", "eadCodingPlanTitle")).toBe("EAD 编码计划")
+    expect(t("en", "enableEadCodingPlan")).toContain("Enable")
     expect(t("en", "pfmFilterPrefix", { count: 3 })).toContain("3")
     expect(t("zh", "confirmPassword")).toBe("确认密码")
     expect(t("en", "createTask")).toContain("task")
@@ -859,9 +868,28 @@ describe("ead i18n + env + mcp", () => {
   })
 
   test("loadPlan reads EAD plan names only", async () => {
+    const empty = { easy: "", reasoning: "", advanced: "", vision: "" }
     const ok = (async () =>
       new Response(JSON.stringify({ effectivePlan: { name: "EAD 1.2", nameSuffix: "  Plus  " } }))) as unknown as typeof fetch
-    expect(await loadPlan("token", ok)).toEqual({ name: "EAD 1.2", suffix: "Plus" })
+    expect(await loadPlan("token", ok)).toEqual({ name: "EAD 1.2", suffix: "Plus", model: "", slots: empty })
+    const slotted = (async () =>
+      new Response(
+        JSON.stringify({
+          effectivePlan: {
+            name: "EAD 2.1",
+            slots: [
+              { slotKey: "easy", modelId: "deepseek-chat" },
+              { slotKey: "advanced", modelId: "kimi-k2" },
+            ],
+          },
+        }),
+      )) as unknown as typeof fetch
+    expect(await loadPlan("token", slotted)).toEqual({
+      name: "EAD 2.1",
+      suffix: "",
+      model: "Kimi K2",
+      slots: { easy: "DeepSeek Chat", reasoning: "", advanced: "Kimi K2", vision: "" },
+    })
     const skip = (async () =>
       new Response(JSON.stringify({ effectivePlan: { name: "Premium" } }))) as unknown as typeof fetch
     expect(await loadPlan("token", skip)).toBeUndefined()
@@ -891,7 +919,7 @@ describe("ead i18n + env + mcp", () => {
     expect(match(spec("EAD 2.1"), "EAD 1.2")).toBe(false)
   })
 
-  test("apply registers the plan once", async () => {
+  test("apply always saves so the JWT reloads", async () => {
     let key = ""
     const auth = {
       set: async (input: { providerID: string; auth: { type: "api"; key: string } }) => {
@@ -905,11 +933,10 @@ describe("ead i18n + env + mcp", () => {
     }
     await apply({ token: "tok", name: "EAD 2.1", auth, save })
     expect(key).toBe("ead:tok")
-    expect(calls).toHaveLength(1)
-    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1") })
-    expect(calls).toHaveLength(1)
-    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1"), disabled: ["ead"] })
+    await apply({ token: "tok", name: "EAD 2.1", auth, save })
+    await apply({ token: "tok", name: "EAD 2.1", auth, save, disabled: ["ead"] })
     expect(calls).toEqual([
+      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
       { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
       { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
     ])

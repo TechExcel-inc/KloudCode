@@ -76,6 +76,7 @@ import {
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
+import { looksLikeProviderApiKey } from "@/ead/auth"
 import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, eadApi } from "@/ead/urls"
 
 type AuthTab =
@@ -120,7 +121,11 @@ function AuthPass(props: {
         class={field}
         placeholder={props.placeholder}
         value={props.value}
-        onInput={(e) => props.onInput(e.currentTarget.value)}
+        onInput={(e) => {
+          const next = e.currentTarget.value
+          if (looksLikeProviderApiKey(next)) return
+          props.onInput(next)
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") props.onEnter?.()
         }}
@@ -738,6 +743,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [email, setEmail] = createSignal("")
   const [plan, setPlan] = createSignal("")
   const [suffix, setSuffix] = createSignal("")
+  const [model, setModel] = createSignal("")
+  const [slots, setSlots] = createSignal({ easy: "", reasoning: "", advanced: "", vision: "" })
+  const [planOn, setPlanOn] = createSignal(true)
   const [tab, setTab] = createSignal<AuthTab>("signin")
   const [id, setId] = createSignal("")
   const [pass, setPass] = createSignal("")
@@ -1189,6 +1197,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setEmail("")
         setPlan("")
         setSuffix("")
+        setModel("")
+        setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1219,6 +1229,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         if (!live()) return
         setPlan(row?.name || "")
         setSuffix(row?.suffix || "")
+        setModel(row?.model || "")
+        setSlots(row?.slots || { easy: "", reasoning: "", advanced: "", vision: "" })
       })
       const catalog = await loadCatalog(token, fetcher)
       if (!live()) return
@@ -1359,6 +1371,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setEmail("")
         setPlan("")
         setSuffix("")
+        setModel("")
+        setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1456,6 +1470,16 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     const open = menu()
     const dyn = dynMenu()
     if (!open && !dyn) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      e.preventDefault()
+      closeMenus()
+    }
+    document.addEventListener("keydown", onKey)
+    if (open === "coding") {
+      onCleanup(() => document.removeEventListener("keydown", onKey))
+      return
+    }
     const onDoc = (e: Event) => {
       const el = e.target
       if (!(el instanceof Element)) return
@@ -1463,7 +1487,10 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       closeMenus()
     }
     document.addEventListener("pointerdown", onDoc, true)
-    onCleanup(() => document.removeEventListener("pointerdown", onDoc, true))
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onDoc, true)
+      document.removeEventListener("keydown", onKey)
+    })
   })
 
   onCleanup(() => {
@@ -1788,6 +1815,8 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setEmail("")
     setPlan("")
     setSuffix("")
+    setModel("")
+    setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
     setHint(undefined)
     setBanner(null)
     setQuery("")
@@ -1940,6 +1969,29 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setMenu("")
     setPq("")
     void refresh()
+  }
+
+  const planName = () => {
+    const name = plan().trim()
+    const extra = model().trim() || suffix().trim()
+    return name && extra ? `${name} · ${extra}` : name
+  }
+
+  const planTip = () => {
+    const blank = tx("eadCodingPlanSlotEmpty")
+    const row = slots()
+    return [
+      `${tx("eadCodingPlanSlotEasy")}: ${row.easy || blank}`,
+      `${tx("eadCodingPlanSlotReasoning")}: ${row.reasoning || blank}`,
+      `${tx("eadCodingPlanSlotAdvanced")}: ${row.advanced || blank}`,
+      `${tx("eadCodingPlanSlotVision")}: ${row.vision || blank}`,
+    ].join("\n")
+  }
+
+  const submitPlan = () => {
+    if (!ead.token() || planOn() === ead.coding()) return
+    ead.setCoding(planOn())
+    closeMenus()
   }
 
   return (
@@ -2235,42 +2287,27 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                       >
                         <IconSpark />
                       </button>
-                      <div class="ead-plan-menu-wrap" classList={{ "is-open": menu() === "coding" }} data-ead-menu>
+                      <div class="ead-plan-menu-wrap">
                         <button
                           type="button"
-                          class="ead-map-icon-btn"
+                          class="ead-map-icon-btn ead-plan-btn"
                           classList={{ open: menu() === "coding", "is-on": ead.coding() }}
-                          title={tx("aiCodingPlanTooltip")}
-                          aria-label={tx("aiCodingPlan")}
-                          aria-haspopup="menu"
+                          title={tx("eadCodingPlanTitle")}
+                          aria-label={tx("eadCodingPlanTitle")}
+                          aria-haspopup="dialog"
                           aria-expanded={menu() === "coding"}
-                          onClick={() => setMenu(menu() === "coding" ? "" : "coding")}
+                          aria-controls="ead-plan-modal"
+                          onClick={() => {
+                            if (menu() === "coding") {
+                              closeMenus()
+                              return
+                            }
+                            setPlanOn(ead.coding())
+                            setMenu("coding")
+                          }}
                         >
                           <IconChip />
                         </button>
-                        <Show when={menu() === "coding"}>
-                          <ul class="ead-plan-menu" role="menu">
-                            <Show when={plan()}>
-                              <li class="ead-plan-menu-name" title={suffix() ? `${plan()} ${suffix()}` : plan()}>
-                                {plan()}
-                              </li>
-                            </Show>
-                            <li role="none">
-                              <button
-                                type="button"
-                                role="menuitem"
-                                class="ead-plan-menu-item"
-                                disabled={!ead.token() || !plan()}
-                                onClick={() => {
-                                  closeMenus()
-                                  ead.setCoding(!ead.coding())
-                                }}
-                              >
-                                {ead.coding() ? tx("disableAiCodingPlan") : tx("enableAiCodingPlan")}
-                              </button>
-                            </li>
-                          </ul>
-                        </Show>
                       </div>
                       <div
                         class="nav-user-menu-wrap"
@@ -3342,6 +3379,51 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                   <p class="error break-words">{err()}</p>
                 </Show>
               </div>
+
+              <Show when={menu() === "coding"}>
+                <div class="ead-plan-modal-backdrop" onClick={() => closeMenus()}>
+                  <div
+                    id="ead-plan-modal"
+                    class="project-cute-popup ead-plan-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="ead-plan-modal-title"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p class="project-cute-popup-title" id="ead-plan-modal-title">
+                      {tx("eadCodingPlanTitle")}
+                    </p>
+                    <Show when={planName()}>
+                      <p class="ead-plan-modal-name" title={planTip()}>
+                        {planName()}
+                      </p>
+                    </Show>
+                    <p class="project-cute-popup-text">{tx("eadCodingPlanBody")}</p>
+                    <label class="ead-plan-modal-check">
+                      <input
+                        type="checkbox"
+                        checked={planOn()}
+                        disabled={!ead.token()}
+                        onChange={(e) => setPlanOn(e.currentTarget.checked)}
+                      />
+                      <span>{tx("enableEadCodingPlan")}</span>
+                    </label>
+                    <div class="project-cute-popup-actions">
+                      <button type="button" class="context-btn" onClick={() => closeMenus()}>
+                        {tx("eadCodingPlanCancel")}
+                      </button>
+                      <button
+                        type="button"
+                        class="context-btn primary"
+                        disabled={!ead.token() || planOn() === ead.coding()}
+                        onClick={submitPlan}
+                      >
+                        {tx("eadCodingPlanSubmit")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Show>
 
               <Show when={editOpen()}>
                 <div class="project-cute-popup-backdrop" onClick={() => setEditOpen(false)}>
