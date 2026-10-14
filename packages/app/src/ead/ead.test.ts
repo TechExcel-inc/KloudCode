@@ -919,7 +919,7 @@ describe("ead i18n + env + mcp", () => {
     expect(match(spec("EAD 2.1"), "EAD 1.2")).toBe(false)
   })
 
-  test("apply always saves so the JWT reloads", async () => {
+  test("apply skips save when the plan is already registered", async () => {
     let key = ""
     const auth = {
       set: async (input: { providerID: string; auth: { type: "api"; key: string } }) => {
@@ -933,10 +933,9 @@ describe("ead i18n + env + mcp", () => {
     }
     await apply({ token: "tok", name: "EAD 2.1", auth, save })
     expect(key).toBe("ead:tok")
-    await apply({ token: "tok", name: "EAD 2.1", auth, save })
-    await apply({ token: "tok", name: "EAD 2.1", auth, save, disabled: ["ead"] })
+    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1") })
+    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1"), disabled: ["ead"] })
     expect(calls).toEqual([
-      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
       { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
       { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
     ])

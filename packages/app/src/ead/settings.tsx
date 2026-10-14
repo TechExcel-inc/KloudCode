@@ -11,7 +11,7 @@ import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
 import { tokenExpired } from "./auth"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
-import { apply as applyPlan, drop as dropPlan } from "./plan"
+import { apply as applyPlan, drop as dropPlan, PLAN } from "./plan"
 import { applyEnv, eadApi, type Env } from "./urls"
 
 type View = "pfm" | "source"
@@ -185,8 +185,9 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         if ((store.token ?? "").trim() !== token) return
         if (untrack(() => store.coding) === false) return
         if (!row) return
+        const cfg = untrack(() => sync.data.config.provider?.[PLAN])
         const off = untrack(() => sync.data.config.disabled_providers)
-        await applyPlan({ token, name: row.name, auth, save, disabled: off })
+        await applyPlan({ token, name: row.name, auth, save, cfg, disabled: off })
         if ((store.token ?? "").trim() !== token) return
         if (untrack(() => store.coding) === false) return
         linked = token

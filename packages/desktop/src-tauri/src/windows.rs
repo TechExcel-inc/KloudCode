@@ -68,7 +68,9 @@ impl MainWindow {
 
         let window = window_builder.build()?;
 
-        // Ensure window is focused after creation (e.g., after update/relaunch)
+        // Saved size is restored during build. Maximize after that, without entering fullscreen.
+        let _ = window.set_fullscreen(false);
+        let _ = window.maximize();
         let _ = window.set_focus();
 
         setup_window_state_listener(app, &window);

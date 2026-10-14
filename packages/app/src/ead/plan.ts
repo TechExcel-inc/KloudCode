@@ -45,6 +45,7 @@ export async function apply(opts: {
   name: string
   auth: Auth
   save: Save
+  cfg?: unknown
   disabled?: string[]
 }) {
   const token = opts.token.trim()
@@ -55,6 +56,7 @@ export async function apply(opts: {
     auth: { type: "api", key: token },
   })
   const off = opts.disabled ?? []
+  if (match(opts.cfg, name) && !off.includes(PLAN)) return
   await opts.save({
     provider: { [PLAN]: spec(name) },
     disabled_providers: off.filter((id) => id !== PLAN),
