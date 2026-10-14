@@ -3,7 +3,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
-import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { popularProviders, providerRank, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -38,6 +38,8 @@ export const SettingsProviders: Component = () => {
     return providers
       .connected()
       .filter((p) => p.id !== "opencode" || Object.values(p.models).find((m) => m.cost?.input))
+      .slice()
+      .sort((a, b) => providerRank(a.id) - providerRank(b.id) || a.name.localeCompare(b.name))
   })
 
   const popular = createMemo(() => {

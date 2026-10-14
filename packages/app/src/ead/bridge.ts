@@ -196,6 +196,11 @@ export function syncAuth(frame: HTMLIFrameElement | undefined, token: string) {
   postToFrame(frame, { type: "eadPfmSyncAuthToken", token: t })
 }
 
+/** Explicit Map logout. Empty authTokenSync is ignored; hasToken:false clears Pilot storage. */
+export function dropAuth(frame: HTMLIFrameElement | undefined) {
+  postToFrame(frame, { type: "authSyncComplete", hasToken: false, token: "" })
+}
+
 /** Cursor requestAuthSync always ACKs — including empty (hasToken:false). */
 export function syncAuthStatus(frame: HTMLIFrameElement | undefined, token: string) {
   const t = token.trim()

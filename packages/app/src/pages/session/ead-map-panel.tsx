@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -113,24 +113,54 @@ function AuthPass(props: {
   onInput: (v: string) => void
   onToggle: () => void
   onEnter?: () => void
+  name?: string
+  complete?: string
 }) {
+  let el: HTMLInputElement | undefined
+  const sync = () => {
+    if (!el) return
+    const next = el.value
+    if (looksLikeProviderApiKey(next)) {
+      el.value = props.value && !looksLikeProviderApiKey(props.value) ? props.value : ""
+      return
+    }
+    if (next !== props.value) props.onInput(next)
+  }
+  onMount(() => {
+    if (el && !el.value && props.value) el.value = props.value
+    queueMicrotask(sync)
+    requestAnimationFrame(sync)
+  })
   return (
     <div class="auth-input-wrap">
       <input
+        ref={el}
         type={props.show ? "text" : "password"}
         class={field}
+        name={props.name}
+        autocomplete={props.complete}
         placeholder={props.placeholder}
-        value={props.value}
-        onInput={(e) => {
-          const next = e.currentTarget.value
-          if (looksLikeProviderApiKey(next)) return
-          props.onInput(next)
-        }}
+        onInput={sync}
+        onChange={sync}
+        onFocus={sync}
         onKeyDown={(e) => {
-          if (e.key === "Enter") props.onEnter?.()
+          if (e.key !== "Enter" || !props.onEnter) return
+          e.preventDefault()
+          sync()
+          props.onEnter()
         }}
       />
-      <button type="button" class="auth-eye" onClick={props.onToggle}>
+      <button
+        type="button"
+        class="auth-eye"
+        onClick={() => {
+          const keep = el?.value ?? ""
+          props.onToggle()
+          queueMicrotask(() => {
+            if (el && keep && el.value !== keep) el.value = keep
+          })
+        }}
+      >
         {props.show ? "◌" : "◎"}
       </button>
     </div>
@@ -1700,16 +1730,32 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     await loadOwnerMembers()
   }
 
-  const onLogin = async () => {
+  const onLogin = async (user = id(), secret = pass()) => {
+    const name = user.trim()
+    if (looksLikeProviderApiKey(secret)) {
+      setPass("")
+      setErr(tx("notPassword"))
+      return
+    }
+    setId(name)
+    setPass(secret)
     setBusy(true)
     setErr("")
     try {
-      await afterAuth(await login(id(), pass(), http()))
+      await afterAuth(await login(name, secret, http()))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  const submitLogin = (e: Event) => {
+    e.preventDefault()
+    const form = e.currentTarget
+    if (!(form instanceof HTMLFormElement)) return
+    const data = new FormData(form)
+    void onLogin(String(data.get("username") ?? ""), String(data.get("password") ?? ""))
   }
 
   const onSendCode = async (intent: "signup" | "reset") => {
@@ -2041,33 +2087,41 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     </span>
                   </div>
                   <Show when={tab() === "signin"}>
-                    <p class="auth-title">{tx("signIn")}</p>
-                    <div class="auth-label-row">
-                      <label class="auth-label">{tx("idPlaceholder")}</label>
-                    </div>
-                    <input
-                      class={field}
-                      placeholder={tx("idPlaceholder")}
-                      value={id()}
-                      onInput={(e) => setId(e.currentTarget.value)}
-                    />
-                    <div class="auth-label-row">
-                      <label class="auth-label">{tx("password")}</label>
-                      <button type="button" class="auth-link" onClick={() => setTab("forgot")}>
-                        {tx("forgot")}
+                    <form class="auth-form" autocomplete="on" onSubmit={submitLogin}>
+                      <p class="auth-title">{tx("signIn")}</p>
+                      <div class="auth-label-row">
+                        <label class="auth-label">{tx("idPlaceholder")}</label>
+                      </div>
+                      <input
+                        class={field}
+                        name="username"
+                        autocomplete="username"
+                        placeholder={tx("idPlaceholder")}
+                        ref={(node) => {
+                          if (!node.value && id()) node.value = id()
+                        }}
+                        onInput={(e) => setId(e.currentTarget.value)}
+                        onChange={(e) => setId(e.currentTarget.value)}
+                      />
+                      <div class="auth-label-row">
+                        <label class="auth-label">{tx("password")}</label>
+                        <button type="button" class="auth-link" onClick={() => setTab("forgot")}>
+                          {tx("forgot")}
+                        </button>
+                      </div>
+                      <AuthPass
+                        value={pass()}
+                        show={showPass()}
+                        placeholder={tx("password")}
+                        name="password"
+                        complete="current-password"
+                        onInput={setPass}
+                        onToggle={() => setShowPass((v) => !v)}
+                      />
+                      <button type="submit" class="auth-primary" disabled={busy()}>
+                        {tx("signIn")}
                       </button>
-                    </div>
-                    <AuthPass
-                      value={pass()}
-                      show={showPass()}
-                      placeholder={tx("password")}
-                      onInput={setPass}
-                      onToggle={() => setShowPass((v) => !v)}
-                      onEnter={() => void onLogin()}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onLogin()}>
-                      {tx("signIn")}
-                    </button>
+                    </form>
                     <div class="auth-divider">{tx("orContinue")}</div>
                     <div class="auth-oauth">
                       <button type="button" onClick={() => soon("Google")}>

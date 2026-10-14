@@ -6,7 +6,7 @@ root="$(cd "$(dirname "$0")/../../.." && pwd)"
 desktop="$root/packages/desktop"
 out="$root/dist-mac"
 cfg="$desktop/src-tauri/tauri.unsigned.conf.json"
-ver="${OPENCODE_VERSION:-1.4.3}"
+pkg="$desktop/package.json"
 target="x86_64-apple-darwin"
 
 cd "$root"
@@ -60,8 +60,51 @@ EOF
   echo "wrote $cfg"
 fi
 
+prev="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$pkg")"
+if [[ -n "${OPENCODE_VERSION:-}" ]]; then
+  ver="$OPENCODE_VERSION"
+else
+  ver="$(python3 -c '
+import sys
+cur, kind = sys.argv[1], sys.argv[2]
+parts = cur.split(".")
+if len(parts) != 3 or not all(p.isdigit() for p in parts):
+    raise SystemExit(f"error: unsupported version {cur}")
+major, minor, patch = (int(p) for p in parts)
+if kind == "major":
+    major, minor, patch = major + 1, 0, 0
+elif kind == "minor":
+    minor, patch = minor + 1, 0
+elif kind == "patch":
+    patch += 1
+else:
+    raise SystemExit("error: OPENCODE_BUMP must be patch, minor, or major")
+print(f"{major}.{minor}.{patch}")
+' "$prev" "${OPENCODE_BUMP:-patch}")"
+fi
+if [[ "$ver" == "$prev" ]]; then
+  echo "error: version is already $ver; unset OPENCODE_VERSION to auto-bump" >&2
+  exit 1
+fi
+bak="$(mktemp)"
+cp "$pkg" "$bak"
+keep=0
+cleanup() {
+  if [[ "$keep" != 1 && -f "$bak" ]]; then
+    cp "$bak" "$pkg"
+  fi
+  rm -f "$bak"
+}
+trap cleanup EXIT
+python3 -c '
+import pathlib, sys
+path, prev, ver = sys.argv[1:]
+file = pathlib.Path(path)
+file.write_text(file.read_text().replace(f"\"version\": \"{prev}\"", f"\"version\": \"{ver}\"", 1))
+' "$pkg" "$prev" "$ver"
 export OPENCODE_CHANNEL="${OPENCODE_CHANNEL:-latest}"
 export OPENCODE_VERSION="$ver"
+echo "==> version $prev -> $ver"
 export RUST_TARGET="$target"
 export TAURI_ENV_TARGET_TRIPLE="$target"
 export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
@@ -108,6 +151,7 @@ rm -rf "$out/$(basename "$app")"
 cp -R "$app" "$out/"
 cp "$dmg" "$out/"
 
+keep=1
 echo "==> done"
 ls -lah "$out/$(basename "$app")" "$out/$(basename "$dmg")"
 echo "output: $out"

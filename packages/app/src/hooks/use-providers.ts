@@ -4,8 +4,8 @@ import { useParams } from "@solidjs/router"
 import { createMemo } from "solid-js"
 
 export const popularProviders = [
-  "opencode",
   "ead",
+  "opencode",
   "opencode-go",
   "anthropic",
   "github-copilot",
@@ -15,6 +15,12 @@ export const popularProviders = [
   "vercel",
 ]
 const popularProviderSet = new Set(popularProviders)
+
+export function providerRank(id: string) {
+  const i = popularProviders.indexOf(id)
+  if (i < 0) return popularProviders.length
+  return i
+}
 
 export function useProviders() {
   const globalSync = useGlobalSync()

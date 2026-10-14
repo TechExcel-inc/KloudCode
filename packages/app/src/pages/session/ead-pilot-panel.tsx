@@ -17,6 +17,7 @@ import { loadContext, loadSubtreePaths, loadTeamMembers, reconcileJobs } from "@
 import {
   applyPilotAction,
   buildPilotShellUrl,
+  dropAuth,
   handlePluginMessage,
   hostClipboardCommand,
   isEadOrigin,
@@ -173,6 +174,14 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
 
   const push = (el: HTMLIFrameElement | undefined) => {
     if (!el) return
+    if (!ead.token()) {
+      if (!ead.muted()) {
+        requestSessionSync(el)
+        return
+      }
+      dropAuth(el)
+      return
+    }
     syncAuth(el, ead.token())
     setUiLanguage(el, ead.language())
     requestSessionSync(el)
@@ -376,7 +385,10 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
       const msg = data as Record<string, unknown>
 
       handlePluginMessage(msg, {
-        setToken: (token) => ead.setToken(token),
+        setToken: (token) => {
+          if (ead.muted()) return
+          ead.setToken(token)
+        },
         setNode: (id, name) => {
           ead.setView("pfm")
           ead.setNode(id, name)

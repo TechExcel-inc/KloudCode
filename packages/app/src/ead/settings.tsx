@@ -126,6 +126,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
     const sdk = useGlobalSDK()
     const sync = useGlobalSync()
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
+    let mute = false
     const [treeTick, setTreeTick] = createSignal(0)
 
     const flushFilters = () => {
@@ -246,6 +247,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
 
     return {
       ready,
+      muted: () => mute,
       token: () => {
         const raw = (store.token ?? "").trim()
         if (!raw) return ""
@@ -294,10 +296,12 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       workContextId: () => store.workContextId ?? 0,
       setToken(token: string) {
         const next = token.trim()
+        if (next) mute = false
         setStore("token", next)
         setStore("tokenApiUrl", next ? eadApi() : "")
       },
       clearToken() {
+        mute = true
         setStore("token", "")
         setStore("tokenApiUrl", "")
         setStore("eadScript", "")
@@ -305,6 +309,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         setStore("contextMarkdown", "")
       },
       signOut() {
+        mute = true
         setStore("token", "")
         setStore("tokenApiUrl", "")
         clearSession()

@@ -1059,6 +1059,11 @@
   padding: 4px 0 16px;
 }
 
+[data-ead-map] .auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
 [data-ead-map] .auth-card {
   margin: 12px auto 24px;
   width: min(100%, 320px);
