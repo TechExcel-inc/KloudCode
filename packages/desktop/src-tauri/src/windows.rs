@@ -56,8 +56,10 @@ impl MainWindow {
         .title("KloudCode")
         .disable_drag_drop_handler()
         .zoom_hotkeys_enabled(false)
-        .visible(true)
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(960.0, 640.0)
         .maximized(true)
+        .visible(true)
         .initialization_script(format!(
             r#"
             window.__OPENCODE__ ??= {{}};
@@ -68,9 +70,6 @@ impl MainWindow {
 
         let window = window_builder.build()?;
 
-        // Saved size is restored during build. Maximize after that, without entering fullscreen.
-        let _ = window.set_fullscreen(false);
-        let _ = window.maximize();
         let _ = window.set_focus();
 
         setup_window_state_listener(app, &window);
