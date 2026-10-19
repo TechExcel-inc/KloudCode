@@ -15,6 +15,7 @@ import {
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
+import { useProjectActivity } from "@/context/project-activity"
 import { useGlobalSync } from "@/context/global-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/util/encode"
@@ -123,6 +124,7 @@ export default function Layout(props: ParentProps) {
   const platform = usePlatform()
   const settings = useSettings()
   const server = useServer()
+  const activity = useProjectActivity()
   const notification = useNotification()
   const permission = usePermission()
   const navigate = useNavigate()
@@ -295,6 +297,12 @@ export default function Layout(props: ParentProps) {
   createEffect(() => {
     if (!layout.sidebar.opened()) return
     setHoverProject(undefined)
+  })
+
+  // Whatever way a project is opened, its page puts it in the sidebar, even after it was hidden.
+  createEffect(() => {
+    const dir = decode64(params.dir)
+    if (dir?.startsWith("/") || /^[A-Za-z]:[\\/]/.test(dir ?? "")) layout.projects.open(dir!)
   })
 
   createEffect(() => {
@@ -587,16 +595,13 @@ export default function Layout(props: ParentProps) {
     if (!untrack(() => state.autoselect)) return
 
     const list = layout.projects.list()
-    const last = server.projects.last()
+    // The signed-in person's last active project wins; otherwise the last one this app opened.
+    const recent = await activity.recent({ limit: 1 })
+    const last = recent[0]?.worktree ?? server.projects.last()
 
-    if (list.length === 0) {
-      if (!last) return
-      await openProject(last, true)
-    } else {
-      const next = list.find((project) => project.worktree === last) ?? list[0]
-      if (!next) return
-      await openProject(next.worktree, true)
-    }
+    const next = last ?? list[0]?.worktree
+    if (!next) return
+    await openProject(next, true)
   })
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {

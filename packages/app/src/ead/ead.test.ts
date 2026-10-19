@@ -45,7 +45,7 @@ import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
-import { looksLikeProviderApiKey, RENEW, renewDue, tokenExpired, tokenExpiry } from "./auth"
+import { looksLikeProviderApiKey, RENEW, renewDue, tokenExpired, tokenExpiry, tokenUser } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { prober, resolveMcpEntry } from "./ensure-mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
@@ -175,6 +175,14 @@ describe("ead auth", () => {
     expect(tokenExpired(`${header}.${past}.`)).toBe(true)
     const future = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))
     expect(tokenExpired(`${header}.${future}.`)).toBe(false)
+  })
+
+  test("tokenUser reads the Pilot user id", () => {
+    const header = btoa(JSON.stringify({ alg: "none" }))
+    expect(tokenUser(`${header}.${btoa(JSON.stringify({ sub: "42", username: "tierenz" }))}.`)).toBe("42")
+    expect(tokenUser(`${header}.${btoa(JSON.stringify({ sub: 7 }))}.`)).toBe("7")
+    expect(tokenUser(`${header}.${btoa(JSON.stringify({ exp: 1 }))}.`)).toBe("")
+    expect(tokenUser("")).toBe("")
   })
 
   test("renewDue renews shortly before expiry and after it", () => {

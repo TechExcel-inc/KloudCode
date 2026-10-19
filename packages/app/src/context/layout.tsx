@@ -2,7 +2,6 @@ import { createStore, produce } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { useLocation } from "@solidjs/router"
 import { useGlobalSync } from "./global-sync"
 import { useGlobalSDK } from "./global-sdk"
 import { useServer } from "./server"
@@ -613,13 +612,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       globalSync.project.loadSessions(root)
       server.projects.open(root)
     }
-
-    // Whatever way a project is opened, its page puts it in the sidebar, even after it was hidden.
-    const location = useLocation()
-    createEffect(() => {
-      const dir = decode64(location.pathname.split("/")[1])
-      if (dir?.startsWith("/") || /^[A-Za-z]:[\\/]/.test(dir ?? "")) open(dir!)
-    })
 
     return {
       ready,

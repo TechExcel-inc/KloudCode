@@ -12,6 +12,11 @@ export type BadRequestError = {
   success: false
 }
 
+export type ProjectActivity = {
+  directory: string
+  timeActive: number
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -2176,6 +2181,56 @@ export type GlobalEadPluginProxyResponses = {
 }
 
 export type GlobalEadPluginProxyResponse = GlobalEadPluginProxyResponses[keyof GlobalEadPluginProxyResponses]
+
+export type GlobalProjectActivityListData = {
+  body?: never
+  path?: never
+  query?: {
+    user?: string
+    limit?: number
+    query?: string
+  }
+  url: "/global/project-activity"
+}
+
+export type GlobalProjectActivityListResponses = {
+  /**
+   * Recent project folders
+   */
+  200: Array<ProjectActivity>
+}
+
+export type GlobalProjectActivityListResponse =
+  GlobalProjectActivityListResponses[keyof GlobalProjectActivityListResponses]
+
+export type GlobalProjectActivityTouchData = {
+  body?: {
+    user?: string
+    directory: string
+  }
+  path?: never
+  query?: never
+  url: "/global/project-activity"
+}
+
+export type GlobalProjectActivityTouchErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalProjectActivityTouchError = GlobalProjectActivityTouchErrors[keyof GlobalProjectActivityTouchErrors]
+
+export type GlobalProjectActivityTouchResponses = {
+  /**
+   * Recorded
+   */
+  200: boolean
+}
+
+export type GlobalProjectActivityTouchResponse =
+  GlobalProjectActivityTouchResponses[keyof GlobalProjectActivityTouchResponses]
 
 export type GlobalHealthData = {
   body?: never

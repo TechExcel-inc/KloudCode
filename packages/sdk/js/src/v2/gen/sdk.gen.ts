@@ -54,6 +54,9 @@ import type {
   GlobalEadPluginProxyResponses,
   GlobalEventResponses,
   GlobalHealthResponses,
+  GlobalProjectActivityListResponses,
+  GlobalProjectActivityTouchErrors,
+  GlobalProjectActivityTouchResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeResponses,
@@ -254,6 +257,79 @@ export class Ead extends HeyApiClient {
   }
 }
 
+export class ProjectActivity extends HeyApiClient {
+  /**
+   * Recent projects
+   *
+   * Project folders the signed-in user used most recently, newest first.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      user?: string
+      limit?: number
+      query?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "user" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "query" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GlobalProjectActivityListResponses, unknown, ThrowOnError>({
+      url: "/global/project-activity",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Mark project active
+   *
+   * Record that the signed-in user just opened, closed, or worked in a project folder.
+   */
+  public touch<ThrowOnError extends boolean = false>(
+    parameters?: {
+      user?: string
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "user" },
+            { in: "body", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      GlobalProjectActivityTouchResponses,
+      GlobalProjectActivityTouchErrors,
+      ThrowOnError
+    >({
+      url: "/global/project-activity",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Config extends HeyApiClient {
   /**
    * Get global configuration
@@ -356,6 +432,11 @@ export class Global extends HeyApiClient {
   private _ead?: Ead
   get ead(): Ead {
     return (this._ead ??= new Ead({ client: this.client }))
+  }
+
+  private _projectActivity?: ProjectActivity
+  get projectActivity(): ProjectActivity {
+    return (this._projectActivity ??= new ProjectActivity({ client: this.client }))
   }
 
   private _config?: Config

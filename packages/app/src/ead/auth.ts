@@ -18,6 +18,18 @@ export function tokenExpiry(token: string) {
   }
 }
 
+/** The EAD Pilot user id (`sub`) in a login token, or "" when there is none. */
+export function tokenUser(token: string) {
+  const part = token.trim().split(".")[1]
+  if (!part) return ""
+  try {
+    const sub = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/"))).sub
+    return typeof sub === "string" || typeof sub === "number" ? String(sub) : ""
+  } catch {
+    return ""
+  }
+}
+
 export function tokenExpired(token: string, now = Date.now()) {
   const exp = tokenExpiry(token)
   return exp !== undefined && now >= exp

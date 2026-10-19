@@ -21,9 +21,9 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover } from "../status-popover"
-import { ProjectIcon } from "@/pages/layout/sidebar-items"
 import { displayName } from "@/pages/layout/helpers"
 import { projectActions } from "@/pages/layout/project-actions"
+import { RecentProjectPicker } from "@/components/recent-project-picker"
 
 const OPEN_APPS = [
   "vscode",
@@ -260,49 +260,39 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-1 min-w-0">
-              <DropdownMenu placement="bottom-start">
-                <Tooltip placement="bottom" value={language.t("rail.project.current", { project: name() })}>
-                  <DropdownMenu.Trigger
-                    as={Button}
-                    type="button"
-                    variant="ghost"
-                    size="small"
-                    class="hidden md:flex max-w-[200px] min-w-0 items-center gap-1.5 rounded-md shadow-none"
-                    data-action="header-current-project"
-                    aria-label={language.t("rail.project.current", { project: name() })}
-                  >
+              <RecentProjectPicker
+                title={language.t("rail.project")}
+                current={project()?.worktree}
+                onPick={(dir) => projectActions()?.go(dir)}
+                triggerProps={{
+                  class:
+                    "hidden md:flex max-w-[200px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
+                  "data-action": "header-current-project",
+                  "aria-label": language.t("rail.project.current", { project: name() }),
+                  title: language.t("rail.project.current", { project: name() }),
+                }}
+                trigger={
+                  <>
                     <span class="min-w-0 truncate text-12-medium text-text-strong">{name()}</span>
                     <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
-                  </DropdownMenu.Trigger>
-                </Tooltip>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content class="mt-1 min-w-56">
-                    <DropdownMenu.Group>
-                      <DropdownMenu.GroupLabel>{language.t("rail.project")}</DropdownMenu.GroupLabel>
-                      <For each={layout.projects.list()}>
-                        {(item) => (
-                          <DropdownMenu.Item
-                            data-action="header-project-item"
-                            onSelect={() => projectActions()?.go(item.worktree)}
-                          >
-                            <div class="flex items-center gap-2 min-w-0">
-                              <ProjectIcon project={item} class="size-5" />
-                              <DropdownMenu.ItemLabel class="truncate">{displayName(item)}</DropdownMenu.ItemLabel>
-                              <Show when={project()?.worktree === item.worktree}>
-                                <Icon name="check-small" size="small" />
-                              </Show>
-                            </div>
-                          </DropdownMenu.Item>
-                        )}
-                      </For>
-                    </DropdownMenu.Group>
-                    <DropdownMenu.Separator />
-                    <DropdownMenu.Item data-action="header-project-open" onSelect={() => projectActions()?.choose()}>
-                      <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu>
+                  </>
+                }
+                footer={(close) => (
+                  <div class="border-t border-border-weak-base pt-1">
+                    <button
+                      type="button"
+                      data-action="header-project-open"
+                      class="w-full px-2 py-1.5 rounded-md text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                      onClick={() => {
+                        close()
+                        projectActions()?.choose()
+                      }}
+                    >
+                      {language.t("command.project.open")}
+                    </button>
+                  </div>
+                )}
+              />
               <Button
                 type="button"
                 variant="ghost"

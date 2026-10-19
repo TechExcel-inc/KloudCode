@@ -145,3 +145,29 @@ export function ago(time: number, now: number, locale: string) {
   if (!hit) return format.format(0, "minute")
   return format.format(Math.round(secs / hit[1]), hit[0])
 }
+
+export type RecentProject = { worktree: string; name: string; project?: { name?: string; worktree: string } }
+
+/**
+ * Turns recorded folders (newest first) into one entry per project root. A folder inside a known
+ * project's sandboxes counts as that project; `skip` drops roots such as the current project.
+ */
+export const recentProjects = (
+  rows: { directory: string }[],
+  projects: { name?: string; worktree: string; sandboxes?: string[] }[],
+  skip: string[] = [],
+): RecentProject[] => {
+  const seen = new Set(skip.map(workspaceKey))
+  return rows.flatMap((row) => {
+    const key = workspaceKey(row.directory)
+    const project = projects.find(
+      (item) => workspaceKey(item.worktree) === key || item.sandboxes?.some((dir) => workspaceKey(dir) === key),
+    )
+    const worktree = project && project.worktree !== "/" ? project.worktree : row.directory
+    const root = workspaceKey(worktree)
+    if (seen.has(root)) return []
+    seen.add(root)
+    const name = project && project.worktree !== "/" ? displayName(project) : getFilename(worktree) || worktree
+    return [{ worktree, name, project: project && project.worktree !== "/" ? project : undefined }]
+  })
+}

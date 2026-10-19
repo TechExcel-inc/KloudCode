@@ -10,6 +10,8 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { DialogSearch } from "@/components/dialog-search"
+import { RecentProjectPicker } from "@/components/recent-project-picker"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -35,25 +37,8 @@ export const AllSessions = (props: {
 }): JSX.Element => {
   const language = useLanguage()
   const layout = useLayout()
-  const globalSync = useGlobalSync()
   const params = useParams()
   const dialog = useDialog()
-  // Projects that can be related to the current one: every project this app knows, minus the shown ones.
-  const candidates = createMemo(() => {
-    const root = props.current()?.worktree
-    if (!root) return []
-    const shown = new Set([root, ...layout.projects.associated(root)])
-    const dirs = [
-      ...layout.projects.list().map((item) => item.worktree),
-      ...globalSync.data.project.map((item) => item.worktree),
-    ]
-    return [...new Set(dirs)].filter((dir) => dir && !shown.has(dir))
-  })
-  const label = (dir: string) => {
-    const item = layout.projects.list().find((entry) => entry.worktree === dir)
-    return item ? displayName(item) : displayName({ worktree: dir })
-  }
-
   const [state, setState] = createStore({
     query: "",
     folded: {} as Record<string, boolean>,
@@ -66,26 +51,38 @@ export const AllSessions = (props: {
         <div class="px-1 text-[11px] font-medium uppercase tracking-wide text-text-weak">
           {language.t("agent.sessions.title")}
         </div>
-        <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
-          <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
-          <input
-            type="text"
-            data-action="session-search"
-            value={state.query}
-            onInput={(event) => setState("query", event.currentTarget.value)}
-            placeholder={language.t("agent.sessions.searchAll")}
-            aria-label={language.t("agent.sessions.searchAll")}
-            class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
-          />
-          <Show when={state.query}>
-            <IconButton
-              icon="close-small"
-              variant="ghost"
-              class="size-5"
-              onClick={() => setState("query", "")}
-              aria-label={language.t("agent.sessions.clear")}
+        <div class="flex items-center gap-1">
+          <div class="flex-1 min-w-0 flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
+            <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
+            <input
+              type="text"
+              data-action="session-search"
+              value={state.query}
+              onInput={(event) => setState("query", event.currentTarget.value)}
+              placeholder={language.t("agent.sessions.searchAll")}
+              aria-label={language.t("agent.sessions.searchAll")}
+              class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
             />
-          </Show>
+            <Show when={state.query}>
+              <IconButton
+                icon="close-small"
+                variant="ghost"
+                class="size-5"
+                onClick={() => setState("query", "")}
+                aria-label={language.t("agent.sessions.clear")}
+              />
+            </Show>
+          </div>
+          <Tooltip placement="bottom" value={language.t("search.title")}>
+            <IconButton
+              icon="magnifying-glass-menu"
+              variant="ghost"
+              class="shrink-0 size-8 rounded-md"
+              data-action="session-advanced-search"
+              aria-label={language.t("search.title")}
+              onClick={() => dialog.show(() => <DialogSearch project={props.current()?.worktree} />)}
+            />
+          </Tooltip>
         </div>
         <Show when={props.current()}>
           {(project) => (
@@ -101,60 +98,27 @@ export const AllSessions = (props: {
             </button>
           )}
         </Show>
-        <div class="group/search h-8 pr-0.5 rounded-md flex items-center hover:bg-surface-raised-base-hover">
-          <button
-            type="button"
-            data-action="session-advanced-search"
-            class="flex-1 min-w-0 h-full px-2 flex items-center gap-2 text-left text-13-regular text-text-strong"
-            onClick={() => dialog.show(() => <DialogSearch project={props.current()?.worktree} />)}
-          >
-            <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-base" />
-            <span class="truncate">{language.t("search.title")}</span>
-          </button>
-          <Show when={props.current()}>
-            {(project) => (
-              <DropdownMenu placement="bottom-end">
-                <DropdownMenu.Trigger
-                  as={IconButton}
-                  icon="dot-grid"
-                  variant="ghost"
-                  class="shrink-0 size-6 rounded-md opacity-0 group-hover/search:opacity-100 focus-visible:opacity-100 data-[expanded]:opacity-100 data-[expanded]:bg-surface-base-active"
-                  data-action="session-search-menu"
-                  aria-label={language.t("search.related.select")}
-                />
-                <DropdownMenu.Portal>
-                  <DropdownMenu.Content class="mt-1 min-w-56 max-h-72 overflow-y-auto">
-                    <DropdownMenu.Group>
-                      <DropdownMenu.GroupLabel>{language.t("search.related.select")}</DropdownMenu.GroupLabel>
-                      <Show
-                        when={candidates().length > 0}
-                        fallback={
-                          <div class="px-2 py-1.5 text-12-regular text-text-weak">
-                            {language.t("search.related.none")}
-                          </div>
-                        }
-                      >
-                        <For each={candidates()}>
-                          {(dir) => (
-                            <DropdownMenu.Item
-                              data-action="session-related-option"
-                              onSelect={() => layout.projects.relate(project().worktree, dir)}
-                            >
-                              <div class="flex flex-col min-w-0">
-                                <DropdownMenu.ItemLabel class="truncate">{label(dir)}</DropdownMenu.ItemLabel>
-                                <span class="truncate text-11-regular text-text-weak">{dir}</span>
-                              </div>
-                            </DropdownMenu.Item>
-                          )}
-                        </For>
-                      </Show>
-                    </DropdownMenu.Group>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Portal>
-              </DropdownMenu>
-            )}
-          </Show>
-        </div>
+        <Show when={props.current()}>
+          {(project) => (
+            <RecentProjectPicker
+              title={language.t("search.related.select")}
+              empty={language.t("search.related.none")}
+              skip={[project().worktree, ...layout.projects.associated(project().worktree)]}
+              onPick={(dir) => layout.projects.relate(project().worktree, dir)}
+              triggerProps={{
+                class:
+                  "w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
+                "data-action": "session-related-project",
+              }}
+              trigger={
+                <>
+                  <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
+                  <span class="truncate">{language.t("search.related.label")}</span>
+                </>
+              }
+            />
+          )}
+        </Show>
       </div>
       <div
         ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}

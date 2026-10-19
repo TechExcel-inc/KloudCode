@@ -1,0 +1,140 @@
+import { createEffect, createResource, createSignal, For, on, Show, type JSX } from "solid-js"
+import { Avatar } from "@opencode-ai/ui/avatar"
+import { Icon } from "@opencode-ai/ui/icon"
+import { Popover } from "@opencode-ai/ui/popover"
+import { getAvatarColors } from "@/context/layout"
+import { useLanguage } from "@/context/language"
+import { useProjectActivity } from "@/context/project-activity"
+import { workspaceKey, type RecentProject } from "@/pages/layout/helpers"
+
+const LIMIT = 10
+/** A search box appears once the person has more projects than this. */
+const SEARCH = 5
+
+/**
+ * The person's most recently active projects (up to ten, newest first), with a search box when they
+ * have more than five. Used by the title-bar project switcher and the related-project picker.
+ */
+export function RecentProjectPicker(props: {
+  trigger: JSX.Element
+  triggerProps?: Record<string, unknown>
+  title: string
+  /** Shows a check mark on this project. */
+  current?: string
+  /** Leaves these project roots out of the list. */
+  skip?: string[]
+  empty?: string
+  placement?: "bottom-start" | "bottom-end"
+  onPick: (worktree: string) => void
+  footer?: (close: () => void) => JSX.Element
+}) {
+  const language = useLanguage()
+  const activity = useProjectActivity()
+  const [open, setOpen] = createSignal(false)
+  const [query, setQuery] = createSignal("")
+  const [text, setText] = createSignal("")
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  createEffect(
+    on(open, (value) => {
+      if (value) return
+      setQuery("")
+      setText("")
+    }),
+  )
+
+  const [items] = createResource(
+    () => (open() ? { query: query(), skip: props.skip ?? [], version: activity.version() } : undefined),
+    (input) => activity.recent({ limit: LIMIT, query: input.query, skip: input.skip }),
+  )
+  // Whether to offer search is decided by the unfiltered list, so it stays while typing.
+  const [total] = createResource(
+    () => (open() ? { skip: props.skip ?? [], version: activity.version() } : undefined),
+    (input) => activity.recent({ limit: SEARCH + 1, skip: input.skip }).then((list) => list.length),
+  )
+
+  const type = (value: string) => {
+    setText(value)
+    clearTimeout(timer)
+    timer = setTimeout(() => setQuery(value.trim()), 150)
+  }
+  const close = () => setOpen(false)
+  const pick = (item: RecentProject) => {
+    close()
+    props.onPick(item.worktree)
+  }
+
+  return (
+    <Popover
+      open={open()}
+      onOpenChange={setOpen}
+      placement={props.placement ?? "bottom-start"}
+      triggerAs="button"
+      triggerProps={{ type: "button", ...props.triggerProps }}
+      trigger={props.trigger}
+      class="recent-project-picker !max-w-[340px] w-[300px] [&_[data-slot=popover-body]]:p-1"
+    >
+      <div class="flex flex-col gap-1">
+        <div class="px-2 pt-1 text-12-regular text-text-weak">{props.title}</div>
+        <Show when={(total() ?? 0) > SEARCH}>
+          <div class="mx-1 flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
+            <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
+            <input
+              type="text"
+              data-action="recent-project-search"
+              value={text()}
+              ref={(el) => setTimeout(() => el.focus(), 0)}
+              onInput={(event) => type(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return
+                const first = items()?.[0]
+                if (first) pick(first)
+              }}
+              placeholder={language.t("rail.project.search")}
+              aria-label={language.t("rail.project.search")}
+              class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
+            />
+          </div>
+        </Show>
+        <div class="max-h-80 overflow-y-auto flex flex-col" role="listbox">
+          <Show
+            when={(items() ?? []).length > 0}
+            fallback={
+              <div class="px-2 py-1.5 text-12-regular text-text-weak">
+                {items.loading ? "…" : (props.empty ?? language.t("rail.project.none"))}
+              </div>
+            }
+          >
+            <For each={items()}>
+              {(item) => (
+                <button
+                  type="button"
+                  role="option"
+                  data-action="recent-project-option"
+                  class="w-full min-w-0 px-2 py-1.5 rounded-md flex items-center gap-2 text-left hover:bg-surface-raised-base-hover focus-visible:bg-surface-raised-base-hover outline-none"
+                  title={item.worktree}
+                  onClick={() => pick(item)}
+                >
+                  <Avatar
+                    fallback={item.name}
+                    size="small"
+                    class="size-5 shrink-0 rounded"
+                    {...getAvatarColors((item.project as { icon?: { color?: string } } | undefined)?.icon?.color)}
+                  />
+                  <div class="flex-1 min-w-0 flex flex-col">
+                    <span class="truncate text-13-regular text-text-strong">{item.name}</span>
+                    <span class="truncate text-11-regular text-text-weak">{item.worktree}</span>
+                  </div>
+                  <Show when={props.current && workspaceKey(props.current) === workspaceKey(item.worktree)}>
+                    <Icon name="check-small" size="small" class="shrink-0" />
+                  </Show>
+                </button>
+              )}
+            </For>
+          </Show>
+        </div>
+        <Show when={props.footer}>{(footer) => footer()(close)}</Show>
+      </div>
+    </Popover>
+  )
+}
