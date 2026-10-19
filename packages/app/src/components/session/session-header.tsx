@@ -6,7 +6,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Keybind } from "@opencode-ai/ui/keybind"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/util/path"
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -17,14 +17,10 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
-import { useTerminal } from "@/context/terminal"
-import { focusTerminalById } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
-import { togglePilot } from "@/ead/bridge"
-import { useEad } from "@/ead/settings"
 import { StatusPopover } from "../status-popover"
 
 const OPEN_APPS = [
@@ -137,9 +133,7 @@ export function SessionHeader() {
   const platform = usePlatform()
   const language = useLanguage()
   const sync = useSync()
-  const terminal = useTerminal()
-  const ead = useEad()
-  const { params, view } = useSessionLayout()
+  const { params } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -199,16 +193,6 @@ export function SessionHeader() {
         .map((app) => ({ ...app, label: language.t(app.label) })),
     ] as const
   })
-
-  const toggleTerminal = () => {
-    const next = !view().terminal.opened()
-    view().terminal.toggle()
-    if (!next) return
-
-    const id = terminal.active()
-    if (!id) return
-    focusTerminalById(id)
-  }
 
   const [prefs, setPrefs] = persisted(Persist.global("open.app"), createStore({ app: "finder" as OpenApp }))
   const [menu, setMenu] = createStore({ open: false })
@@ -421,106 +405,6 @@ export function SessionHeader() {
                 <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                   <StatusPopover />
                 </Tooltip>
-                <TooltipKeybind
-                  title={language.t("command.terminal.toggle")}
-                  keybind={command.keybind("terminal.toggle")}
-                >
-                  <Button
-                    variant="ghost"
-                    class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
-                    onClick={toggleTerminal}
-                    aria-label={language.t("command.terminal.toggle")}
-                    aria-expanded={view().terminal.opened()}
-                    aria-controls="terminal-panel"
-                  >
-                    <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
-                  </Button>
-                </TooltipKeybind>
-
-                <div class="hidden md:flex items-center gap-1 shrink-0">
-                  <TooltipKeybind
-                    title={language.t("command.review.toggle")}
-                    keybind={command.keybind("review.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => view().reviewPanel.toggle()}
-                      aria-label={language.t("command.review.toggle")}
-                      aria-expanded={view().reviewPanel.opened()}
-                      aria-controls="review-panel"
-                    >
-                      <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
-                    </Button>
-                  </TooltipKeybind>
-
-                  <TooltipKeybind
-                    title={language.t("command.fileTree.toggle")}
-                    keybind={command.keybind("fileTree.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => layout.fileTree.toggle()}
-                      aria-label={language.t("command.fileTree.toggle")}
-                      aria-expanded={layout.fileTree.opened()}
-                      aria-controls="file-tree-panel"
-                    >
-                      <div class="relative flex items-center justify-center size-4">
-                        <Icon
-                          size="small"
-                          name={layout.fileTree.opened() ? "file-tree-active" : "file-tree"}
-                          classList={{
-                            "text-icon-strong": layout.fileTree.opened(),
-                            "text-icon-weak": !layout.fileTree.opened(),
-                          }}
-                        />
-                      </div>
-                    </Button>
-                  </TooltipKeybind>
-
-                  <Tooltip placement="bottom" value="Toggle EAD Map">
-                    <Button
-                      variant="ghost"
-                      class="titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => layout.pluginPanel.toggle("ead:map", 320)}
-                      aria-label="Toggle EAD Map"
-                      aria-expanded={layout.pluginPanel.opened("ead:map")()}
-                    >
-                      <div class="relative flex items-center justify-center size-4">
-                        <Icon
-                          size="small"
-                          name="layout-left"
-                          classList={{
-                            "text-icon-strong": layout.pluginPanel.opened("ead:map")(),
-                            "text-icon-weak": !layout.pluginPanel.opened("ead:map")(),
-                          }}
-                        />
-                      </div>
-                    </Button>
-                  </Tooltip>
-
-                  <Tooltip placement="bottom" value="Toggle EAD Pilot">
-                    <Button
-                      variant="ghost"
-                      class="titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => togglePilot(layout.pluginPanel, () => ead.bumpPilot())}
-                      aria-label="Toggle EAD Pilot"
-                      aria-expanded={layout.pluginPanel.opened("ead:pilot")()}
-                    >
-                      <div class="relative flex items-center justify-center size-4">
-                        <Icon
-                          size="small"
-                          name="link"
-                          classList={{
-                            "text-icon-strong": layout.pluginPanel.opened("ead:pilot")(),
-                            "text-icon-weak": !layout.pluginPanel.opened("ead:pilot")(),
-                          }}
-                        />
-                      </div>
-                    </Button>
-                  </Tooltip>
-                </div>
               </div>
             </div>
           </Portal>
