@@ -89,7 +89,7 @@ import {
 import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
 import { ProjectIcon } from "./layout/sidebar-items"
-import { RailAccount, RailUsage } from "./layout/sidebar-rail"
+import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
 import { type Nav } from "@/context/layout"
 import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
@@ -2353,6 +2353,11 @@ export default function Layout(props: ParentProps) {
       return
     }
     layout.sidebar.close()
+    if (next === "wiki") {
+      sessionView.reviewPanel.close()
+      layout.fileTree.close()
+      return
+    }
     if (next === "ead") {
       sessionView.reviewPanel.close()
       layout.fileTree.close()
@@ -2376,22 +2381,13 @@ export default function Layout(props: ParentProps) {
       { id: "task", icon: "checklist" },
       { id: "wiki", icon: "open-file" },
     ]
-    return [
-      ...views.map((item) => ({
-        id: item.id,
-        icon: item.icon,
-        label: language.t(`rail.${item.id}`),
-        active: nav === item.id,
-        onClick: () => go(item.id),
-      })),
-      {
-        id: "term",
-        icon: "terminal",
-        label: language.t("rail.term"),
-        active: sessionView.terminal.opened(),
-        onClick: () => sessionView.terminal.toggle(),
-      },
-    ]
+    return views.map((item) => ({
+      id: item.id,
+      icon: item.icon,
+      label: language.t(`rail.${item.id}`),
+      active: nav === item.id,
+      onClick: () => go(item.id),
+    }))
   })
 
   const railSwitcher = (mobile?: boolean) => (
@@ -2438,6 +2434,13 @@ export default function Layout(props: ParentProps) {
 
   const railFooter = (mobile?: boolean) => (
     <>
+      <RailItem
+        icon="terminal"
+        label={language.t("rail.term")}
+        active={sessionView.terminal.opened()}
+        mobile={mobile}
+        onClick={() => sessionView.terminal.toggle()}
+      />
       <RailUsage mobile={mobile} />
       <Tooltip placement={mobile ? "bottom" : "right"} value={language.t("sidebar.help")}>
         <IconButton

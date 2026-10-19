@@ -77,7 +77,8 @@ function Cell(props: { bad?: boolean; dim?: boolean; label: string; tip: string;
 }
 
 export function DebugBar() {
-  const [open, setOpen] = createSignal(true)
+  // Hidden unless turned on with localStorage.setItem("debug-bar", "1"), so it doesn't cover the app in dev.
+  const [open, setOpen] = createSignal(window.localStorage.getItem("debug-bar") === "1")
   const language = useLanguage()
   const location = useLocation()
   const routing = useIsRouting()

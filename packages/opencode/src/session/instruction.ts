@@ -15,6 +15,8 @@ import type { MessageID } from "./schema"
 
 const log = Log.create({ service: "instruction" })
 
+const WIKI = "wiki"
+
 const FILES = [
   "AGENTS.md",
   ...(Flag.OPENCODE_DISABLE_CLAUDE_CODE_PROMPT ? [] : ["CLAUDE.md"]),
@@ -160,6 +162,26 @@ export namespace Instruction {
           return paths
         })
 
+        // Tells the agent about the project wiki (Markdown pages in wiki/) so it reads and maintains it.
+        const wiki = Effect.fnUntraced(function* () {
+          const dir = path.join(Instance.directory, WIKI)
+          if (!(yield* fs.isDir(dir).pipe(Effect.catch(() => Effect.succeed(false)))))
+            return `Project wiki: none yet. When asked to write wiki or documentation pages, create them as Markdown files in ${WIKI}/ in the project root (file name = page title).`
+          const pages = yield* fs
+            .glob("**/*.md", { cwd: dir, include: "file" })
+            .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+          const list = pages
+            .map((item) => item.replace(/\\/g, "/").replace(/\.md$/i, ""))
+            .sort((a, b) => a.localeCompare(b))
+          const shown = list.slice(0, 40).join(", ")
+          const more = list.length > 40 ? ` and ${list.length - 40} more` : ""
+          return [
+            `Project wiki: ${WIKI}/ in the project root holds the team's wiki as Markdown files (file name = page title, subfolders group related pages).`,
+            "Before working on a feature, read the wiki pages that cover it. When you learn or change something worth documenting (how a feature works, a decision, a setup step), update the matching page or create a new one there, and mention which pages you changed.",
+            list.length > 0 ? `Pages: ${shown}${more}.` : "The wiki has no pages yet.",
+          ].join("\n")
+        })
+
         const system = Effect.fn("Instruction.system")(function* () {
           const config = yield* cfg.get()
           const paths = yield* systemPaths()
@@ -170,9 +192,12 @@ export namespace Instruction {
           const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
           const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
+          const notes = yield* wiki()
+
           return [
             ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
             ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
+            ...(notes ? [notes] : []),
           ]
         })
 

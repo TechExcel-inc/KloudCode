@@ -1,0 +1,112 @@
+[data-component="wiki-editor"] {
+  min-height: 100%;
+  outline: none;
+  color: var(--text-strong);
+  font-family: var(--font-family-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+
+  &:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-weak);
+  }
+
+  > *:first-child {
+    margin-top: 0;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 1.2em 0 0.5em;
+  }
+
+  h2 {
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 1.1em 0 0.4em;
+  }
+
+  h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 1em 0 0.3em;
+  }
+
+  p {
+    margin: 0.5em 0;
+  }
+
+  ul,
+  ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  ol {
+    list-style: decimal;
+  }
+
+  li {
+    margin: 0.2em 0;
+  }
+
+  blockquote {
+    margin: 0.8em 0;
+    padding-left: 1em;
+    border-left: 3px solid var(--border-weak-base);
+    color: var(--text-base);
+  }
+
+  code {
+    font-family: var(--font-family-mono);
+    font-size: 0.9em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--surface-base);
+  }
+
+  pre {
+    margin: 0.8em 0;
+    padding: 0.8em 1em;
+    border-radius: 8px;
+    background: var(--surface-base);
+    font-family: var(--font-family-mono);
+    font-size: 13px;
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background: transparent;
+    }
+  }
+
+  a {
+    color: var(--text-interactive-base);
+    text-decoration: underline;
+  }
+
+  hr {
+    margin: 1.5em 0;
+    border: none;
+    border-top: 1px solid var(--border-weak-base);
+  }
+
+  table {
+    border-collapse: collapse;
+    margin: 0.8em 0;
+  }
+
+  th,
+  td {
+    border: 1px solid var(--border-weak-base);
+    padding: 0.3em 0.6em;
+  }
+}

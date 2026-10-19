@@ -62,7 +62,8 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 
 export type ReviewDiffStyle = "unified" | "split"
 
-export type Nav = "ead" | "agent" | "code" | "spec" | "task" | "wiki"
+const NAVS = ["ead", "agent", "code", "spec", "task", "wiki"] as const
+export type Nav = (typeof NAVS)[number]
 
 export function ensureSessionKey(key: string, touch: (key: string) => void, seed: (key: string) => void) {
   touch(key)
@@ -637,7 +638,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       nav: {
-        current: createMemo(() => store.nav ?? "ead"),
+        current: createMemo((): Nav => (NAVS.find((item) => item === store.nav) ? store.nav : "ead")),
         set(nav: Nav) {
           setStore("nav", nav)
         },

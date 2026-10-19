@@ -6,7 +6,6 @@ import { useLayout } from "@/context/layout"
 const soon = {
   spec: { icon: "edit", label: "rail.spec", body: "rail.soon.spec" },
   task: { icon: "checklist", label: "rail.task", body: "rail.soon.task" },
-  wiki: { icon: "open-file", label: "rail.wiki", body: "rail.soon.wiki" },
 } as const satisfies Record<string, { icon: IconProps["name"]; label: string; body: string }>
 
 export function RailPlaceholder() {
@@ -14,7 +13,7 @@ export function RailPlaceholder() {
   const language = useLanguage()
   const item = createMemo(() => {
     const nav = layout.nav.current()
-    if (nav === "spec" || nav === "task" || nav === "wiki") return soon[nav]
+    if (nav === "spec" || nav === "task") return soon[nav]
   })
 
   return (

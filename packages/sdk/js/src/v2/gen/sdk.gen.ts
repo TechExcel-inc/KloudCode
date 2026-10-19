@@ -41,6 +41,7 @@ import type {
   FilePartSource,
   FileReadResponses,
   FileStatusResponses,
+  FileWriteResponses,
   FindFilesResponses,
   FindSymbolsResponses,
   FindTextResponses,
@@ -49,6 +50,8 @@ import type {
   GlobalConfigUpdateErrors,
   GlobalConfigUpdateResponses,
   GlobalDisposeResponses,
+  GlobalEadPluginProxyErrors,
+  GlobalEadPluginProxyResponses,
   GlobalEventResponses,
   GlobalHealthResponses,
   GlobalUpgradeErrors,
@@ -236,6 +239,21 @@ class HeyApiRegistry<T> {
   }
 }
 
+export class Ead extends HeyApiClient {
+  /**
+   * EAD Pilot plugin proxy
+   *
+   * Start or reuse the local HTTP proxy so the Pilot iframe origin is loopback. Needed for localhost Front End App reachability probes.
+   */
+  public pluginProxy<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GlobalEadPluginProxyResponses,
+      GlobalEadPluginProxyErrors,
+      ThrowOnError
+    >({ url: "/global/ead/plugin-proxy", ...options })
+  }
+}
+
 export class Config extends HeyApiClient {
   /**
    * Get global configuration
@@ -333,6 +351,11 @@ export class Global extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  private _ead?: Ead
+  get ead(): Ead {
+    return (this._ead ??= new Ead({ client: this.client }))
   }
 
   private _config?: Config
@@ -3127,6 +3150,45 @@ export class File extends HeyApiClient {
       url: "/file/content",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Write file
+   *
+   * Write text content to a file inside the project, creating parent directories as needed.
+   */
+  public write<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+      content?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+            { in: "body", key: "content" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<FileWriteResponses, unknown, ThrowOnError>({
+      url: "/file/content",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

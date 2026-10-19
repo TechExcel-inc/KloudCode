@@ -249,7 +249,7 @@ describe("Instruction.system", () => {
                 expect(paths.has(path.join(projectTmp.path, "AGENTS.md"))).toBe(true)
                 expect(paths.has(path.join(globalTmp.path, "AGENTS.md"))).toBe(true)
 
-                const rules = yield* svc.system()
+                const rules = (yield* svc.system()).filter((rule) => rule.startsWith("Instructions from:"))
                 expect(rules).toHaveLength(2)
                 expect(rules).toContain(
                   `Instructions from: ${path.join(projectTmp.path, "AGENTS.md")}\n# Project Instructions`,
@@ -383,5 +383,45 @@ describe("Instruction.systemPaths OPENCODE_CONFIG_DIR", () => {
     } finally {
       ;(Global.Path as { config: string }).config = originalGlobalConfig
     }
+  })
+})
+
+describe("Instruction.system wiki", () => {
+  test("lists wiki pages so the agent knows about them", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "wiki", "Login Manager.md"), "# Login Manager")
+        await Bun.write(path.join(dir, "wiki", "Setup", "Local dev.md"), "# Local dev")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: () =>
+        run(
+          Instruction.Service.use((svc) =>
+            Effect.gen(function* () {
+              const note = (yield* svc.system()).find((rule) => rule.startsWith("Project wiki:"))
+              expect(note).toContain("wiki/")
+              expect(note).toContain("Pages: Login Manager, Setup/Local dev.")
+            }),
+          ),
+        ),
+    })
+  })
+
+  test("tells the agent where to create the wiki when there is none", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: () =>
+        run(
+          Instruction.Service.use((svc) =>
+            Effect.gen(function* () {
+              const note = (yield* svc.system()).find((rule) => rule.startsWith("Project wiki:"))
+              expect(note).toContain("none yet")
+            }),
+          ),
+        ),
+    })
   })
 })

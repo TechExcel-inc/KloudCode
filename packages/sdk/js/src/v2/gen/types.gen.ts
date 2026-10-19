@@ -4,6 +4,14 @@ export type ClientOptions = {
   baseUrl: `${string}://${string}` | (string & {})
 }
 
+export type BadRequestError = {
+  data: unknown
+  errors: Array<{
+    [key: string]: unknown
+  }>
+  success: false
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -1656,14 +1664,6 @@ export type Config = {
   }
 }
 
-export type BadRequestError = {
-  data: unknown
-  errors: Array<{
-    [key: string]: unknown
-  }>
-  success: false
-}
-
 export type OAuth = {
   type: "oauth"
   refresh: string
@@ -2147,6 +2147,35 @@ export type FormatterStatus = {
   extensions: Array<string>
   enabled: boolean
 }
+
+export type GlobalEadPluginProxyData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/ead/plugin-proxy"
+}
+
+export type GlobalEadPluginProxyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalEadPluginProxyError = GlobalEadPluginProxyErrors[keyof GlobalEadPluginProxyErrors]
+
+export type GlobalEadPluginProxyResponses = {
+  /**
+   * Proxy origin
+   */
+  200: {
+    origin: string
+    port: number
+    target: string
+  }
+}
+
+export type GlobalEadPluginProxyResponse = GlobalEadPluginProxyResponses[keyof GlobalEadPluginProxyResponses]
 
 export type GlobalHealthData = {
   body?: never
@@ -4568,6 +4597,28 @@ export type FileReadResponses = {
 }
 
 export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
+
+export type FileWriteData = {
+  body?: {
+    path: string
+    content: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/content"
+}
+
+export type FileWriteResponses = {
+  /**
+   * File written
+   */
+  200: boolean
+}
+
+export type FileWriteResponse = FileWriteResponses[keyof FileWriteResponses]
 
 export type FileStatusData = {
   body?: never

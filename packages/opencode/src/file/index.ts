@@ -327,6 +327,7 @@ export namespace File {
     readonly init: () => Effect.Effect<void>
     readonly status: () => Effect.Effect<File.Info[]>
     readonly read: (file: string) => Effect.Effect<File.Content>
+    readonly write: (file: string, content: string) => Effect.Effect<void>
     readonly list: (dir?: string) => Effect.Effect<File.Node[]>
     readonly search: (input: {
       query: string
@@ -500,6 +501,12 @@ export namespace File {
         })
       })
 
+      const write: Interface["write"] = Effect.fn("File.write")(function* (file: string, content: string) {
+        const full = path.join(Instance.directory, file)
+        if (!Instance.containsPath(full)) throw new Error("Access denied: path escapes project directory")
+        yield* appFs.writeWithDirs(full, content).pipe(Effect.orDie)
+      })
+
       const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {
         using _ = log.time("read", { file })
         const full = path.join(Instance.directory, file)
@@ -638,7 +645,7 @@ export namespace File {
       })
 
       log.info("init")
-      return Service.of({ init, status, read, list, search })
+      return Service.of({ init, status, read, write, list, search })
     }),
   )
 

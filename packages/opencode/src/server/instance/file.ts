@@ -181,6 +181,36 @@ export const FileRoutes = lazy(() =>
         return c.json(content)
       },
     )
+    .post(
+      "/file/content",
+      describeRoute({
+        summary: "Write file",
+        description: "Write text content to a file inside the project, creating parent directories as needed.",
+        operationId: "file.write",
+        responses: {
+          200: {
+            description: "File written",
+            content: {
+              "application/json": {
+                schema: resolver(z.boolean()),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "json",
+        z.object({
+          path: z.string(),
+          content: z.string(),
+        }),
+      ),
+      async (c) => {
+        const body = c.req.valid("json")
+        await AppRuntime.runPromise(File.Service.use((svc) => svc.write(body.path, body.content)))
+        return c.json(true)
+      },
+    )
     .get(
       "/file/status",
       describeRoute({

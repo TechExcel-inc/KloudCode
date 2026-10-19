@@ -92,10 +92,13 @@ export const RailUsage = (props: { mobile?: boolean }): JSX.Element => {
         type="button"
         data-action="rail-usage"
         aria-label={language.t("rail.usage")}
-        class="size-10 rounded-lg flex items-center justify-center text-text-weak hover:bg-surface-base-hover"
+        class="w-12 py-1.5 rounded-lg flex flex-col items-center gap-0.5 text-text-weak hover:bg-surface-base-hover"
         onClick={open}
       >
-        <ProgressCircle size={22} strokeWidth={2} percentage={metrics()?.context?.usage ?? 0} />
+        <ProgressCircle size={20} strokeWidth={2} percentage={metrics()?.context?.usage ?? 0} />
+        <span class="text-[11px] font-medium leading-none">
+          {metrics()?.context?.usage != null ? `${metrics()!.context!.usage}%` : "--"}
+        </span>
       </button>
     </Tooltip>
   )
