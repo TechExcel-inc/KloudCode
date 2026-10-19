@@ -152,6 +152,10 @@ export type RecentProject = { worktree: string; name: string; project?: { name?:
  * Turns recorded folders (newest first) into one entry per project root. A folder inside a known
  * project's sandboxes counts as that project; `skip` drops roots such as the current project.
  */
+/** Activity rows from the server; anything else (an older server answers with its web page) counts as none. */
+export const activityRows = (value: unknown): { directory: string }[] =>
+  Array.isArray(value) ? value.filter((row) => typeof row?.directory === "string") : []
+
 export const recentProjects = (
   rows: { directory: string }[],
   projects: { name?: string; worktree: string; sandboxes?: string[] }[],

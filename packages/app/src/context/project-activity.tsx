@@ -7,7 +7,7 @@ import { useEad } from "@/ead/settings"
 import { useGlobalSDK } from "./global-sdk"
 import { useGlobalSync } from "./global-sync"
 import { useLayout } from "./layout"
-import { recentProjects } from "@/pages/layout/helpers"
+import { activityRows, recentProjects } from "@/pages/layout/helpers"
 
 const absolute = (dir: string | undefined) => !!dir && (dir.startsWith("/") || /^[A-Za-z]:[\\/]/.test(dir))
 
@@ -72,9 +72,16 @@ export const { use: useProjectActivity, provider: ProjectActivityProvider } = cr
         const limit = input.limit ?? 10
         const rows = await sdk.client.global.projectActivity
           .list({ user: user(), limit: limit + (input.skip?.length ?? 0) + 10, query: input.query || undefined })
-          .then((res) => res.data ?? [])
+          .then((res) => activityRows(res.data))
           .catch(() => [])
-        return recentProjects(rows, sync.data.project, input.skip).slice(0, limit)
+        // No history yet (a new user, or an older server): fall back to the projects this app knows.
+        const known = sync.data.project
+          .filter((item) => item.worktree !== "/")
+          .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+          .map((item) => ({ directory: item.worktree }))
+        const text = input.query?.trim().toLowerCase()
+        const fallback = text ? known.filter((row) => row.directory.toLowerCase().includes(text)) : known
+        return recentProjects(rows.length > 0 ? rows : fallback, sync.data.project, input.skip).slice(0, limit)
       },
     }
   },

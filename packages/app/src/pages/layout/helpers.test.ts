@@ -15,6 +15,7 @@ import {
   errorMessage,
   hasProjectPermissions,
   latestRootSession,
+  activityRows,
   recentProjects,
   workspaceKey,
 } from "./helpers"
@@ -276,6 +277,12 @@ describe("recentProjects", () => {
       ["/tmp/scratch", "scratch"],
       ["/gone/Old", "Old"],
     ])
+  })
+
+  test("treats a non-list server answer as no activity", () => {
+    expect(activityRows("<!doctype html><html></html>")).toEqual([])
+    expect(activityRows(undefined)).toEqual([])
+    expect(activityRows([{ directory: "/a" }, { nope: 1 }, null])).toEqual([{ directory: "/a" }])
   })
 
   test("skips the given roots", () => {
