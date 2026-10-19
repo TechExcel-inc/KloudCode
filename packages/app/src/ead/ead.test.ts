@@ -47,6 +47,7 @@ import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
 import { looksLikeProviderApiKey, tokenExpired } from "./auth"
 import { mcpCandidates } from "./mcp"
+import { prober, resolveMcpEntry } from "./ensure-mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
 import { matches, parseBody, parseCue, parseStep, progress, result, PROGRESS, RESULT, SIGNAL, watch } from "./step-signal"
 import { lined, precheck } from "./precheck"
@@ -837,6 +838,27 @@ describe("ead i18n + env + mcp", () => {
   test("mcpCandidates finds a sibling repo named with a space", () => {
     const list = mcpCandidates("/Users/me/Project/KloudCode", "")
     expect(list).toContain("/Users/me/Project/KloudCode/../EAD_PFM Editor/mcp-eadpfm/dist/index.js")
+  })
+
+  test("resolveMcpEntry skips missing files and finds the MCP inside the open repo", async () => {
+    const root = "/Users/me/Project/EAD_PFM Editor"
+    const reads: string[] = []
+    const probe = prober(
+      {
+        mcp: { add: async () => undefined, connect: async () => undefined },
+        file: {
+          read: async (input) => {
+            reads.push(input.path)
+            // The server answers missing files with empty content rather than an error.
+            return { data: { type: "text", content: input.path === "mcp-eadpfm/dist/index.js" ? "x" : "" } }
+          },
+        },
+      },
+      root,
+    )
+    const entry = await resolveMcpEntry("/Users/me/Project/EAD_PFM-Editor/mcp-eadpfm/dist/index.js", root, probe)
+    expect(entry).toBe(`${root}/mcp-eadpfm/dist/index.js`)
+    expect(reads.every((path) => !path.startsWith("/"))).toBe(true)
   })
 
   test("mcpCandidates finds the MCP inside the open EAD repo", () => {

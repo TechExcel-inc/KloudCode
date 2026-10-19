@@ -30,6 +30,21 @@ function normalize(path: string) {
   return path.startsWith("/") ? `/${joined}` : joined
 }
 
+// The server's file read only reaches files inside the project (paths are taken relative to it) and
+// answers a missing file with empty content, so only in-project files with content count as found.
+export function prober(client: Client, worktree?: string) {
+  const file = client.file
+  if (!file || !worktree) return
+  const root = normalize(worktree).replace(/\/+$/, "") + "/"
+  return async (path: string) => {
+    const full = normalize(path)
+    if (!full.startsWith(root)) return false
+    const res = await file.read({ path: full.slice(root.length) }).catch(() => undefined)
+    const data = res && !res.error ? (res.data as { content?: unknown } | undefined) : undefined
+    return typeof data?.content === "string" && data.content.length > 0
+  }
+}
+
 export async function resolveMcpEntry(
   preferred: string,
   worktree: string,
@@ -50,12 +65,7 @@ export async function ensureEadMcp(input: {
   worktree?: string
 }) {
   if (!input.token.trim()) throw new Error("Sign in first — MCP needs an auth token")
-  const probe = input.client.file
-    ? async (path: string) => {
-        const res = await input.client.file!.read({ path }).catch(() => undefined)
-        return Boolean(res && !res.error && res.data !== undefined)
-      }
-    : undefined
+  const probe = prober(input.client, input.worktree)
   const entry = input.worktree
     ? await resolveMcpEntry(input.entry, input.worktree, probe)
     : input.entry.trim()
@@ -74,12 +84,7 @@ export async function clearEadMcp(input: {
   entry: string
   worktree?: string
 }) {
-  const probe = input.client.file
-    ? async (path: string) => {
-        const res = await input.client.file!.read({ path }).catch(() => undefined)
-        return Boolean(res && !res.error && res.data !== undefined)
-      }
-    : undefined
+  const probe = prober(input.client, input.worktree)
   const entry = input.worktree
     ? await resolveMcpEntry(input.entry, input.worktree, probe)
     : input.entry.trim()

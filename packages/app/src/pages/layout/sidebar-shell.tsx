@@ -14,7 +14,6 @@ export const SidebarContent = (props: {
   mobile?: boolean
   opened: Accessor<boolean>
   aimMove: (event: MouseEvent) => void
-  switcher: () => JSX.Element
   items: Accessor<RailEntry[]>
   footer: () => JSX.Element
   renderPanel: () => JSX.Element
@@ -40,7 +39,6 @@ export const SidebarContent = (props: {
         onMouseMove={props.aimMove}
       >
         <div class="flex-1 min-h-0 w-full flex flex-col items-center gap-1 px-2 py-3 overflow-y-auto no-scrollbar">
-          <div class="pb-2 mb-1 border-b border-border-weaker-base w-full flex justify-center">{props.switcher()}</div>
           <Index each={props.items()}>
             {(item) => (
               <RailItem

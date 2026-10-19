@@ -22,6 +22,9 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover } from "../status-popover"
+import { ProjectIcon } from "@/pages/layout/sidebar-items"
+import { displayName } from "@/pages/layout/helpers"
+import { projectActions } from "@/pages/layout/project-actions"
 
 const OPEN_APPS = [
   "vscode",
@@ -292,16 +295,44 @@ export function SessionHeader() {
                 aria-label={language.t("session.header.reload")}
               />
             </Tooltip>
-            <Tooltip placement="bottom" value={language.t("command.project.open")}>
-              <IconButton
-                icon="folder-add-left"
-                variant="ghost"
-                class="titlebar-icon hidden md:flex"
-                data-action="header-open-project"
-                onClick={() => command.trigger("project.open")}
-                aria-label={language.t("command.project.open")}
-              />
-            </Tooltip>
+            <DropdownMenu placement="bottom-start">
+              <Tooltip placement="bottom" value={language.t("rail.project")}>
+                <DropdownMenu.Trigger
+                  as={IconButton}
+                  icon="folder-add-left"
+                  variant="ghost"
+                  class="titlebar-icon hidden md:flex"
+                  data-action="header-open-project"
+                  aria-label={language.t("rail.project")}
+                />
+              </Tooltip>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="mt-1 min-w-56">
+                  <For each={layout.projects.list()}>
+                    {(item) => (
+                      <DropdownMenu.Item
+                        data-action="header-project-item"
+                        onSelect={() => projectActions()?.go(item.worktree)}
+                      >
+                        <div class="flex items-center gap-2 min-w-0">
+                          <ProjectIcon project={item} class="size-5" />
+                          <DropdownMenu.ItemLabel class="truncate">{displayName(item)}</DropdownMenu.ItemLabel>
+                          <Show when={project()?.worktree === item.worktree}>
+                            <Icon name="check-small" size="small" />
+                          </Show>
+                        </div>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                  <Show when={layout.projects.list().length > 0}>
+                    <DropdownMenu.Separator />
+                  </Show>
+                  <DropdownMenu.Item data-action="header-project-open" onSelect={() => projectActions()?.choose()}>
+                    <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
             </div>
           </Portal>
         )}

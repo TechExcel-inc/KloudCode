@@ -21,7 +21,6 @@ import { base64Encode } from "@opencode-ai/util/encode"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -88,8 +87,8 @@ import {
 } from "./layout/sidebar-workspace"
 import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
-import { ProjectIcon } from "./layout/sidebar-items"
 import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
+import { setProjectActions } from "./layout/project-actions"
 import { type Nav } from "@/context/layout"
 import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
@@ -2390,47 +2389,7 @@ export default function Layout(props: ParentProps) {
     }))
   })
 
-  const railSwitcher = (mobile?: boolean) => (
-    <DropdownMenu placement={mobile ? "bottom-start" : "right-start"}>
-      <DropdownMenu.Trigger
-        as="button"
-        type="button"
-        data-action="rail-project"
-        aria-label={language.t("rail.project")}
-        class="size-10 p-1 rounded-lg flex items-center justify-center border border-border-weak-base hover:bg-surface-base-hover"
-      >
-        <Show when={currentProject()} fallback={<Icon name="folder" size="medium" />}>
-          {(project) => <ProjectIcon project={project()} notify />}
-        </Show>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content class="ml-1 min-w-56">
-          <For each={projects()}>
-            {(project) => (
-              <DropdownMenu.Item
-                data-action="rail-project-item"
-                onSelect={() => navigateToProject(project.worktree)}
-              >
-                <div class="flex items-center gap-2 min-w-0">
-                  <ProjectIcon project={project} class="size-5" />
-                  <DropdownMenu.ItemLabel class="truncate">{displayName(project)}</DropdownMenu.ItemLabel>
-                  <Show when={currentProject()?.worktree === project.worktree}>
-                    <Icon name="check-small" size="small" />
-                  </Show>
-                </div>
-              </DropdownMenu.Item>
-            )}
-          </For>
-          <Show when={projects().length > 0}>
-            <DropdownMenu.Separator />
-          </Show>
-          <DropdownMenu.Item data-action="rail-project-open" onSelect={chooseProject}>
-            <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu>
-  )
+  setProjectActions({ go: (directory) => void navigateToProject(directory), choose: () => void chooseProject() })
 
   const railFooter = (mobile?: boolean) => (
     <>
@@ -2480,7 +2439,6 @@ export default function Layout(props: ParentProps) {
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
       aimMove={aim.move}
-      switcher={() => railSwitcher(mobile)}
       items={railItems}
       footer={() => railFooter(mobile)}
       renderPanel={() =>
