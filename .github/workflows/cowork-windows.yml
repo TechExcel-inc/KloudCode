@@ -59,6 +59,7 @@ jobs:
           RUST_TARGET: ${{ env.TARGET }}
           TAURI_ENV_TARGET_TRIPLE: ${{ env.TARGET }}
           OPENCODE_REBUILD_SIDECAR: "1"
+          OPENCODE_SKIP_INSTALL: "1"
         run: |
           export OPENCODE_VERSION="$(node -p "require('./package.json').version")"
           echo "version $OPENCODE_VERSION"

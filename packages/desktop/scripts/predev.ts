@@ -15,6 +15,8 @@ const sidecarConfig = getCurrentSidecar(RUST_TARGET)
 const binaryPath = windowsify(`../opencode/dist/${sidecarConfig.ocBinary}/bin/opencode`)
 const dest = windowsify(`src-tauri/sidecars/opencode-cli-${RUST_TARGET}`)
 const rebuild = Bun.env.OPENCODE_REBUILD_SIDECAR === "1"
+// CI installs dependencies up front; the build's cross-platform reinstall can fail on Windows.
+const flags = Bun.env.OPENCODE_SKIP_INSTALL === "1" ? ["--skip-install"] : []
 
 await $`bun ./scripts/bundle-mcp.ts`
 
@@ -22,7 +24,7 @@ if (!rebuild && (await Bun.file(dest).exists())) {
   console.log(`Using existing sidecar ${dest}`)
 } else {
   await (sidecarConfig.ocBinary.includes("-baseline")
-    ? $`cd ../opencode && bun run build --single --baseline --skip-embed-web-ui`
-    : $`cd ../opencode && bun run build --single --skip-embed-web-ui`)
+    ? $`cd ../opencode && bun run build --single --baseline --skip-embed-web-ui ${flags}`
+    : $`cd ../opencode && bun run build --single --skip-embed-web-ui ${flags}`)
   await copyBinaryToSidecarFolder(binaryPath, RUST_TARGET)
 }
