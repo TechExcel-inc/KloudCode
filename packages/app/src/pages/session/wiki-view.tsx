@@ -217,6 +217,11 @@ function Wiki() {
   onCleanup(() => {
     if (timer !== undefined) window.clearTimeout(timer)
     void save()
+    // The open page is only attached while the Wiki is on screen.
+    prompt.context
+      .items()
+      .filter((item) => item.type === "file" && !item.selection && page(item.path, sdk.directory))
+      .forEach((item) => prompt.context.remove(item.key))
   })
 
   const run = (cmd: string, value?: string) => {

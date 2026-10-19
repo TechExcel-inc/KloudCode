@@ -50,7 +50,7 @@ import { clearEadMcp, ensureEadMcp } from "@/ead/ensure-mcp"
 import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "@/ead/filters"
 import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
-import { expandKey, useEad } from "@/ead/settings"
+import { expandKey, useEad, type EadNodeHit } from "@/ead/settings"
 import { eadHttp } from "@/ead/http"
 import {
   ancestorPaths,
@@ -1548,6 +1548,35 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setBusy(false)
     }
   }
+
+  // Shares the loaded map with global search, and selects nodes it asks for.
+  createEffect(() => {
+    const node = root()
+    if (!node) {
+      ead.setNodes([])
+      return
+    }
+    const walk = (list: PfmNode[], trail: string[]): EadNodeHit[] =>
+      list.flatMap((item) => [
+        ...(item.nodeId > 0 ? [{ id: item.nodeId, name: item.name, path: trail.join(" / ") }] : []),
+        ...walk(item.children, [...trail, item.name]),
+      ])
+    ead.setNodes(walk(node.children, []))
+  })
+
+  createEffect(() => {
+    const jump = ead.jump()
+    const node = root()
+    if (!jump || !node) return
+    untrack(() => {
+      const find = (list: PfmNode[]): PfmNode | undefined =>
+        list.reduce<PfmNode | undefined>((hit, item) => hit ?? (item.nodeId === jump.id ? item : find(item.children)), undefined)
+      const hit = find([node])
+      if (!hit) return
+      selectNode(hit)
+      ead.bumpMap()
+    })
+  })
 
   const selectNode = (node: PfmNode) => {
     closeMenus()

@@ -188,8 +188,12 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
     pingHost(el)
     const held = action()
     const pending = held?.kind === "profile" ? held : (takePilot() ?? held ?? selection())
-    if (pending) setAction(pending)
-    applyPilotAction(el, pending ?? { kind: "dashboard" }, product())
+    // Only replay a real request. Defaulting to the AI Navigator dashboard reopened it on every sync
+    // (load, sign-in, language change) until a node was selected; it opens from its own button instead.
+    if (pending) {
+      setAction(pending)
+      applyPilotAction(el, pending, product())
+    }
     const pid = ead.productId()
     if (pid > 0) {
       const owner = readOwner(pid)

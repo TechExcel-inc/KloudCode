@@ -8,11 +8,14 @@ import { fileURLToPath } from "node:url"
 const here = dirname(fileURLToPath(import.meta.url))
 const desktop = join(here, "..")
 const dest = join(desktop, "src-tauri", "resources", "mcp-eadpfm")
+// The EAD repo is checked out as "EAD_PFM-Editor" on some machines and "EAD_PFM Editor" on others.
 const siblings = [
   process.env.EAD_MCP_ROOT,
-  join(desktop, "../../../EAD_PFM-Editor/mcp-eadpfm"),
-  join(desktop, "../../EAD_PFM-Editor/mcp-eadpfm"),
-  join(desktop, "../../../../projects_server/EAD_PFM-Editor/mcp-eadpfm"),
+  ...["EAD_PFM-Editor", "EAD_PFM Editor"].flatMap((repo) => [
+    join(desktop, `../../../${repo}/mcp-eadpfm`),
+    join(desktop, `../../${repo}/mcp-eadpfm`),
+    join(desktop, `../../../../projects_server/${repo}/mcp-eadpfm`),
+  ]),
 ].filter((dir): dir is string => Boolean(dir))
 
 const src = siblings.find((dir) => existsSync(join(dir, "dist", "index.js")))

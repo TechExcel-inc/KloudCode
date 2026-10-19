@@ -834,6 +834,16 @@ describe("ead i18n + env + mcp", () => {
     expect(list.some((p) => p.includes("EAD_PFM-Editor/mcp-eadpfm/dist/index.js"))).toBe(true)
   })
 
+  test("mcpCandidates finds a sibling repo named with a space", () => {
+    const list = mcpCandidates("/Users/me/Project/KloudCode", "")
+    expect(list).toContain("/Users/me/Project/KloudCode/../EAD_PFM Editor/mcp-eadpfm/dist/index.js")
+  })
+
+  test("mcpCandidates finds the MCP inside the open EAD repo", () => {
+    const list = mcpCandidates("/Users/me/Project/EAD_PFM Editor", "")
+    expect(list).toContain("/Users/me/Project/EAD_PFM Editor/mcp-eadpfm/dist/index.js")
+  })
+
   test("loadActiveMap marks common and specific under a dynamic top", async () => {
     const http = (async () =>
       new Response(

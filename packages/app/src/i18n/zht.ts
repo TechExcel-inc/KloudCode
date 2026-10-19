@@ -92,10 +92,11 @@ export const dict = {
   "command.session.unshare": "取消分享工作階段",
   "command.session.unshare.description": "停止分享此工作階段",
 
-  "palette.search.placeholder": "搜尋檔案、命令和工作階段",
+  "palette.search.placeholder": "搜尋檔案、命令、工作階段和 PFM 節點",
   "palette.empty": "找不到結果",
   "palette.group.commands": "命令",
   "palette.group.files": "檔案",
+  "palette.group.nodes": "PFM 節點",
 
   "dialog.provider.search.placeholder": "搜尋提供者",
   "dialog.provider.empty": "找不到提供者",
@@ -537,6 +538,7 @@ export const dict = {
 
   "session.header.search.placeholder": "搜尋 {{project}}",
   "session.header.searchFiles": "搜尋檔案",
+  "session.header.reload": "重新載入 KloudCode",
   "session.header.openIn": "開啟於",
   "session.header.open.action": "開啟 {{app}}",
   "session.header.open.ariaLabel": "在 {{app}} 中開啟",

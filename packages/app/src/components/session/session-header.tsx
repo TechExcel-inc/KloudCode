@@ -257,6 +257,7 @@ export function SessionHeader() {
       <Show when={centerMount()}>
         {(mount) => (
           <Portal mount={mount()}>
+            <div class="flex items-center gap-1 min-w-0">
             <Button
               type="button"
               variant="ghost"
@@ -281,6 +282,27 @@ export function SessionHeader() {
                 )}
               </Show>
             </Button>
+            <Tooltip placement="bottom" value={language.t("session.header.reload")}>
+              <IconButton
+                icon="reset"
+                variant="ghost"
+                class="titlebar-icon hidden md:flex"
+                data-action="header-reload"
+                onClick={() => window.location.reload()}
+                aria-label={language.t("session.header.reload")}
+              />
+            </Tooltip>
+            <Tooltip placement="bottom" value={language.t("command.project.open")}>
+              <IconButton
+                icon="folder-add-left"
+                variant="ghost"
+                class="titlebar-icon hidden md:flex"
+                data-action="header-open-project"
+                onClick={() => command.trigger("project.open")}
+                aria-label={language.t("command.project.open")}
+              />
+            </Tooltip>
+            </div>
           </Portal>
         )}
       </Show>

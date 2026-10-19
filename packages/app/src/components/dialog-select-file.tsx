@@ -18,8 +18,10 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { decode64 } from "@/utils/base64"
 import { getRelativeTime } from "@/utils/time"
+import { useEad, type EadNodeHit } from "@/ead/settings"
+import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
-type EntryType = "command" | "file" | "session"
+type EntryType = "command" | "file" | "session" | "node"
 
 type Entry = {
   id: string
@@ -32,6 +34,7 @@ type Entry = {
   path?: string
   directory?: string
   sessionID?: string
+  node?: number
   archived?: number
   updated?: number
 }
@@ -260,6 +263,24 @@ function createSessionEntries(props: {
   return { sessions }
 }
 
+const createNodeEntry = (hit: EadNodeHit, category: string): Entry => ({
+  id: `node:${hit.id}`,
+  type: "node",
+  title: hit.name,
+  description: hit.path,
+  category,
+  node: hit.id,
+})
+
+// PFM nodes from the loaded EAD map whose name or path contains the query.
+const matchNodes = (hits: EadNodeHit[], query: string) => {
+  const text = query.toLowerCase()
+  return hits
+    .filter((hit) => hit.name.toLowerCase().includes(text) || hit.path.toLowerCase().includes(text))
+    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(text)) - Number(!b.name.toLowerCase().startsWith(text)))
+    .slice(0, ENTRY_LIMIT)
+}
+
 export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFile?: (path: string) => void }) {
   const command = useCommand()
   const language = useLanguage()
@@ -269,6 +290,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   const navigate = useNavigate()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
+  const ead = useEad()
   const { params, tabs, view } = useSessionLayout()
   const filesOnly = () => props.mode === "files"
   const state = { cleanup: undefined as (() => void) | void, committed: false }
@@ -336,7 +358,8 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
     const [files, nextSessions] = await Promise.all([file.searchFiles(query), Promise.resolve(sessions(query))])
     const category = language.t("palette.group.files")
     const entries = files.map((path) => createFileEntry(path, category))
-    return [...commandEntries.list(), ...nextSessions, ...entries]
+    const nodes = matchNodes(ead.nodes(), query).map((hit) => createNodeEntry(hit, language.t("palette.group.nodes")))
+    return [...commandEntries.list(), ...nodes, ...nextSessions, ...entries]
   }
 
   const handleMove = (item: Entry | undefined) => {
@@ -364,6 +387,18 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
 
     if (item.type === "command") {
       item.option?.onSelect?.("palette")
+      return
+    }
+
+    if (item.type === "node") {
+      if (!item.node) return
+      layout.nav.set("ead")
+      layout.sidebar.close()
+      layout.fileTree.close()
+      view().reviewPanel.close()
+      layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH)
+      layout.pluginPanel.open(EAD_PILOT_ID, EAD_PILOT_WIDTH)
+      ead.jumpTo(item.node)
       return
     }
 
@@ -428,6 +463,19 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
                 <Show when={item.keybind}>
                   <Keybind class="rounded-[4px]">{formatKeybind(item.keybind ?? "", language.t)}</Keybind>
                 </Show>
+              </div>
+            </Match>
+            <Match when={item.type === "node"}>
+              <div class="w-full flex items-center justify-between rounded-md pl-1">
+                <div class="flex items-center gap-x-3 grow min-w-0">
+                  <Icon name="dot-grid" size="small" class="shrink-0 text-icon-weak" />
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-14-regular text-text-strong whitespace-nowrap">{item.title}</span>
+                    <Show when={item.description}>
+                      <span class="text-14-regular text-text-weak truncate">{item.description}</span>
+                    </Show>
+                  </div>
+                </div>
               </div>
             </Match>
             <Match when={item.type === "session"}>

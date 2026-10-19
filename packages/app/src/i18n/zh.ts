@@ -124,10 +124,11 @@ export const dict = {
   "command.session.unshare": "取消分享会话",
   "command.session.unshare.description": "停止分享此会话",
 
-  "palette.search.placeholder": "搜索文件、命令和会话",
+  "palette.search.placeholder": "搜索文件、命令、会话和 PFM 节点",
   "palette.empty": "未找到结果",
   "palette.group.commands": "命令",
   "palette.group.files": "文件",
+  "palette.group.nodes": "PFM 节点",
 
   "dialog.provider.search.placeholder": "搜索提供商",
   "dialog.provider.empty": "未找到提供商",
@@ -548,6 +549,7 @@ export const dict = {
   "session.new.lastModified": "最后修改",
   "session.header.search.placeholder": "搜索 {{project}}",
   "session.header.searchFiles": "搜索文件",
+  "session.header.reload": "重新加载 KloudCode",
   "session.header.openIn": "打开方式",
   "session.header.open.action": "打开 {{app}}",
   "session.header.open.ariaLabel": "在 {{app}} 中打开",

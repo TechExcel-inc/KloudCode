@@ -3,6 +3,9 @@ import { eadApi, eadServer } from "./urls"
 /** Empty until Settings / auto-resolve fills a real path. */
 export const DEFAULT_MCP_ENTRY = ""
 
+// The EAD repo is checked out as "EAD_PFM-Editor" on some machines and "EAD_PFM Editor" on others.
+const REPOS = ["EAD_PFM-Editor", "EAD_PFM Editor"]
+
 export function mcpCandidates(worktree: string, preferred = "") {
   const root = worktree.replace(/\/+$/, "")
   const parts = root.split("/").filter(Boolean)
@@ -10,14 +13,18 @@ export function mcpCandidates(worktree: string, preferred = "") {
   const walked: string[] = []
   for (let i = parts.length; i >= 1; i--) {
     const base = prefix + parts.slice(0, i).join("/")
-    walked.push(`${base}/EAD_PFM-Editor/mcp-eadpfm/dist/index.js`)
+    walked.push(...REPOS.map((repo) => `${base}/${repo}/mcp-eadpfm/dist/index.js`))
     walked.push(`${base}/KloudCode/packages/desktop/src-tauri/resources/mcp-eadpfm/dist/index.js`)
     walked.push(`${base}/packages/desktop/src-tauri/resources/mcp-eadpfm/dist/index.js`)
   }
   const list = [
     preferred.trim(),
-    `${root}/../EAD_PFM-Editor/mcp-eadpfm/dist/index.js`,
-    `${root}/../../EAD_PFM-Editor/mcp-eadpfm/dist/index.js`,
+    ...REPOS.flatMap((repo) => [
+      `${root}/../${repo}/mcp-eadpfm/dist/index.js`,
+      `${root}/../../${repo}/mcp-eadpfm/dist/index.js`,
+    ]),
+    // The open project is the EAD repo itself (the only spot the server lets the app confirm exists).
+    `${root}/mcp-eadpfm/dist/index.js`,
     `${root}/../mcp-eadpfm/dist/index.js`,
     ...walked,
   ]

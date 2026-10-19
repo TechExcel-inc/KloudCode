@@ -105,6 +105,8 @@ const empty: State = {
   source: {},
 }
 
+export type EadNodeHit = { id: number; name: string; path: string }
+
 export function expandKey(productId: number, mapId = 0, subSchemaId = 0) {
   const map = Number.isFinite(mapId) && mapId > 0 ? mapId : 0
   const sub = Number.isFinite(subSchemaId) && subSchemaId > 0 ? subSchemaId : 0
@@ -128,6 +130,11 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
     const [store, setStore, , ready] = persisted("ead.v1", createStore<State>({ ...empty }))
     let mute = false
     const [treeTick, setTreeTick] = createSignal(0)
+    // Session-only: the loaded PFM map flattened for global search, and node jump requests from it.
+    const [live, setLive] = createStore({
+      nodes: [] as EadNodeHit[],
+      jump: undefined as { id: number; at: number } | undefined,
+    })
 
     const flushFilters = () => {
       bindFilters(
@@ -475,6 +482,14 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       bumpMap() {
         setStore("mapTick", (n) => (n ?? 0) + 1)
+      },
+      nodes: () => live.nodes,
+      setNodes(nodes: EadNodeHit[]) {
+        setLive("nodes", nodes)
+      },
+      jump: () => live.jump,
+      jumpTo(id: number) {
+        setLive("jump", { id, at: Date.now() })
       },
       treeTick,
       bumpTree() {
