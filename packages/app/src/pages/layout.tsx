@@ -21,6 +21,7 @@ import { base64Encode } from "@opencode-ai/util/encode"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -85,8 +86,12 @@ import {
   WorkspaceDragOverlay,
   type WorkspaceSidebarContext,
 } from "./layout/sidebar-workspace"
-import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
-import { SidebarContent } from "./layout/sidebar-shell"
+import { type ProjectSidebarContext } from "./layout/sidebar-project"
+import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
+import { ProjectIcon } from "./layout/sidebar-items"
+import { RailAccount, RailUsage } from "./layout/sidebar-rail"
+import { type Nav } from "@/context/layout"
+import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
 export default function Layout(props: ParentProps) {
   const [store, setStore, , ready] = persisted(
@@ -2329,28 +2334,152 @@ export default function Layout(props: ParentProps) {
   }
 
   const projects = () => layout.projects.list()
-  const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
+  const sessionKey = createMemo(() => `${params.dir ?? ""}${params.id ? "/" + params.id : ""}`)
+  const sessionView = layout.view(sessionKey)
+
+  createEffect(() => {
+    const dir = currentDir()
+    if (!dir || currentProject()) return
+    if (!globalSync.ready) return
+    layout.projects.open(dir)
+  })
+
+  const go = (next: Nav) => {
+    layout.nav.set(next)
+    if (next === "agent") {
+      sessionView.reviewPanel.close()
+      layout.fileTree.close()
+      layout.sidebar.open()
+      return
+    }
+    layout.sidebar.close()
+    if (next === "ead") {
+      sessionView.reviewPanel.close()
+      layout.fileTree.close()
+      layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH)
+      layout.pluginPanel.open(EAD_PILOT_ID, EAD_PILOT_WIDTH)
+      return
+    }
+    if (next !== "code") return
+    layout.fileTree.open()
+    layout.fileTree.setTab("all")
+    if (params.dir) sessionView.reviewPanel.open()
+  }
+
+  const railItems = createMemo((): RailEntry[] => {
+    const nav = layout.nav.current()
+    const views: { id: Nav; icon: RailEntry["icon"] }[] = [
+      { id: "ead", icon: "dot-grid" },
+      { id: "agent", icon: "brain" },
+      { id: "code", icon: "code" },
+      { id: "spec", icon: "edit" },
+      { id: "task", icon: "checklist" },
+      { id: "wiki", icon: "open-file" },
+    ]
+    return [
+      ...views.map((item) => ({
+        id: item.id,
+        icon: item.icon,
+        label: language.t(`rail.${item.id}`),
+        active: nav === item.id,
+        onClick: () => go(item.id),
+      })),
+      {
+        id: "term",
+        icon: "terminal",
+        label: language.t("rail.term"),
+        active: sessionView.terminal.opened(),
+        onClick: () => sessionView.terminal.toggle(),
+      },
+    ]
+  })
+
+  const railSwitcher = (mobile?: boolean) => (
+    <DropdownMenu placement={mobile ? "bottom-start" : "right-start"}>
+      <DropdownMenu.Trigger
+        as="button"
+        type="button"
+        data-action="rail-project"
+        aria-label={language.t("rail.project")}
+        class="size-10 p-1 rounded-lg flex items-center justify-center border border-border-weak-base hover:bg-surface-base-hover"
+      >
+        <Show when={currentProject()} fallback={<Icon name="folder" size="medium" />}>
+          {(project) => <ProjectIcon project={project()} notify />}
+        </Show>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content class="ml-1 min-w-56">
+          <For each={projects()}>
+            {(project) => (
+              <DropdownMenu.Item
+                data-action="rail-project-item"
+                onSelect={() => navigateToProject(project.worktree)}
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <ProjectIcon project={project} class="size-5" />
+                  <DropdownMenu.ItemLabel class="truncate">{displayName(project)}</DropdownMenu.ItemLabel>
+                  <Show when={currentProject()?.worktree === project.worktree}>
+                    <Icon name="check-small" size="small" />
+                  </Show>
+                </div>
+              </DropdownMenu.Item>
+            )}
+          </For>
+          <Show when={projects().length > 0}>
+            <DropdownMenu.Separator />
+          </Show>
+          <DropdownMenu.Item data-action="rail-project-open" onSelect={chooseProject}>
+            <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
+
+  const railFooter = (mobile?: boolean) => (
+    <>
+      <RailUsage mobile={mobile} />
+      <Tooltip placement={mobile ? "bottom" : "right"} value={language.t("sidebar.help")}>
+        <IconButton
+          icon="help"
+          variant="ghost"
+          size="large"
+          onClick={() => platform.openLink("https://opencode.ai/docs")}
+          aria-label={language.t("sidebar.help")}
+        />
+      </Tooltip>
+      <DropdownMenu placement={mobile ? "bottom" : "right-end"}>
+        <DropdownMenu.Trigger
+          as={IconButton}
+          icon="settings-gear"
+          variant="ghost"
+          size="large"
+          data-action="rail-settings"
+          aria-label={language.t("sidebar.settings")}
+        />
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="ml-1">
+            <DropdownMenu.Item onSelect={openSettings}>
+              <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => platform.openLink("https://opencode.ai/desktop-feedback")}>
+              <DropdownMenu.ItemLabel>{language.t("rail.feedback")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+      <RailAccount mobile={mobile} onSignIn={() => go("ead")} />
+    </>
+  )
+
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
       aimMove={aim.move}
-      projects={projects}
-      renderProject={(project) => (
-        <SortableProject ctx={projectSidebarCtx} project={project} sortNow={sortNow} mobile={mobile} />
-      )}
-      handleDragStart={handleDragStart}
-      handleDragEnd={handleDragEnd}
-      handleDragOver={handleDragOver}
-      openProjectLabel={language.t("command.project.open")}
-      openProjectKeybind={() => command.keybind("project.open")}
-      onOpenProject={chooseProject}
-      renderProjectOverlay={projectOverlay}
-      settingsLabel={() => language.t("sidebar.settings")}
-      settingsKeybind={() => command.keybind("settings.open")}
-      onOpenSettings={openSettings}
-      helpLabel={() => language.t("sidebar.help")}
-      onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
+      switcher={() => railSwitcher(mobile)}
+      items={railItems}
+      footer={() => railFooter(mobile)}
       renderPanel={() =>
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }

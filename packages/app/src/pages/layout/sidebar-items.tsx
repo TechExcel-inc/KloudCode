@@ -15,7 +15,7 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import { childSessionOnPath, hasProjectPermissions } from "./helpers"
+import { ago, childSessionOnPath, hasProjectPermissions } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
@@ -95,6 +95,7 @@ const SessionRow = (props: {
   warmPress: () => void
   warmFocus: () => void
 }): JSX.Element => {
+  const language = useLanguage()
   const title = () => sessionTitle(props.session.title)
 
   return (
@@ -129,7 +130,33 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>
+      <div class="min-w-0 flex-1 flex flex-col">
+        <span class="text-14-regular text-text-strong truncate">{title()}</span>
+        <Show when={!props.dense}>
+          <span class="flex items-center gap-1.5 min-w-0 text-12-regular text-text-weak">
+            <span class="truncate">
+              {ago(props.session.time.updated ?? props.session.time.created, Date.now(), language.intl())}
+            </span>
+            <Switch>
+              <Match when={props.isWorking()}>
+                <span class="shrink-0 px-1.5 rounded bg-surface-info-weak text-text-on-info-base">
+                  {language.t("agent.status.working")}
+                </span>
+              </Match>
+              <Match when={props.hasPermissions()}>
+                <span class="shrink-0 px-1.5 rounded bg-surface-warning-weak text-text-on-warning-base">
+                  {language.t("agent.status.approval")}
+                </span>
+              </Match>
+              <Match when={props.hasError()}>
+                <span class="shrink-0 px-1.5 rounded bg-surface-critical-weak text-text-on-critical-base">
+                  {language.t("agent.status.error")}
+                </span>
+              </Match>
+            </Switch>
+          </span>
+        </Show>
+      </div>
     </A>
   )
 }

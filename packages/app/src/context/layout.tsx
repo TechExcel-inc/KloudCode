@@ -20,6 +20,7 @@ const DEFAULT_FILE_TREE_WIDTH = 200
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
 const DEFAULT_PLUGIN_PANEL_WIDTH = 300
+const DEFAULT_CODE_CHAT_WIDTH = 420
 const DEFAULT_EAD_PANELS = {
   [EAD_MAP_ID]: { opened: true, width: EAD_MAP_WIDTH },
   [EAD_PILOT_ID]: { opened: true, width: EAD_PILOT_WIDTH },
@@ -60,6 +61,8 @@ type TabHandoff = {
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
 
 export type ReviewDiffStyle = "unified" | "split"
+
+export type Nav = "ead" | "agent" | "code" | "spec" | "task" | "wiki"
 
 export function ensureSessionKey(key: string, touch: (key: string) => void, seed: (key: string) => void) {
   touch(key)
@@ -282,6 +285,11 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         pluginPanels: { ...DEFAULT_EAD_PANELS } as Record<string, { opened: boolean; width: number }>,
         eadDefaultOpenV1: true,
+        nav: "ead" as Nav,
+        code: {
+          chat: true,
+          width: DEFAULT_CODE_CHAT_WIDTH,
+        },
         mobileSidebar: {
           opened: false,
         },
@@ -626,6 +634,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         move(directory: string, toIndex: number) {
           server.projects.move(directory, toIndex)
+        },
+      },
+      nav: {
+        current: createMemo(() => store.nav ?? "ead"),
+        set(nav: Nav) {
+          setStore("nav", nav)
+        },
+      },
+      code: {
+        chat: createMemo(() => store.code?.chat ?? true),
+        width: createMemo(() => store.code?.width ?? DEFAULT_CODE_CHAT_WIDTH),
+        toggle() {
+          setStore("code", (code) => ({ width: code?.width ?? DEFAULT_CODE_CHAT_WIDTH, chat: !(code?.chat ?? true) }))
+        },
+        resize(width: number) {
+          setStore("code", (code) => ({ chat: code?.chat ?? true, width }))
         },
       },
       sidebar: {

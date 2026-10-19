@@ -69,6 +69,8 @@ import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
+import { RailPlaceholder } from "@/pages/session/rail-placeholder"
+import { AgentEdits, EDITS_WIDTH } from "@/pages/session/agent-edits"
 import { formatServerError } from "@/utils/server-errors"
 
 const emptyUserMessages: UserMessage[] = []
@@ -411,17 +413,24 @@ export default function Page() {
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
-  const eadMapOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened(EAD_MAP_ID)())
-  const eadPilotOpen = createMemo(() => isDesktop() && layout.pluginPanel.opened(EAD_PILOT_ID)())
+  const eadView = createMemo(() => layout.nav.current() === "ead")
+  const eadMapOpen = createMemo(() => isDesktop() && eadView() && layout.pluginPanel.opened(EAD_MAP_ID)())
+  const eadPilotOpen = createMemo(() => isDesktop() && eadView() && layout.pluginPanel.opened(EAD_PILOT_ID)())
   const eadMapWidth = createMemo(() => (eadMapOpen() ? layout.pluginPanel.width(EAD_MAP_ID)() : 0))
   const eadPilotWidth = createMemo(() => (eadPilotOpen() ? layout.pluginPanel.width(EAD_PILOT_ID)() : 0))
   const eadExtra = createMemo(() => eadMapWidth() + eadPilotWidth())
+  const editsOpen = createMemo(
+    () => isDesktop() && layout.nav.current() === "agent" && !desktopReviewOpen(),
+  )
+  const sideExtra = createMemo(() => eadExtra() + (editsOpen() ? EDITS_WIDTH : 0))
+  const codeView = createMemo(() => layout.nav.current() === "code")
   const sessionChatWidth = createMemo(() => {
     if (!desktopReviewOpen()) return undefined
+    if (codeView()) return layout.code.chat() ? layout.code.width() : 0
     return Math.max(0, layout.session.width() - eadExtra())
   })
   const sessionPanelWidth = createMemo(() => {
-    const ead = eadExtra()
+    const ead = sideExtra()
     if (!desktopSidePanelOpen()) {
       if (ead === 0) return "100%"
       return `calc(100% - ${ead}px)`
@@ -1080,7 +1089,7 @@ export default function Page() {
   const mobileChanges = createMemo(() => !isDesktop() && store.mobileTab === "changes")
   const wantsReview = createMemo(() =>
     isDesktop()
-      ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")
+      ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review") || editsOpen()
       : store.mobileTab === "changes",
   )
 
@@ -1910,8 +1919,10 @@ export default function Page() {
     <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col md:flex-row">
-        <EadMapPanel sizing={eadMapSizing} />
-        <EadPilotPanel sizing={eadPilotSizing} />
+        <div classList={{ contents: eadView(), hidden: !eadView() }}>
+          <EadMapPanel sizing={eadMapSizing} />
+          <EadPilotPanel sizing={eadPilotSizing} />
+        </div>
         <Show when={!isDesktop() && !!params.id}>
           <Tabs value={store.mobileTab} class="h-auto">
             <Tabs.List>
@@ -1941,6 +1952,8 @@ export default function Page() {
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
+            "md:order-2 border-l border-border-weaker-base": codeView() && desktopReviewOpen(),
+            "overflow-hidden invisible": codeView() && desktopReviewOpen() && !layout.code.chat(),
             "pointer-events-none": sessionChatWidth() === 0,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !panelResizeActive() && !ui.reviewSnap,
@@ -2051,7 +2064,22 @@ export default function Page() {
             }}
           />
 
-          <Show when={desktopReviewOpen()}>
+          <Show when={desktopReviewOpen() && codeView() && layout.code.chat()}>
+            <ResizeHandle
+              direction="horizontal"
+              edge="start"
+              size={layout.code.width()}
+              min={280}
+              max={resizeMax() * 0.6}
+              class="pointer-events-auto"
+              onDragStart={() => size.begin()}
+              onDragEnd={() => size.end()}
+              onResize={(width) => {
+                layout.code.resize(width)
+              }}
+            />
+          </Show>
+          <Show when={desktopReviewOpen() && !codeView()}>
             <ResizeHandle
               direction="horizontal"
               size={layout.session.width()}
@@ -2081,9 +2109,23 @@ export default function Page() {
           resizeActive={panelResizeActive}
           size={size}
         />
+        <Show when={editsOpen()}>
+          <AgentEdits
+            diffs={diffs}
+            todos={composer.todos}
+            session={params.id}
+            onOpen={(path) => {
+              layout.nav.set("code")
+              layout.fileTree.open()
+              openReviewPanel()
+              focusReviewDiff(path)
+            }}
+          />
+        </Show>
       </div>
 
       <TerminalPanel />
+      <RailPlaceholder />
     </div>
   )
 }

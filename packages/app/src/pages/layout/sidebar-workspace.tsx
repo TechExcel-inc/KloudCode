@@ -17,7 +17,8 @@ import { type LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { sortedRootSessions, workspaceKey } from "./helpers"
+import { groupSessions, sortedRootSessions, workspaceKey } from "./helpers"
+import { sessionTitle } from "@/utils/session-title"
 
 type InlineEditorComponent = (props: {
   id: string
@@ -460,23 +461,96 @@ export const LocalWorkspace = (props: {
     workspace().setStore("limit", (limit) => (limit ?? 0) + 5)
     await globalSync.project.loadSessions(props.project.worktree)
   }
+  const [state, setState] = createStore({ query: "" })
+  const matches = createMemo(() => {
+    const query = state.query.trim().toLowerCase()
+    const list = sessions() ?? []
+    if (!query) return list
+    return list.filter((session) => (sessionTitle(session.title) ?? "").toLowerCase().includes(query))
+  })
+  const groups = createMemo(() => groupSessions(matches(), props.sortNow()))
 
   return (
-    <div
-      ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
-      class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
-    >
-      <WorkspaceSessionList
-        slug={slug}
-        mobile={props.mobile}
-        ctx={props.ctx}
-        showNew={() => false}
-        loading={loading}
-        sessions={sessions}
-        hasMore={hasMore}
-        loadMore={loadMore}
-        language={language}
-      />
+    <div class="size-full flex flex-col min-h-0">
+      <div class="shrink-0 pb-2 flex flex-col gap-2">
+        <div class="px-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-text-weak">
+          <span>{language.t("agent.sessions.title")}</span>
+          <span>{sessions()?.length ?? 0}</span>
+        </div>
+        <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
+          <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
+          <input
+            type="text"
+            data-action="session-search"
+            value={state.query}
+            onInput={(event) => setState("query", event.currentTarget.value)}
+            placeholder={language.t("agent.sessions.search")}
+            aria-label={language.t("agent.sessions.search")}
+            class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
+          />
+          <Show when={state.query}>
+            <IconButton
+              icon="close-small"
+              variant="ghost"
+              class="size-5"
+              onClick={() => setState("query", "")}
+              aria-label={language.t("agent.sessions.clear")}
+            />
+          </Show>
+        </div>
+      </div>
+      <div
+        ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
+        class="flex-1 min-h-0 flex flex-col py-1 gap-3 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+      >
+        <Show when={loading()}>
+          <SessionSkeleton />
+        </Show>
+        <Show when={!loading() && state.query.trim() && matches().length === 0}>
+          <div class="px-2 py-4 text-12-regular text-text-weak">{language.t("agent.sessions.none")}</div>
+        </Show>
+        <For each={groups()}>
+          {(group) => (
+            <nav class="flex flex-col gap-1" aria-label={language.t(`agent.group.${group.key}`)}>
+              <div class="px-2 pb-0.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wide text-text-weak">
+                <span>{language.t(`agent.group.${group.key}`)}</span>
+                <span>{group.items.length}</span>
+              </div>
+              <For each={group.items}>
+                {(session) => (
+                  <SessionItem
+                    session={session}
+                    list={sessions() ?? []}
+                    navList={props.ctx.navList}
+                    slug={slug()}
+                    mobile={props.mobile}
+                    showChild
+                    sidebarExpanded={props.ctx.sidebarExpanded}
+                    clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
+                    prefetchSession={props.ctx.prefetchSession}
+                    archiveSession={props.ctx.archiveSession}
+                  />
+                )}
+              </For>
+            </nav>
+          )}
+        </For>
+        <Show when={hasMore()}>
+          <div class="relative w-full py-1">
+            <Button
+              variant="ghost"
+              class="flex w-full text-left justify-start text-14-regular text-text-weak pl-2 pr-10"
+              size="large"
+              onClick={(e: MouseEvent) => {
+                void loadMore()
+                ;(e.currentTarget as HTMLButtonElement).blur()
+              }}
+            >
+              {language.t("common.loadMore")}
+            </Button>
+          </div>
+        </Show>
+      </div>
     </div>
   )
 }

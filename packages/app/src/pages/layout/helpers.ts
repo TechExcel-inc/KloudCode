@@ -95,3 +95,40 @@ export const effectiveWorkspaceOrder = (local: string, dirs: string[], persisted
 
   return [...result, ...live.values()]
 }
+
+export type SessionGroup = "today" | "yesterday" | "week" | "older"
+
+const DAY = 24 * 60 * 60 * 1000
+
+export function groupSessions(list: Session[], now: number) {
+  const day = new Date(now)
+  day.setHours(0, 0, 0, 0)
+  const start = day.getTime()
+  const bucket = (session: Session): SessionGroup => {
+    const time = session.time.updated ?? session.time.created
+    if (time >= start) return "today"
+    if (time >= start - DAY) return "yesterday"
+    if (time >= start - 6 * DAY) return "week"
+    return "older"
+  }
+  const order: SessionGroup[] = ["today", "yesterday", "week", "older"]
+  return order
+    .map((key) => ({ key, items: list.filter((session) => bucket(session) === key) }))
+    .filter((group) => group.items.length > 0)
+}
+
+export function ago(time: number, now: number, locale: string) {
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" })
+  const secs = Math.round((time - now) / 1000)
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 31536000],
+    ["month", 2592000],
+    ["week", 604800],
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ]
+  const hit = units.find((unit) => Math.abs(secs) >= unit[1])
+  if (!hit) return format.format(0, "minute")
+  return format.format(Math.round(secs / hit[1]), hit[0])
+}

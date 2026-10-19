@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
+import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Mark } from "@opencode-ai/ui/logo"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
@@ -52,8 +52,10 @@ export function SessionSidePanel(props: {
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const open = createMemo(() => reviewOpen() || fileOpen())
   const reviewTab = createMemo(() => isDesktop())
+  const code = createMemo(() => layout.nav.current() === "code")
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
+    if (reviewOpen() && code()) return `calc(100% - ${layout.code.chat() ? layout.code.width() : 0}px)`
     if (reviewOpen()) return `calc(100% - ${layout.session.width()}px)`
     return `${layout.fileTree.width()}px`
   })
@@ -203,8 +205,11 @@ export function SessionSidePanel(props: {
         }}
         style={{ width: panelWidth() }}
       >
-        <div class="size-full flex border-l border-border-weaker-base">
-          <Show when={reviewOpen()}>
+        <div
+          class="size-full flex"
+          classList={{ "flex-row-reverse": code(), "border-l border-border-weaker-base": !code() }}
+        >
+          <Show when={reviewOpen() && !code()}>
             <ResizeHandle
               direction="horizontal"
               edge="start"
@@ -284,7 +289,7 @@ export function SessionSidePanel(props: {
                       <SortableProvider ids={openedTabs()}>
                         <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                       </SortableProvider>
-                      <div class="bg-background-stronger h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3">
+                      <div class="bg-background-stronger h-full shrink-0 sticky right-0 z-10 flex items-center justify-center gap-1 pr-3">
                         <TooltipKeybind
                           title={language.t("command.file.open")}
                           keybind={command.keybind("file.open")}
@@ -303,6 +308,22 @@ export function SessionSidePanel(props: {
                             aria-label={language.t("command.file.open")}
                           />
                         </TooltipKeybind>
+                        <Show when={code()}>
+                          <Tooltip
+                            placement="bottom"
+                            value={language.t(layout.code.chat() ? "code.chat.hide" : "code.chat.show")}
+                          >
+                            <IconButton
+                              icon={layout.code.chat() ? "layout-right-full" : "layout-right"}
+                              variant="ghost"
+                              iconSize="large"
+                              class="!rounded-md"
+                              data-action="code-chat-toggle"
+                              onClick={() => layout.code.toggle()}
+                              aria-label={language.t(layout.code.chat() ? "code.chat.hide" : "code.chat.show")}
+                            />
+                          </Tooltip>
+                        </Show>
                       </div>
                     </Tabs.List>
                   </div>
@@ -370,7 +391,7 @@ export function SessionSidePanel(props: {
           >
             <div
               class="h-full flex flex-col overflow-hidden group/filetree"
-              classList={{ "border-l border-border-weaker-base": reviewOpen() }}
+              classList={{ "border-l border-border-weaker-base": reviewOpen() && !code(), "border-r border-border-weaker-base": code() }}
             >
               <Tabs
                 variant="pill"
@@ -435,7 +456,7 @@ export function SessionSidePanel(props: {
             <Show when={fileOpen()}>
               <ResizeHandle
                 direction="horizontal"
-                edge="start"
+                edge={code() ? "end" : "start"}
                 size={layout.fileTree.width()}
                 min={RESIZE_MIN}
                 max={resizeMax()}
