@@ -7,7 +7,6 @@ import { Keybind } from "@opencode-ai/ui/keybind"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getFilename } from "@opencode-ai/util/path"
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
@@ -146,8 +145,8 @@ export function SessionHeader() {
   })
   const name = createMemo(() => {
     const current = project()
-    if (current) return current.name || getFilename(current.worktree)
-    return getFilename(projectDirectory())
+    if (current) return displayName(current)
+    return displayName({ worktree: projectDirectory() })
   })
   const hotkey = createMemo(() => command.keybind("file.open"))
   const os = createMemo(() => detectOS(platform))
@@ -261,78 +260,82 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-1 min-w-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="small"
-              class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
-              onClick={() => command.trigger("file.open")}
-              aria-label={language.t("session.header.searchFiles")}
-            >
-              <div class="flex min-w-0 flex-1 items-center overflow-visible">
-                <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
-                  {language.t("session.header.search.placeholder", {
-                    project: name(),
-                  })}
-                </span>
-              </div>
-
-              <Show when={hotkey()}>
-                {(keybind) => (
-                  <Keybind class="shrink-0 !border-0 !bg-transparent !shadow-none px-0 text-text-weaker">
-                    {keybind()}
-                  </Keybind>
-                )}
-              </Show>
-            </Button>
-            <Tooltip placement="bottom" value={language.t("session.header.reload")}>
-              <IconButton
-                icon="reset"
+              <DropdownMenu placement="bottom-start">
+                <Tooltip placement="bottom" value={language.t("rail.project.current", { project: name() })}>
+                  <DropdownMenu.Trigger
+                    as={Button}
+                    type="button"
+                    variant="ghost"
+                    size="small"
+                    class="hidden md:flex max-w-[200px] min-w-0 items-center gap-1.5 rounded-md shadow-none"
+                    data-action="header-current-project"
+                    aria-label={language.t("rail.project.current", { project: name() })}
+                  >
+                    <span class="min-w-0 truncate text-12-medium text-text-strong">{name()}</span>
+                    <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
+                  </DropdownMenu.Trigger>
+                </Tooltip>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content class="mt-1 min-w-56">
+                    <DropdownMenu.Group>
+                      <DropdownMenu.GroupLabel>{language.t("rail.project")}</DropdownMenu.GroupLabel>
+                      <For each={layout.projects.list()}>
+                        {(item) => (
+                          <DropdownMenu.Item
+                            data-action="header-project-item"
+                            onSelect={() => projectActions()?.go(item.worktree)}
+                          >
+                            <div class="flex items-center gap-2 min-w-0">
+                              <ProjectIcon project={item} class="size-5" />
+                              <DropdownMenu.ItemLabel class="truncate">{displayName(item)}</DropdownMenu.ItemLabel>
+                              <Show when={project()?.worktree === item.worktree}>
+                                <Icon name="check-small" size="small" />
+                              </Show>
+                            </div>
+                          </DropdownMenu.Item>
+                        )}
+                      </For>
+                    </DropdownMenu.Group>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item data-action="header-project-open" onSelect={() => projectActions()?.choose()}>
+                      <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
+              <Button
+                type="button"
                 variant="ghost"
-                class="titlebar-icon hidden md:flex"
-                data-action="header-reload"
-                onClick={() => window.location.reload()}
-                aria-label={language.t("session.header.reload")}
-              />
-            </Tooltip>
-            <DropdownMenu placement="bottom-start">
-              <Tooltip placement="bottom" value={language.t("rail.project")}>
-                <DropdownMenu.Trigger
-                  as={IconButton}
-                  icon="folder-add-left"
+                size="small"
+                class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
+                onClick={() => command.trigger("file.open")}
+                aria-label={language.t("session.header.searchFiles")}
+              >
+                <div class="flex min-w-0 flex-1 items-center overflow-visible">
+                  <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
+                    {/* The current project button beside search already names the project. */}
+                    {language.t("session.header.search.short")}
+                  </span>
+                </div>
+
+                <Show when={hotkey()}>
+                  {(keybind) => (
+                    <Keybind class="shrink-0 !border-0 !bg-transparent !shadow-none px-0 text-text-weaker">
+                      {keybind()}
+                    </Keybind>
+                  )}
+                </Show>
+              </Button>
+              <Tooltip placement="bottom" value={language.t("session.header.reload")}>
+                <IconButton
+                  icon="reset"
                   variant="ghost"
                   class="titlebar-icon hidden md:flex"
-                  data-action="header-open-project"
-                  aria-label={language.t("rail.project")}
+                  data-action="header-reload"
+                  onClick={() => window.location.reload()}
+                  aria-label={language.t("session.header.reload")}
                 />
               </Tooltip>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content class="mt-1 min-w-56">
-                  <For each={layout.projects.list()}>
-                    {(item) => (
-                      <DropdownMenu.Item
-                        data-action="header-project-item"
-                        onSelect={() => projectActions()?.go(item.worktree)}
-                      >
-                        <div class="flex items-center gap-2 min-w-0">
-                          <ProjectIcon project={item} class="size-5" />
-                          <DropdownMenu.ItemLabel class="truncate">{displayName(item)}</DropdownMenu.ItemLabel>
-                          <Show when={project()?.worktree === item.worktree}>
-                            <Icon name="check-small" size="small" />
-                          </Show>
-                        </div>
-                      </DropdownMenu.Item>
-                    )}
-                  </For>
-                  <Show when={layout.projects.list().length > 0}>
-                    <DropdownMenu.Separator />
-                  </Show>
-                  <DropdownMenu.Item data-action="header-project-open" onSelect={() => projectActions()?.choose()}>
-                    <DropdownMenu.ItemLabel>{language.t("command.project.open")}</DropdownMenu.ItemLabel>
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu>
             </div>
           </Portal>
         )}

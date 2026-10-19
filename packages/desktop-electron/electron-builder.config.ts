@@ -85,7 +85,7 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.kloudcode.desktop.dev",
-        productName: "OpenCode Dev",
+        productName: "Kloud CoWork",
         rpm: { packageName: "opencode-dev" },
       }
     }
@@ -93,7 +93,7 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.kloudcode.desktop.beta",
-        productName: "OpenCode Beta",
+        productName: "Kloud CoWork Beta",
         protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
         rpm: { packageName: "opencode-beta" },
@@ -103,7 +103,7 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.kloudcode.desktop",
-        productName: "OpenCode",
+        productName: "Kloud CoWork",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
         rpm: { packageName: "opencode" },

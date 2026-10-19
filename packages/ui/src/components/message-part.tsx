@@ -47,7 +47,7 @@ import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/util/path"
-import { checksum } from "@opencode-ai/util/encode"
+import { base64Encode, checksum } from "@opencode-ai/util/encode"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
 import { Spinner } from "./spinner"
@@ -56,7 +56,7 @@ import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
-import { useLocation } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
@@ -2298,6 +2298,39 @@ ToolRegistry.register({
           </div>
         </Show>
       </BasicTool>
+    )
+  },
+})
+
+// The work moved to another project: the line links to the session started there.
+ToolRegistry.register({
+  name: "project_switch",
+  render(props) {
+    const i18n = useI18n()
+    const navigate = useNavigate()
+    const name = createMemo(() =>
+      typeof props.metadata.name === "string" ? props.metadata.name : getFilename(String(props.input.project ?? "")),
+    )
+    const href = createMemo(() => {
+      const project = props.metadata.project
+      const session = props.metadata.session
+      if (typeof project !== "string" || typeof session !== "string" || !session) return
+      return `/${base64Encode(project)}/session/${session}`
+    })
+
+    return (
+      <BasicTool
+        {...props}
+        icon="folder"
+        trigger={{ title: i18n.t("ui.tool.project"), subtitle: name() }}
+        triggerHref={href()}
+        onTriggerClick={(event) => {
+          const to = href()
+          if (!to || event.button !== 0 || event.metaKey || event.ctrlKey) return
+          event.preventDefault()
+          navigate(to)
+        }}
+      />
     )
   },
 })

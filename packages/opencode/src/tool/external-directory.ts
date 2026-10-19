@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { EffectLogger } from "@/effect/logger"
 import type { Tool } from "./tool"
 import { Instance } from "../project/instance"
+import { Foreign } from "../project/foreign"
 import { AppFileSystem } from "../filesystem"
 
 type Kind = "file" | "directory"
@@ -10,6 +11,8 @@ type Kind = "file" | "directory"
 type Options = {
   bypass?: boolean
   kind?: Kind
+  /** The tool changes the file: another project's files wait for project_switch. */
+  write?: boolean
 }
 
 export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirectory")(function* (
@@ -23,6 +26,14 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
 
   const full = process.platform === "win32" ? AppFileSystem.normalizePath(target) : target
   if (Instance.containsPath(full)) return
+
+  const other = Foreign.owner(full)
+  if (other && Foreign.stays(ctx.sessionID, other.worktree)) return
+  if (other && options?.write && Foreign.guarded()) {
+    throw new Error(
+      `${full} is in the project ${Foreign.name(other)} (${other.worktree}), not this session's project. Call the project_switch tool first so the user can choose where this work belongs.`,
+    )
+  }
 
   const kind = options?.kind ?? "file"
   const dir = kind === "directory" ? full : path.dirname(full)

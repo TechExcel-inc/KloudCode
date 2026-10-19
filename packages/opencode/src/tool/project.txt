@@ -1,0 +1,11 @@
+Use this tool when the work the user asks for belongs to a different project than the one this session runs in. The other projects are listed in the environment section of the system prompt.
+
+Call it as soon as you can tell the work is for another project: before you edit any file there, and on a new session before you start the work. Reading another project's files for reference does not need it.
+
+The user chooses:
+- Move: the work continues in a new session in that project, carrying the prompt you write. Stop working here and reply in one short sentence.
+- Keep: the work stays in this session. Work on the other project with absolute paths and follow its AGENTS.md.
+
+Parameters:
+- project: the other project's folder, exactly as listed.
+- prompt: the task for that project, written so a new session can start on it without this conversation: what to change, where, and why, with any detail the user gave.

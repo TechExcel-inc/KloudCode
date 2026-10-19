@@ -1,0 +1,374 @@
+import { createMemo, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
+import { createStore } from "solid-js/store"
+import { useParams } from "@solidjs/router"
+import { base64Encode } from "@opencode-ai/util/encode"
+import { Avatar } from "@opencode-ai/ui/avatar"
+import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Spinner } from "@opencode-ai/ui/spinner"
+import { DialogSearch } from "@/components/dialog-search"
+import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
+import { useGlobalSync } from "@/context/global-sync"
+import { useLanguage } from "@/context/language"
+import { useNotification } from "@/context/notification"
+import { usePermission } from "@/context/permission"
+import { sessionTitle } from "@/utils/session-title"
+import { displayName, hasProjectPermissions, sortedRootSessions, workspaceKey } from "./helpers"
+import { SessionItem, SessionSkeleton } from "./sidebar-items"
+import { type WorkspaceSidebarContext } from "./sidebar-workspace"
+
+const PAGE = 5
+
+/** Sessions of every open project, grouped by project like the Claude app sidebar. */
+export const AllSessions = (props: {
+  ctx: WorkspaceSidebarContext
+  current: Accessor<LocalProject | undefined>
+  projects: Accessor<LocalProject[]>
+  sortNow: Accessor<number>
+  mobile?: boolean
+  onNew: (project: LocalProject) => void
+  onSwitch: (project: LocalProject) => void
+  onEdit: (project: LocalProject) => void
+}): JSX.Element => {
+  const language = useLanguage()
+  const layout = useLayout()
+  const globalSync = useGlobalSync()
+  const params = useParams()
+  const dialog = useDialog()
+  // Projects that can be related to the current one: every project this app knows, minus the shown ones.
+  const candidates = createMemo(() => {
+    const root = props.current()?.worktree
+    if (!root) return []
+    const shown = new Set([root, ...layout.projects.associated(root)])
+    const dirs = [
+      ...layout.projects.list().map((item) => item.worktree),
+      ...globalSync.data.project.map((item) => item.worktree),
+    ]
+    return [...new Set(dirs)].filter((dir) => dir && !shown.has(dir))
+  })
+  const label = (dir: string) => {
+    const item = layout.projects.list().find((entry) => entry.worktree === dir)
+    return item ? displayName(item) : displayName({ worktree: dir })
+  }
+
+  const [state, setState] = createStore({
+    query: "",
+    folded: {} as Record<string, boolean>,
+    shown: {} as Record<string, number>,
+  })
+
+  return (
+    <div class="size-full flex flex-col min-h-0">
+      <div class="shrink-0 pt-3 pb-2 flex flex-col gap-2">
+        <div class="px-1 text-[11px] font-medium uppercase tracking-wide text-text-weak">
+          {language.t("agent.sessions.title")}
+        </div>
+        <div class="flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
+          <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
+          <input
+            type="text"
+            data-action="session-search"
+            value={state.query}
+            onInput={(event) => setState("query", event.currentTarget.value)}
+            placeholder={language.t("agent.sessions.searchAll")}
+            aria-label={language.t("agent.sessions.searchAll")}
+            class="flex-1 min-w-0 bg-transparent text-12-regular text-text-strong placeholder:text-text-weak outline-none"
+          />
+          <Show when={state.query}>
+            <IconButton
+              icon="close-small"
+              variant="ghost"
+              class="size-5"
+              onClick={() => setState("query", "")}
+              aria-label={language.t("agent.sessions.clear")}
+            />
+          </Show>
+        </div>
+        <Show when={props.current()}>
+          {(project) => (
+            <button
+              type="button"
+              data-action="session-new"
+              class="h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+              classList={{ "bg-surface-base-active": !!params.dir && !params.id }}
+              onClick={() => props.onNew(project())}
+            >
+              <Icon name="plus-small" size="small" class="shrink-0 text-icon-base" />
+              <span class="truncate">{language.t("agent.sessions.new")}</span>
+            </button>
+          )}
+        </Show>
+        <div class="group/search h-8 pr-0.5 rounded-md flex items-center hover:bg-surface-raised-base-hover">
+          <button
+            type="button"
+            data-action="session-advanced-search"
+            class="flex-1 min-w-0 h-full px-2 flex items-center gap-2 text-left text-13-regular text-text-strong"
+            onClick={() => dialog.show(() => <DialogSearch project={props.current()?.worktree} />)}
+          >
+            <Icon name="magnifying-glass" size="small" class="shrink-0 text-icon-base" />
+            <span class="truncate">{language.t("search.title")}</span>
+          </button>
+          <Show when={props.current()}>
+            {(project) => (
+              <DropdownMenu placement="bottom-end">
+                <DropdownMenu.Trigger
+                  as={IconButton}
+                  icon="dot-grid"
+                  variant="ghost"
+                  class="shrink-0 size-6 rounded-md opacity-0 group-hover/search:opacity-100 focus-visible:opacity-100 data-[expanded]:opacity-100 data-[expanded]:bg-surface-base-active"
+                  data-action="session-search-menu"
+                  aria-label={language.t("search.related.select")}
+                />
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content class="mt-1 min-w-56 max-h-72 overflow-y-auto">
+                    <DropdownMenu.Group>
+                      <DropdownMenu.GroupLabel>{language.t("search.related.select")}</DropdownMenu.GroupLabel>
+                      <Show
+                        when={candidates().length > 0}
+                        fallback={
+                          <div class="px-2 py-1.5 text-12-regular text-text-weak">
+                            {language.t("search.related.none")}
+                          </div>
+                        }
+                      >
+                        <For each={candidates()}>
+                          {(dir) => (
+                            <DropdownMenu.Item
+                              data-action="session-related-option"
+                              onSelect={() => layout.projects.relate(project().worktree, dir)}
+                            >
+                              <div class="flex flex-col min-w-0">
+                                <DropdownMenu.ItemLabel class="truncate">{label(dir)}</DropdownMenu.ItemLabel>
+                                <span class="truncate text-11-regular text-text-weak">{dir}</span>
+                              </div>
+                            </DropdownMenu.Item>
+                          )}
+                        </For>
+                      </Show>
+                    </DropdownMenu.Group>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
+            )}
+          </Show>
+        </div>
+      </div>
+      <div
+        ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
+        class="flex-1 min-h-0 flex flex-col gap-3 pb-3 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+      >
+        <For each={props.projects()}>
+          {(project) => (
+            <Group
+              ctx={props.ctx}
+              project={project}
+              active={workspaceKey(props.current()?.worktree ?? "") === workspaceKey(project.worktree)}
+              query={state.query.trim().toLowerCase()}
+              folded={!!state.folded[project.worktree]}
+              shown={state.shown[project.worktree] ?? PAGE}
+              sortNow={props.sortNow}
+              mobile={props.mobile}
+              onFold={() => setState("folded", project.worktree, (value) => !value)}
+              onMore={() => setState("shown", project.worktree, (value) => (value ?? PAGE) + PAGE)}
+              onNew={() => props.onNew(project)}
+              onHide={() => {
+                const root = props.current()?.worktree
+                if (root) layout.projects.unrelate(root, project.worktree)
+              }}
+            />
+          )}
+        </For>
+      </div>
+    </div>
+  )
+}
+
+const Group = (props: {
+  ctx: WorkspaceSidebarContext
+  project: LocalProject
+  active: boolean
+  query: string
+  folded: boolean
+  shown: number
+  sortNow: Accessor<number>
+  mobile?: boolean
+  onFold: () => void
+  onMore: () => void
+  onNew: () => void
+  /** Stop showing this related project's sessions. Not offered for the current project. */
+  onHide: () => void
+}): JSX.Element => {
+  const globalSync = useGlobalSync()
+  const language = useLanguage()
+  const dialog = useDialog()
+  const notification = useNotification()
+  const permission = usePermission()
+  const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
+  // What the project's sessions are doing, even while another project is on screen or this one is folded.
+  const activity = createMemo(() => {
+    const stores = dirs().map((directory) => ({
+      directory,
+      store: globalSync.child(directory, { bootstrap: false })[0],
+    }))
+    if (
+      stores.some((item) =>
+        hasProjectPermissions(item.store.permission, (req) => !permission.autoResponds(req, item.directory)),
+      )
+    )
+      return "approval" as const
+    if (
+      stores.some((item) =>
+        Object.values(item.store.session_status ?? {}).some((status) => status && status.type !== "idle"),
+      )
+    )
+      return "working" as const
+    if (dirs().some((directory) => notification.project.unseenHasError(directory))) return "error" as const
+  })
+  const workspace = createMemo(() => {
+    const [store, setStore] = globalSync.child(props.project.worktree)
+    return { store, setStore }
+  })
+  const slug = createMemo(() => base64Encode(props.project.worktree))
+  const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()) ?? [])
+  const matches = createMemo(() => {
+    if (!props.query) return sessions()
+    return sessions().filter((session) => (sessionTitle(session.title) ?? "").toLowerCase().includes(props.query))
+  })
+  const visible = createMemo(() => (props.query ? matches() : matches().slice(0, props.shown)))
+  const loading = createMemo(() => workspace().store.status !== "complete" && sessions().length === 0)
+  const more = createMemo(
+    () => !props.query && (sessions().length > props.shown || workspace().store.sessionTotal > sessions().length),
+  )
+  const loadMore = () => {
+    props.onMore()
+    if (sessions().length > props.shown) return
+    workspace().setStore("limit", (limit) => (limit ?? 0) + PAGE)
+    void globalSync.project.loadSessions(props.project.worktree)
+  }
+
+  return (
+    <Show when={!props.query || matches().length > 0}>
+      <section data-component="session-group" class="flex flex-col gap-0.5">
+        <div
+          data-current={props.active ? "" : undefined}
+          class="group/project h-8 pl-2 pr-0.5 rounded-md flex items-center gap-1.5 hover:bg-surface-raised-base-hover"
+        >
+          <button
+            type="button"
+            data-action="session-group-toggle"
+            class="flex-1 min-w-0 h-full flex items-center gap-1.5 text-left"
+            aria-expanded={!props.folded}
+            onClick={props.onFold}
+          >
+            <Avatar
+              fallback={displayName(props.project)}
+              src={props.project.icon?.override}
+              size="small"
+              {...getAvatarColors(props.project.icon?.color)}
+              class="shrink-0 size-4 rounded text-[10px] leading-none"
+            />
+            <span class="truncate text-[13px] font-medium text-text-strong">{displayName(props.project)}</span>
+            <Icon
+              name="chevron-down"
+              size="small"
+              class="shrink-0 text-icon-weak transition-transform"
+              classList={{ "rotate-180": props.folded }}
+            />
+            <Switch>
+              <Match when={activity() === "approval"}>
+                <span
+                  data-activity="approval"
+                  title={language.t("agent.status.approval")}
+                  class="shrink-0 size-2 rounded-full bg-surface-warning-strong"
+                />
+              </Match>
+              <Match when={activity() === "working"}>
+                <span data-activity="working" title={language.t("agent.status.working")} class="shrink-0 flex">
+                  <Spinner class="size-3" />
+                </span>
+              </Match>
+              <Match when={activity() === "error"}>
+                <span
+                  data-activity="error"
+                  title={language.t("agent.status.error")}
+                  class="shrink-0 size-2 rounded-full bg-text-diff-delete-base"
+                />
+              </Match>
+            </Switch>
+          </button>
+          <Show when={!props.active}>
+            <DropdownMenu placement="bottom-end">
+              <DropdownMenu.Trigger
+                as={IconButton}
+                icon="dot-grid"
+                variant="ghost"
+                class="shrink-0 size-6 rounded-md opacity-0 group-hover/project:opacity-100 focus-visible:opacity-100 data-[expanded]:opacity-100 data-[expanded]:bg-surface-base-active"
+                data-action="session-group-menu"
+                aria-label={language.t("agent.sessions.projectMenu")}
+              />
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="mt-1 min-w-48">
+                  <DropdownMenu.Item
+                    data-action="session-group-search"
+                    onSelect={() => dialog.show(() => <DialogSearch project={props.project.worktree} />)}
+                  >
+                    <DropdownMenu.ItemLabel>{language.t("session.header.search.short")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item data-action="session-group-hide" onSelect={props.onHide}>
+                    <DropdownMenu.ItemLabel>{language.t("agent.sessions.hide")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+          </Show>
+          <IconButton
+            icon="plus-small"
+            variant="ghost"
+            class="shrink-0 size-6 rounded-md opacity-60 group-hover/project:opacity-100"
+            data-action="session-group-new"
+            aria-label={language.t("command.session.new")}
+            onClick={props.onNew}
+          />
+        </div>
+        <Show when={!props.folded || props.query}>
+          <nav class="flex flex-col gap-0.5" aria-label={displayName(props.project)}>
+            <Show when={loading()}>
+              <SessionSkeleton />
+            </Show>
+            <Show when={!loading() && sessions().length === 0}>
+              <div class="px-2 py-1 text-12-regular text-text-weak">{language.t("agent.sessions.empty")}</div>
+            </Show>
+            <For each={visible()}>
+              {(session) => (
+                <SessionItem
+                  session={session}
+                  list={sessions()}
+                  navList={props.ctx.navList}
+                  slug={slug()}
+                  mobile={props.mobile}
+                  showChild
+                  sidebarExpanded={props.ctx.sidebarExpanded}
+                  clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
+                  prefetchSession={props.ctx.prefetchSession}
+                  archiveSession={props.ctx.archiveSession}
+                />
+              )}
+            </For>
+            <Show when={more()}>
+              <Button
+                variant="ghost"
+                class="flex w-full justify-start text-12-regular text-text-weak pl-2"
+                onClick={loadMore}
+              >
+                {language.t("common.loadMore")}
+              </Button>
+            </Show>
+          </nav>
+        </Show>
+      </section>
+    </Show>
+  )
+}

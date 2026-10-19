@@ -39,13 +39,13 @@ import {
   cue,
   underFolder,
 } from "./source-tree"
-import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlans, planLabel, planName } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlans, planLabel, planName, renew } from "./api"
 import { apply, drop, gateway, match, PLAN, spec } from "./plan"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
-import { looksLikeProviderApiKey, tokenExpired } from "./auth"
+import { looksLikeProviderApiKey, RENEW, renewDue, tokenExpired, tokenExpiry } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { prober, resolveMcpEntry } from "./ensure-mcp"
 import { enforce, VIRTUAL_MOVED, parseJson, configured } from "./top-level"
@@ -175,6 +175,46 @@ describe("ead auth", () => {
     expect(tokenExpired(`${header}.${past}.`)).toBe(true)
     const future = btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))
     expect(tokenExpired(`${header}.${future}.`)).toBe(false)
+  })
+
+  test("renewDue renews shortly before expiry and after it", () => {
+    const now = Date.now()
+    const jwt = (exp: number) =>
+      `${btoa(JSON.stringify({ alg: "none" }))}.${btoa(JSON.stringify({ exp: Math.floor(exp / 1000) }))}.`
+    expect(tokenExpiry(jwt(now))).toBe(Math.floor(now / 1000) * 1000)
+    expect(tokenExpiry("opaque")).toBeUndefined()
+    expect(renewDue(jwt(now + 24 * 3600 * 1000), now)).toBe(false)
+    expect(renewDue(jwt(now + RENEW - 60_000), now)).toBe(true)
+    expect(renewDue(jwt(now - 3 * 24 * 3600 * 1000), now)).toBe(true)
+    expect(tokenExpired(jwt(now - 60_000), now)).toBe(true)
+    expect(renewDue("opaque", now)).toBe(false)
+  })
+
+  test("renew posts the old token and returns the new one", async () => {
+    applyEnv("production")
+    const seen: { url: string; method?: string; auth?: string }[] = []
+    const ok = (async (url: string, init?: RequestInit) => {
+      seen.push({
+        url,
+        method: init?.method,
+        auth: (init?.headers as Record<string, string> | undefined)?.Authorization,
+      })
+      return new Response(JSON.stringify({ success: true, token: "fresh", user: { username: "u" } }))
+    }) as typeof fetch
+    expect(await renew("stale", ok)).toBe("fresh")
+    expect(seen).toEqual([{ url: `${eadApi()}/auth/session/renew`, method: "POST", auth: "Bearer stale" }])
+  })
+
+  test("renew fails when Pilot refuses the login", async () => {
+    const refused = (async () =>
+      new Response(JSON.stringify({ success: false, message: "Session cannot be renewed" }), {
+        status: 401,
+      })) as unknown as typeof fetch
+    await expect(renew("stale", refused)).rejects.toThrow("Session cannot be renewed")
+    const offline = (async () => {
+      throw new Error("offline")
+    }) as unknown as typeof fetch
+    await expect(renew("stale", offline)).rejects.toThrow("offline")
   })
 
   test("looksLikeProviderApiKey rejects sk- keys as passwords", () => {

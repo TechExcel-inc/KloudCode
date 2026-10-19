@@ -69,6 +69,7 @@ import {
   effectiveWorkspaceOrder,
   errorMessage,
   latestRootSession,
+  scoped,
   sortedRootSessions,
   workspaceKey,
 } from "./layout/helpers"
@@ -89,6 +90,7 @@ import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
 import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
 import { setProjectActions } from "./layout/project-actions"
+import { AllSessions } from "./layout/sidebar-sessions"
 import { type Nav } from "@/context/layout"
 import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
@@ -2105,7 +2107,7 @@ export default function Layout(props: ParentProps) {
           }
         >
           <>
-            <div class="shrink-0 pl-1 py-1">
+            <div class="shrink-0 pl-1 py-1" classList={{ hidden: !workspacesEnabled() }}>
               <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
                 <div class="flex flex-col min-w-0">
                   <InlineEditor
@@ -2211,34 +2213,22 @@ export default function Layout(props: ParentProps) {
               <Show
                 when={workspacesEnabled()}
                 fallback={
-                  <>
-                    <div class="shrink-0 py-4">
-                      <Button
-                        size="large"
-                        icon="new-session"
-                        class="w-full"
-                        onClick={() => {
-                          const dir = worktree()
-                          if (!dir) return
-                          navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
-                        }}
-                      >
-                        {language.t("command.session.new")}
-                      </Button>
-                    </div>
-                    <div class="flex-1 min-h-0">
-                      <Show when={project()}>
-                        {(item) => (
-                          <LocalWorkspace
-                            ctx={workspaceSidebarCtx}
-                            project={item()}
-                            sortNow={sortNow}
-                            mobile={panelProps.mobile}
-                          />
-                        )}
-                      </Show>
-                    </div>
-                  </>
+                  <AllSessions
+                    ctx={workspaceSidebarCtx}
+                    current={project}
+                    projects={() =>
+                      scoped(
+                        layout.projects.list(),
+                        project()?.worktree,
+                        project() ? layout.projects.associated(project()!.worktree) : [],
+                      )
+                    }
+                    sortNow={sortNow}
+                    mobile={panelProps.mobile}
+                    onNew={(item) => navigateWithSidebarReset(`/${base64Encode(item.worktree)}/session`)}
+                    onSwitch={(item) => void navigateToProject(item.worktree)}
+                    onEdit={(item) => showEditProjectDialog(item)}
+                  />
                 }
               >
                 <>

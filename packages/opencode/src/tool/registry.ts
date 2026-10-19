@@ -1,6 +1,7 @@
 import { PlanExitTool } from "./plan"
 import { Session } from "../session"
 import { QuestionTool } from "./question"
+import { ProjectSwitchTool } from "./project"
 import { BashTool } from "./bash"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -38,6 +39,7 @@ import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
 import { Env } from "../env"
 import { Question } from "../question"
+import { Foreign } from "../project/foreign"
 import { Todo } from "../session/todo"
 import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
@@ -108,6 +110,7 @@ export namespace ToolRegistry {
       const task = yield* TaskTool
       const read = yield* ReadTool
       const question = yield* QuestionTool
+      const project = yield* ProjectSwitchTool
       const todo = yield* TodoWriteTool
       const lsptool = yield* LspTool
       const plan = yield* PlanExitTool
@@ -197,6 +200,7 @@ export namespace ToolRegistry {
             skill: Tool.init(skilltool),
             patch: Tool.init(patchtool),
             question: Tool.init(question),
+            project: Tool.init(project),
             lsp: Tool.init(lsptool),
             plan: Tool.init(plan),
           })
@@ -206,6 +210,7 @@ export namespace ToolRegistry {
             builtin: [
               tool.invalid,
               ...(questionEnabled ? [tool.question] : []),
+              ...(Foreign.enabled() ? [tool.project] : []),
               tool.bash,
               tool.read,
               tool.glob,

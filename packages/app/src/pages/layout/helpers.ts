@@ -59,8 +59,21 @@ export const childSessionOnPath = (sessions: Session[] | undefined, rootID: stri
   }
 }
 
+// A root folder such as "/" has no last segment, so fall back to its path rather than a blank name.
 export const displayName = (project: { name?: string; worktree: string }) =>
-  project.name || getFilename(project.worktree)
+  project.name || getFilename(project.worktree) || project.worktree
+
+/**
+ * Projects whose sessions the sidebar lists: the current project first, then the projects associated
+ * with it, in sidebar order. Associated projects only add their sessions to the list; sessions still
+ * run in their own project. With no current project every open project is listed.
+ */
+export const scoped = <T extends { worktree: string }>(list: T[], root: string | undefined, linked: string[]) => {
+  const main = root ? list.find((item) => workspaceKey(item.worktree) === workspaceKey(root)) : undefined
+  if (!main) return list
+  const keys = new Set(linked.map(workspaceKey))
+  return [main, ...list.filter((item) => item !== main && keys.has(workspaceKey(item.worktree)))]
+}
 
 export const errorMessage = (err: unknown, fallback: string) => {
   if (err && typeof err === "object" && "data" in err) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build unsigned macOS release (x86_64) and copy artifacts to dist-mac/
+# Build unsigned macOS release (x86_64 by default; TARGET=aarch64-apple-darwin for Apple Silicon) and copy artifacts to dist-mac/
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -7,7 +7,7 @@ desktop="$root/packages/desktop"
 out="$root/dist-mac"
 cfg="$desktop/src-tauri/tauri.unsigned.conf.json"
 pkg="$desktop/package.json"
-target="x86_64-apple-darwin"
+target="${TARGET:-x86_64-apple-darwin}"  # TARGET=aarch64-apple-darwin for Apple Silicon
 
 cd "$root"
 
@@ -40,7 +40,7 @@ if [[ ! -f "$cfg" ]]; then
   cat > "$cfg" <<'EOF'
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KloudCode",
+  "productName": "Kloud CoWork",
   "identifier": "ai.kloudcode.desktop",
   "bundle": {
     "createUpdaterArtifacts": false,
@@ -131,7 +131,7 @@ echo "==> tauri build (unsigned release)"
 bun run tauri build --target "$target" --config ./src-tauri/tauri.unsigned.conf.json
 
 bundle="$desktop/src-tauri/target/$target/release/bundle"
-app="$(find "$bundle/macos" -maxdepth 1 -name 'KloudCode.app' -type d | head -1)"
+app="$(find "$bundle/macos" -maxdepth 1 -name 'Kloud CoWork.app' -type d | head -1)"
 if [[ -z "$app" ]]; then
   app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d -newer "$bundle/dmg" 2>/dev/null | head -1)"
 fi

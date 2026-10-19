@@ -1,15 +1,15 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createEffect, createSignal, untrack } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
-import { loadPlans } from "./api"
+import { loadPlans, renew } from "./api"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
-import { tokenExpired } from "./auth"
+import { renewDue, tokenExpired } from "./auth"
 import { DEFAULT_MCP_ENTRY } from "./mcp"
 import { apply as applyPlan, drop as dropPlan, PLAN } from "./plan"
 import { applyEnv, eadApi, type Env } from "./urls"
@@ -155,18 +155,56 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       }
     })
 
+    const drop = () => {
+      setStore("token", "")
+      setStore("tokenApiUrl", "")
+      setStore("pilotBust", (n) => (n ?? 0) + 1)
+    }
+
+    // One renewal at a time; resolves true when the store holds a usable token afterwards.
+    let renewing: Promise<boolean> | undefined
+    const renewal = (token: string): Promise<boolean> => {
+      const now = (store.token ?? "").trim()
+      if (now !== token) return Promise.resolve(!!now)
+      if (renewing) return renewing
+      renewing = renew(token)
+        .then((next) => {
+          const now = (store.token ?? "").trim()
+          if (now !== token) return !!now
+          // tokenApiUrl stays: the renewal went to the same host the token is bound to.
+          setStore("token", next.trim())
+          return true
+        })
+        .catch(() => {
+          const now = (store.token ?? "").trim()
+          return now !== token && !!now
+        })
+        .finally(() => {
+          renewing = undefined
+        })
+      return renewing
+    }
+
+    const [clock, setClock] = createSignal(0)
+    const timer = setInterval(() => setClock((n) => n + 1), 30 * 60 * 1000)
+    onCleanup(() => clearInterval(timer))
+
     createEffect(() => {
       if (!ready()) return
+      clock()
       const raw = (store.token ?? "").trim()
       if (!raw) return
       const saved = normalizeApi(store.tokenApiUrl ?? "")
       const current = normalizeApi(eadApi())
       const hostMismatch = saved && saved !== current
       const unboundProduction = !saved && current.includes("eadfm.com")
-      if (!hostMismatch && !unboundProduction && !tokenExpired(raw)) return
-      setStore("token", "")
-      setStore("tokenApiUrl", "")
-      setStore("pilotBust", (n) => (n ?? 0) + 1)
+      if (hostMismatch || unboundProduction) return drop()
+      if (!renewDue(raw)) return
+      // Renew shortly before expiry, or right away for an expired-but-renewable login.
+      void renewal(raw).then((ok) => {
+        if (ok || (store.token ?? "").trim() !== raw || !tokenExpired(raw)) return
+        drop()
+      })
     })
 
     let linked = ""
@@ -482,6 +520,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       bumpPilot() {
         setStore("pilotBust", (n) => (n ?? 0) + 1)
       },
+      /** Tries to renew this login; true when a usable token is stored afterwards. */
+      renew: (token: string) => renewal(token.trim()),
       /** Re-reads the account's plans and updates the model picker. */
       refreshPlans() {
         setPlanTick((n) => n + 1)

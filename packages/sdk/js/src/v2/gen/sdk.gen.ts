@@ -1768,7 +1768,10 @@ export class Session2 extends HeyApiClient {
       title?: string
       permission?: PermissionRuleset
       time?: {
-        archived?: number
+        /**
+         * Archive time, or null to unarchive
+         */
+        archived?: number | null
       }
     },
     options?: Options<never, ThrowOnError>,

@@ -277,7 +277,7 @@ export const SessionRoutes = lazy(() =>
           permission: Permission.Ruleset.optional(),
           time: z
             .object({
-              archived: z.number().optional(),
+              archived: z.number().nullable().optional().meta({ description: "Archive time, or null to unarchive" }),
             })
             .optional(),
         }),

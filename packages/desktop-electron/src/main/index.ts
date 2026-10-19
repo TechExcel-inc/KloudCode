@@ -14,16 +14,16 @@ contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithG
 process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "KloudCode Dev",
-  beta: "KloudCode Beta",
-  prod: "KloudCode",
+  dev: "Kloud CoWork",
+  beta: "Kloud CoWork Beta",
+  prod: "Kloud CoWork",
 }
 const APP_IDS: Record<string, string> = {
   dev: "ai.kloudcode.desktop.dev",
   beta: "ai.kloudcode.desktop.beta",
   prod: "ai.kloudcode.desktop",
 }
-app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "KloudCode Dev")
+app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "Kloud CoWork")
 app.setPath("userData", join(app.getPath("appData"), app.isPackaged ? APP_IDS[CHANNEL] : "ai.kloudcode.desktop.dev"))
 const { autoUpdater } = pkg
 

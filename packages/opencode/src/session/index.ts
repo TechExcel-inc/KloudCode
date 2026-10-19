@@ -322,7 +322,7 @@ export namespace Session {
     readonly touch: (sessionID: SessionID) => Effect.Effect<void>
     readonly get: (id: SessionID) => Effect.Effect<Info>
     readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
-    readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
+    readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
     readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
     readonly setRevert: (input: {
       sessionID: SessionID
@@ -563,7 +563,10 @@ export namespace Session {
         yield* patch(input.sessionID, { title: input.title })
       })
 
-      const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
+      const setArchived = Effect.fn("Session.setArchived")(function* (input: {
+        sessionID: SessionID
+        time?: number | null
+      }) {
         yield* patch(input.sessionID, { time: { archived: input.time } })
       })
 
@@ -707,8 +710,9 @@ export namespace Session {
     runPromise((svc) => svc.setTitle(input)),
   )
 
-  export const setArchived = fn(z.object({ sessionID: SessionID.zod, time: z.number().optional() }), (input) =>
-    runPromise((svc) => svc.setArchived(input)),
+  export const setArchived = fn(
+    z.object({ sessionID: SessionID.zod, time: z.number().nullable().optional() }),
+    (input) => runPromise((svc) => svc.setArchived(input)),
   )
 
   export const setPermission = fn(z.object({ sessionID: SessionID.zod, permission: Permission.Ruleset }), (input) =>

@@ -9,6 +9,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useParams } from "@solidjs/router"
+import { useArchive } from "@/context/archive"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
@@ -21,6 +22,7 @@ import {
   sansInput,
   useSettings,
 } from "@/context/settings"
+import { DAYS } from "@/utils/archive"
 import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
@@ -67,6 +69,18 @@ const playDemoSound = (id: string | undefined) => {
 export const SettingsGeneral: Component = () => {
   const theme = useTheme()
   const language = useLanguage()
+  const archive = useArchive()
+  const dayOptions = createMemo(() =>
+    DAYS.map((days) => ({
+      value: days,
+      label:
+        days === 0
+          ? language.t("archive.days.never")
+          : days === 1
+            ? language.t("archive.days.one")
+            : language.t("archive.days.other", { count: days }),
+    })),
+  )
   const permission = usePermission()
   const platform = usePlatform()
   const params = useParams()
@@ -225,6 +239,20 @@ export const SettingsGeneral: Component = () => {
             value={(o) => o.value}
             label={(o) => o.label}
             onSelect={(option) => option && language.setLocale(option.value)}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
+        </SettingsRow>
+
+        <SettingsRow title={language.t("archive.days.title")} description={language.t("archive.days.description")}>
+          <Select
+            data-action="settings-archive-days"
+            options={dayOptions()}
+            current={dayOptions().find((o) => o.value === archive.days())}
+            value={(o) => String(o.value)}
+            label={(o) => o.label}
+            onSelect={(option) => option && archive.setDays(option.value)}
             variant="secondary"
             size="small"
             triggerVariant="settings"

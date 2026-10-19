@@ -3374,7 +3374,10 @@ export type SessionUpdateData = {
     title?: string
     permission?: PermissionRuleset
     time?: {
-      archived?: number
+      /**
+       * Archive time, or null to unarchive
+       */
+      archived?: number | null
     }
   }
   path: {

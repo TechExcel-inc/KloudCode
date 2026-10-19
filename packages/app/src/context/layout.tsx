@@ -2,6 +2,7 @@ import { createStore, produce } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { useLocation } from "@solidjs/router"
 import { useGlobalSync } from "./global-sync"
 import { useGlobalSDK } from "./global-sdk"
 import { useServer } from "./server"
@@ -287,6 +288,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         pluginPanels: { ...DEFAULT_EAD_PANELS } as Record<string, { opened: boolean; width: number }>,
         eadDefaultOpenV1: true,
         nav: "ead" as Nav,
+        // Per current project: other projects whose sessions the sidebar also lists (view only).
+        associated: {} as Record<string, string[]>,
         code: {
           chat: true,
           width: DEFAULT_CODE_CHAT_WIDTH,
@@ -604,6 +607,20 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       if (sessionTimer !== undefined) window.clearTimeout(sessionTimer)
     })
 
+    const open = (directory: string) => {
+      const root = rootFor(directory)
+      if (server.projects.list().find((x) => x.worktree === root)) return
+      globalSync.project.loadSessions(root)
+      server.projects.open(root)
+    }
+
+    // Whatever way a project is opened, its page puts it in the sidebar, even after it was hidden.
+    const location = useLocation()
+    createEffect(() => {
+      const dir = decode64(location.pathname.split("/")[1])
+      if (dir?.startsWith("/") || /^[A-Za-z]:[\\/]/.test(dir ?? "")) open(dir!)
+    })
+
     return {
       ready,
       handoff: {
@@ -618,12 +635,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       },
       projects: {
         list,
-        open(directory: string) {
-          const root = rootFor(directory)
-          if (server.projects.list().find((x) => x.worktree === root)) return
-          globalSync.project.loadSessions(root)
-          server.projects.open(root)
-        },
+        open,
         close(directory: string) {
           server.projects.close(directory)
         },
@@ -635,6 +647,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         move(directory: string, toIndex: number) {
           server.projects.move(directory, toIndex)
+        },
+        associated(root: string) {
+          return store.associated?.[root] ?? []
+        },
+        /** Shows `other`'s sessions with `root`'s. Opens `other`, since the sidebar lists open projects. */
+        relate(root: string, other: string) {
+          if (root === other) return
+          open(other)
+          const list = store.associated?.[root] ?? []
+          if (list.includes(other)) return
+          setStore("associated", (all) => ({ ...all, [root]: [...list, other] }))
+        },
+        unrelate(root: string, other: string) {
+          const list = store.associated?.[root] ?? []
+          if (!list.includes(other)) return
+          setStore("associated", (all) => ({ ...all, [root]: list.filter((item) => item !== other) }))
         },
       },
       nav: {

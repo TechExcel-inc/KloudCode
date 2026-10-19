@@ -10,6 +10,7 @@ import { type Session } from "@opencode-ai/sdk/v2/client"
 import {
   childSessionOnPath,
   displayName,
+  scoped,
   effectiveWorkspaceOrder,
   errorMessage,
   hasProjectPermissions,
@@ -221,5 +222,34 @@ describe("layout workspace helpers", () => {
     expect(errorMessage({ data: { message: "boom" } }, "fallback")).toBe("boom")
     expect(errorMessage(new Error("broken"), "fallback")).toBe("broken")
     expect(errorMessage("unknown", "fallback")).toBe("fallback")
+  })
+})
+
+describe("scoped", () => {
+  const list = [{ worktree: "/a" }, { worktree: "/b/" }, { worktree: "/c" }, { worktree: "/d" }]
+
+  test("lists the current project first, then its associated projects in sidebar order", () => {
+    expect(scoped(list, "/c", ["/d", "/b"]).map((item) => item.worktree)).toEqual(["/c", "/b/", "/d"])
+  })
+
+  test("lists only the current project when nothing is associated", () => {
+    expect(scoped(list, "/a", []).map((item) => item.worktree)).toEqual(["/a"])
+  })
+
+  test("ignores associated projects that are no longer open", () => {
+    expect(scoped(list, "/a", ["/gone"]).map((item) => item.worktree)).toEqual(["/a"])
+  })
+
+  test("lists every open project when there is no current project", () => {
+    expect(scoped(list, undefined, ["/b"])).toBe(list)
+    expect(scoped(list, "/not-open", [])).toBe(list)
+  })
+})
+
+describe("displayName", () => {
+  test("names a root folder by its path instead of leaving it blank", () => {
+    expect(displayName({ worktree: "/" })).toBe("/")
+    expect(displayName({ worktree: "/Users/me/KloudCode" })).toBe("KloudCode")
+    expect(displayName({ name: "Pilot", worktree: "/x" })).toBe("Pilot")
   })
 })

@@ -261,7 +261,7 @@ export function formatContextMarkdown(ctx: ContextPayload, fallback: { nodeId: n
   return [
     "# Active EAD PFM Context",
     "",
-    "_Auto-synced by KloudCode EAD Map when you select a PFM node._",
+    "_Auto-synced by Kloud CoWork EAD Map when you select a PFM node._",
     "",
     "## Node",
     `- Product: ${product.productName || "Unknown"}${product.productId ? ` (${product.productId})` : ""}`,
@@ -355,6 +355,20 @@ export async function login(identifier: string, password: string, http: Http = e
   const data = (await readJson(res)) as AuthResult
   if (!res.ok || !data.success || !data.token) {
     throw new Error(data.message || `Login failed (HTTP ${res.status})`)
+  }
+  return data.token
+}
+
+/** Trades a login token (even one up to 30 days expired) for a fresh one. */
+export async function renew(token: string, http: Http = eadHttp()) {
+  const res = await http(`${eadApi()}/auth/session/renew`, { method: "POST", headers: headers(token) }).catch(
+    (err) => {
+      throw new Error(err instanceof Error ? err.message : "Load failed")
+    },
+  )
+  const data = (await res.json().catch(() => undefined)) as AuthResult | undefined
+  if (!res.ok || !data?.success || !data.token) {
+    throw new Error(data?.message || `Renew failed (HTTP ${res.status})`)
   }
   return data.token
 }

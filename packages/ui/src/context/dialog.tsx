@@ -64,6 +64,8 @@ function init() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      // A menu or list open inside the dialog closes itself first; the next Escape closes the dialog.
+      if (event.target instanceof Element && event.target.closest('[role="menu"],[role="listbox"]')) return
       close()
       event.preventDefault()
       event.stopPropagation()

@@ -77,7 +77,7 @@ import {
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
-import { looksLikeProviderApiKey } from "@/ead/auth"
+import { looksLikeProviderApiKey, tokenExpired } from "@/ead/auth"
 import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, eadApi } from "@/ead/urls"
 
 type AuthTab =
@@ -1389,6 +1389,9 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       lastCue = ""
       lastAt = Date.now()
       if (msg === "AUTH_EXPIRED") {
+        // An expired-but-renewable login comes back with a new token, which reruns this load.
+        if (tokenExpired(token) && (await ead.renew(token))) return
+        if (!live()) return
         ead.clearToken()
         setOverlay(true)
         setTab("signin")

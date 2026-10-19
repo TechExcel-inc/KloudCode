@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "KloudCode Dev",
+  "productName": "Kloud CoWork",
   "identifier": "ai.kloudcode.desktop.dev",
   "mainBinaryName": "OpenCode",
   "version": "../package.json",

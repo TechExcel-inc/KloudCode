@@ -1,12 +1,19 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
+import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/util/path"
-import { A, useParams } from "@solidjs/router"
-import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
+import { A, useNavigate, useParams } from "@solidjs/router"
+import { type Accessor, createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
+import { useArchive } from "@/context/archive"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
@@ -161,13 +168,59 @@ const SessionRow = (props: {
   )
 }
 
+/** Confirms deleting a session from the sidebar; leaves the session page when it was open. */
+const DialogDelete = (props: { session: Session; slug: string }): JSX.Element => {
+  const globalSDK = useGlobalSDK()
+  const dialog = useDialog()
+  const language = useLanguage()
+  const params = useParams()
+  const navigate = useNavigate()
+  const remove = async () => {
+    const ok = await globalSDK.client.session
+      .delete({ directory: props.session.directory, sessionID: props.session.id })
+      .then(() => true)
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("session.delete.failed.title"),
+          description: err instanceof Error ? err.message : "",
+        })
+        return false
+      })
+    dialog.close()
+    if (ok && params.id === props.session.id) navigate(`/${props.slug}/session`)
+  }
+
+  return (
+    <Dialog title={language.t("session.delete.title")} fit>
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <span class="text-14-regular text-text-strong">
+          {language.t("session.delete.confirm", {
+            name: sessionTitle(props.session.title) ?? language.t("command.session.new"),
+          })}
+        </span>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button variant="primary" size="large" data-action="session-delete-confirm" onClick={remove}>
+            {language.t("session.delete.button")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
   const layout = useLayout()
   const language = useLanguage()
   const notification = useNotification()
+  const archive = useArchive()
   const permission = usePermission()
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
+  const dialog = useDialog()
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory)
@@ -191,6 +244,21 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       (status !== undefined && status.type !== "idle")
     )
   })
+
+  const title = () => sessionTitle(props.session.title) ?? ""
+  // The draft title while renaming in place; undefined when not renaming.
+  const [name, setName] = createSignal<string>()
+  const [menu, setMenu] = createSignal(false)
+  const rename = () => {
+    const next = name()?.trim()
+    setName(undefined)
+    if (!next || next === title()) return
+    void globalSDK.client.session
+      .update({ directory: props.session.directory, sessionID: props.session.id, title: next })
+      .catch((err: unknown) =>
+        showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : "" }),
+      )
+  }
 
   const tint = createMemo(() => messageAgentColor(sessionStore.message[props.session.id], sessionStore.agent))
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
@@ -247,45 +315,103 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         <div class="flex min-w-0 items-center gap-1">
           <div class="min-w-0 flex-1">
             <Show
-              when={!tooltip()}
+              when={name() === undefined}
               fallback={
-                <Tooltip
-                  placement={props.mobile ? "bottom" : "right"}
-                  value={sessionTitle(props.session.title)}
-                  gutter={10}
-                  class="min-w-0 w-full"
-                >
-                  {item}
-                </Tooltip>
+                <input
+                  ref={(el) => requestAnimationFrame(() => el.select())}
+                  data-action="session-rename-input"
+                  value={name()}
+                  aria-label={language.t("common.rename")}
+                  class="w-full my-1 h-7 px-1.5 rounded bg-surface-base border border-border-interactive-base text-14-regular text-text-strong outline-none"
+                  onInput={(event) => setName(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") rename()
+                    if (event.key === "Escape") setName(undefined)
+                  }}
+                  onBlur={rename}
+                />
               }
             >
-              {item}
+              <Show
+                when={!tooltip()}
+                fallback={
+                  <Tooltip
+                    placement={props.mobile ? "bottom" : "right"}
+                    value={sessionTitle(props.session.title)}
+                    gutter={10}
+                    class="min-w-0 w-full"
+                  >
+                    {item}
+                  </Tooltip>
+                }
+              >
+                {item}
+              </Show>
             </Show>
           </div>
 
-          <Show when={!props.level}>
+          <Show when={!props.level && name() === undefined}>
             <div
               class="shrink-0 overflow-hidden transition-[width,opacity]"
               classList={{
-                "w-6 opacity-100 pointer-events-auto": !!props.mobile,
-                "w-0 opacity-0 pointer-events-none": !props.mobile,
+                "w-6 opacity-100 pointer-events-auto": !!props.mobile || menu(),
+                "w-0 opacity-0 pointer-events-none": !props.mobile && !menu(),
                 "group-hover/session:w-6 group-hover/session:opacity-100 group-hover/session:pointer-events-auto": true,
                 "group-focus-within/session:w-6 group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto": true,
               }}
             >
-              <Tooltip value={language.t("common.archive")} placement="top">
-                <IconButton
-                  icon="archive"
+              <DropdownMenu placement="bottom-end" onOpenChange={setMenu}>
+                <DropdownMenu.Trigger
+                  as={IconButton}
+                  icon="dot-grid"
                   variant="ghost"
-                  class="size-6 rounded-md"
-                  aria-label={language.t("common.archive")}
-                  onClick={(event) => {
+                  class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
+                  data-action="session-menu"
+                  aria-label={language.t("agent.sessions.menu")}
+                  onClick={(event: MouseEvent) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    void props.archiveSession(props.session)
                   }}
                 />
-              </Tooltip>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content class="mt-1 min-w-40">
+                    <DropdownMenu.Item data-action="session-rename" onSelect={() => setName(title())}>
+                      <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      data-action="session-unread"
+                      onSelect={() => notification.session.markUnread(props.session.id, props.session.directory)}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("agent.sessions.unread")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      data-action={archive.done(props.session.id) ? "session-reopen" : "session-finish"}
+                      onSelect={() =>
+                        archive.done(props.session.id)
+                          ? archive.reopen(props.session.id)
+                          : archive.finish(props.session.id)
+                      }
+                    >
+                      <DropdownMenu.ItemLabel>
+                        {language.t(archive.done(props.session.id) ? "session.reopen" : "session.finish")}
+                      </DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      data-action="session-archive"
+                      onSelect={() => void props.archiveSession(props.session)}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item
+                      data-action="session-delete"
+                      onSelect={() => dialog.show(() => <DialogDelete session={props.session} slug={props.slug} />)}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
             </div>
           </Show>
         </div>

@@ -26,6 +26,7 @@ import {
   Suspense,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { ArchiveProvider } from "@/context/archive"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
@@ -98,9 +99,11 @@ function AppShellProviders(props: ParentProps) {
             <NotificationProvider>
             <ModelsProvider>
               <CommandProvider>
-                <HighlightsProvider>
-                  <Layout>{props.children}</Layout>
-                </HighlightsProvider>
+                <ArchiveProvider>
+                  <HighlightsProvider>
+                    <Layout>{props.children}</Layout>
+                  </HighlightsProvider>
+                </ArchiveProvider>
               </CommandProvider>
             </ModelsProvider>
           </NotificationProvider>

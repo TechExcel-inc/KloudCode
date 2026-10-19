@@ -10,6 +10,8 @@ import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
+import { SessionProjectDock } from "@/pages/session/composer/session-project-dock"
+import { projectSwitch } from "@/pages/session/composer/session-project"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
@@ -150,7 +152,12 @@ export function SessionComposerRegion(props: {
         <Show when={props.state.questionRequest()} keyed>
           {(request) => (
             <div>
-              <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />
+              <Show
+                when={projectSwitch(request, sync.data.part)}
+                fallback={<SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />}
+              >
+                {(target) => <SessionProjectDock request={request} target={target()} onSubmit={props.onResponseSubmit} />}
+              </Show>
             </div>
           )}
         </Show>

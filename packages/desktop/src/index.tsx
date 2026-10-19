@@ -27,7 +27,7 @@ import { relaunch } from "@tauri-apps/plugin-process"
 import { open as shellOpen } from "@tauri-apps/plugin-shell"
 import { Store } from "@tauri-apps/plugin-store"
 import { check, type Update } from "@tauri-apps/plugin-updater"
-import { createResource, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../package.json"
 import { initI18n, t } from "./i18n"
@@ -492,6 +492,12 @@ render(() => {
     menuTrigger = (id) => cmd.trigger(id)
     return null
   }
+
+  // The loading screen in index.html covers the blank window until the app can render.
+  createEffect(() => {
+    if (defaultServer.loading || sidecar.loading || locale.loading) return
+    document.getElementById("boot")?.remove()
+  })
 
   onMount(() => {
     document.addEventListener("click", handleClick)

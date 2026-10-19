@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 
 import { Instance } from "../project/instance"
+import { Foreign } from "../project/foreign"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
 import PROMPT_DEFAULT from "./prompt/default.txt"
@@ -15,6 +16,20 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
+
+/** The other projects, so the agent can tell when work belongs in another project's session. */
+function others() {
+  if (!Foreign.enabled()) return []
+  const list = Foreign.projects().slice(0, 30)
+  if (list.length === 0) return []
+  return [
+    [
+      `This session works in the project ${Foreign.here()}. Other projects on this machine:`,
+      ...list.map((item) => `  - ${Foreign.name(item)}: ${item.worktree}`),
+      `When the user's request is for one of these projects rather than ${Foreign.here()}, call the project_switch tool before doing the work.`,
+    ].join("\n"),
+  ]
+}
 
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
@@ -60,6 +75,7 @@ export namespace SystemPrompt {
               `  Today's date: ${new Date().toDateString()}`,
               `</env>`,
             ].join("\n"),
+            ...others(),
           ]
         },
 

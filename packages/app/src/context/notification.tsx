@@ -317,6 +317,10 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         unseenHasError(session: string) {
           return index.session.unseenHasError[session] ?? false
         },
+        /** Puts the unread dot back on a session the person already looked at. */
+        markUnread(session: string, directory: string) {
+          append({ type: "turn-complete", session, directory, time: Date.now(), viewed: false })
+        },
         markViewed(session: string) {
           const unseen = index.session.unseen[session] ?? empty
           if (!unseen.length) return
