@@ -39,7 +39,7 @@ import {
   cue,
   underFolder,
 } from "./source-tree"
-import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlan } from "./api"
+import { collectProducts, collectGroups, productRole, formatSystemPrompt, authKind, parseFilterIds, parseOpenIds, parseFiles, loadActiveMap, loadPlans, planLabel, planName } from "./api"
 import { apply, drop, gateway, match, PLAN, spec } from "./plan"
 import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
@@ -899,32 +899,44 @@ describe("ead i18n + env + mcp", () => {
     ])
   })
 
-  test("loadPlan reads EAD plan names only", async () => {
+  test("loadPlans reads the effective plan from an older Pilot", async () => {
     const empty = { easy: "", reasoning: "", advanced: "", vision: "" }
     const ok = (async () =>
       new Response(JSON.stringify({ effectivePlan: { name: "EAD 1.2", nameSuffix: "  Plus  " } }))) as unknown as typeof fetch
-    expect(await loadPlan("token", ok)).toEqual({ name: "EAD 1.2", suffix: "Plus", model: "", slots: empty })
-    const slotted = (async () =>
-      new Response(
-        JSON.stringify({
-          effectivePlan: {
-            name: "EAD 2.1",
-            slots: [
-              { slotKey: "easy", modelId: "deepseek-chat" },
-              { slotKey: "advanced", modelId: "kimi-k2" },
-            ],
-          },
-        }),
-      )) as unknown as typeof fetch
-    expect(await loadPlan("token", slotted)).toEqual({
-      name: "EAD 2.1",
-      suffix: "",
-      model: "Kimi K2",
-      slots: { easy: "DeepSeek Chat", reasoning: "", advanced: "Kimi K2", vision: "" },
-    })
+    expect(await loadPlans("token", ok)).toEqual([
+      { name: "EAD 1.2", label: "EAD DP1.2", suffix: "Plus", model: "", slots: empty },
+    ])
     const skip = (async () =>
       new Response(JSON.stringify({ effectivePlan: { name: "Premium" } }))) as unknown as typeof fetch
-    expect(await loadPlan("token", skip)).toBeUndefined()
+    expect(await loadPlans("token", skip)).toEqual([])
+    const fail = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch
+    expect(await loadPlans("token", fail)).toEqual([])
+  })
+
+  test("loadPlans lists every assigned plan in display order", async () => {
+    const multi = (async () =>
+      new Response(
+        JSON.stringify({
+          effectivePlan: { name: "EAD 2.1" },
+          assignedPlans: [
+            { name: "EAD 3.0", displayOrder: 20, slots: [{ slotKey: "advanced", modelId: "kimi-k2" }] },
+            { name: "EAD DP2.1", displayOrder: 10, slots: [{ slotKey: "easy", modelId: "deepseek-chat" }] },
+            { name: "EAD 2.1", displayOrder: 30 },
+            { name: "Premium", displayOrder: 5 },
+          ],
+        }),
+      )) as unknown as typeof fetch
+    const list = await loadPlans("token", multi)
+    expect(list.map((plan) => [plan.name, plan.label, plan.model])).toEqual([
+      ["EAD 2.1", "EAD DP2.1", "DeepSeek Chat"],
+      ["EAD 3.0", "EAD DP3.0", "Kimi K2"],
+    ])
+  })
+
+  test("plan names match the Pilot rule", () => {
+    expect(planName("EAD DP2.1")).toBe("EAD 2.1")
+    expect(planName(" EAD 2.1 Plan ")).toBe("EAD 2.1")
+    expect(planLabel("EAD 2.1")).toBe("EAD DP2.1")
   })
 
   test("sendChat drafts and does not auto-submit", async () => {
@@ -941,14 +953,21 @@ describe("ead i18n + env + mcp", () => {
     applyEnv("production")
     expect(PLAN).toBe("ead")
     expect(gateway()).toBe("https://eadfm.com/v1")
-    expect(spec("EAD 2.1")).toEqual({
+    const two = [
+      { name: "EAD 2.1", label: "EAD DP2.1" },
+      { name: "EAD 3.0", label: "EAD DP3.0" },
+    ]
+    expect(spec(two)).toEqual({
       npm: "@ai-sdk/openai-compatible",
       name: "EAD",
       options: { baseURL: "https://eadfm.com/v1" },
-      models: { "EAD 2.1": { name: "EAD 2.1" } },
+      models: { "EAD 2.1": { name: "EAD DP2.1" }, "EAD 3.0": { name: "EAD DP3.0" } },
+      whitelist: ["EAD 2.1", "EAD 3.0"],
     })
-    expect(match(spec("EAD 2.1"), "EAD 2.1")).toBe(true)
-    expect(match(spec("EAD 2.1"), "EAD 1.2")).toBe(false)
+    expect(match(spec(two), two)).toBe(true)
+    expect(match(spec(two), two.slice(0, 1))).toBe(false)
+    expect(match(spec(two.slice(0, 1)), two)).toBe(false)
+    expect(match(spec(two), [two[1], two[0]])).toBe(false)
   })
 
   test("apply skips save when the plan is already registered", async () => {
@@ -963,13 +982,15 @@ describe("ead i18n + env + mcp", () => {
     const save = async (config: unknown) => {
       calls.push(config)
     }
-    await apply({ token: "tok", name: "EAD 2.1", auth, save })
+    const plans = [{ name: "EAD 2.1", label: "EAD DP2.1" }]
+    await apply({ token: "tok", plans, auth, save })
     expect(key).toBe("ead:tok")
-    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1") })
-    await apply({ token: "tok", name: "EAD 2.1", auth, save, cfg: spec("EAD 2.1"), disabled: ["ead"] })
+    await apply({ token: "tok", plans, auth, save, cfg: spec(plans) })
+    await apply({ token: "tok", plans, auth, save, cfg: spec(plans), disabled: ["ead"] })
+    await apply({ token: "tok", plans: [], auth, save })
     expect(calls).toEqual([
-      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
-      { provider: { ead: spec("EAD 2.1") }, disabled_providers: [] },
+      { provider: { ead: spec(plans) }, disabled_providers: [] },
+      { provider: { ead: spec(plans) }, disabled_providers: [] },
     ])
   })
 

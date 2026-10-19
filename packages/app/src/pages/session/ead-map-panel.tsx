@@ -21,7 +21,8 @@ import {
   loadPfmEadCounts,
   loadPfmJobCounts,
   loadPfmTestCounts,
-  loadPlan,
+  loadPlans,
+  type Plan,
   loadRunPrefs,
   loadSourceExpanded,
   loadSourceSchema,
@@ -771,10 +772,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [err, setErr] = createSignal("")
   const [user, setUser] = createSignal("")
   const [email, setEmail] = createSignal("")
-  const [plan, setPlan] = createSignal("")
-  const [suffix, setSuffix] = createSignal("")
-  const [model, setModel] = createSignal("")
-  const [slots, setSlots] = createSignal({ easy: "", reasoning: "", advanced: "", vision: "" })
+  const [plans, setPlans] = createSignal<Plan[]>([])
   const [planOn, setPlanOn] = createSignal(true)
   const [tab, setTab] = createSignal<AuthTab>("signin")
   const [id, setId] = createSignal("")
@@ -1225,10 +1223,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         clearCounts()
         setUser("")
         setEmail("")
-        setPlan("")
-        setSuffix("")
-        setModel("")
-        setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
+        setPlans([])
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1255,12 +1250,12 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       setUserId(profile.userId)
       setTenantId(profile.tenantId)
       noteDiag("Auth", true, profile.email || profile.userName || "ok")
-      void loadPlan(token, fetcher).then((row) => {
+      void loadPlans(token, fetcher).then((list) => {
         if (!live()) return
-        setPlan(row?.name || "")
-        setSuffix(row?.suffix || "")
-        setModel(row?.model || "")
-        setSlots(row?.slots || { easy: "", reasoning: "", advanced: "", vision: "" })
+        const before = plans().map((item) => item.name).join(",")
+        setPlans(list)
+        // A plan added or removed on the team account reaches the model picker without signing in again.
+        if (list.map((item) => item.name).join(",") !== before) ead.refreshPlans()
       })
       const catalog = await loadCatalog(token, fetcher)
       if (!live()) return
@@ -1399,10 +1394,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         setTab("signin")
         setUser("")
         setEmail("")
-        setPlan("")
-        setSuffix("")
-        setModel("")
-        setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
+        setPlans([])
         setUserId(0)
         setTenantId(0)
         setHint(undefined)
@@ -1888,10 +1880,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     clearCounts()
     setUser("")
     setEmail("")
-    setPlan("")
-    setSuffix("")
-    setModel("")
-    setSlots({ easy: "", reasoning: "", advanced: "", vision: "" })
+    setPlans([])
     setHint(undefined)
     setBanner(null)
     setQuery("")
@@ -2046,15 +2035,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     void refresh()
   }
 
-  const planName = () => {
-    const name = plan().trim()
-    const extra = model().trim() || suffix().trim()
-    return name && extra ? `${name} · ${extra}` : name
+  const planName = (item: Plan) => {
+    const extra = item.model.trim() || item.suffix.trim()
+    return extra ? `${item.label} · ${extra}` : item.label
   }
 
-  const planTip = () => {
+  const planTip = (item: Plan) => {
     const blank = tx("eadCodingPlanSlotEmpty")
-    const row = slots()
+    const row = item.slots
     return [
       `${tx("eadCodingPlanSlotEasy")}: ${row.easy || blank}`,
       `${tx("eadCodingPlanSlotReasoning")}: ${row.reasoning || blank}`,
@@ -3476,11 +3464,13 @@ export function EadMapPanel(props: { sizing: Sizing }) {
                     <p class="project-cute-popup-title" id="ead-plan-modal-title">
                       {tx("eadCodingPlanTitle")}
                     </p>
-                    <Show when={planName()}>
-                      <p class="ead-plan-modal-name" title={planTip()}>
-                        {planName()}
-                      </p>
-                    </Show>
+                    <For each={plans()}>
+                      {(item) => (
+                        <p class="ead-plan-modal-name" title={planTip(item)}>
+                          {planName(item)}
+                        </p>
+                      )}
+                    </For>
                     <p class="project-cute-popup-text">{tx("eadCodingPlanBody")}</p>
                     <label class="ead-plan-modal-check">
                       <input

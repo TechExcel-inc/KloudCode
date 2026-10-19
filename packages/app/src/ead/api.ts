@@ -1020,27 +1020,60 @@ function slots(rows: Array<{ slotKey?: string; modelId?: string }> | undefined):
   return out
 }
 
-/** Cursor 1.0.279 — account LLM plan shown in the Map coding-plan dialog. */
-export async function loadPlan(token: string, http: Http = eadHttp()) {
-  try {
-    const data = (await call(http, `/account-settings/llm-plans/assignment`, token)) as {
-      effectivePlan?: {
-        name?: string
-        nameSuffix?: string
-        slots?: Array<{ slotKey?: string; modelId?: string }>
-      }
-    }
-    const name = String(data.effectivePlan?.name || "").trim()
-    if (!PLAN.test(name)) return
-    const suffix = String(data.effectivePlan?.nameSuffix || "")
-      .trim()
-      .replace(/\s+/g, " ")
-      .slice(0, 40)
-    const row = slots(data.effectivePlan?.slots)
-    return { name, suffix, model: row.advanced || row.reasoning || row.easy, slots: row }
-  } catch {
-    return
-  }
+export type Plan = {
+  /** Name the EAD gateway routes on, such as `EAD 2.1`. */
+  name: string
+  /** Name shown to people, such as `EAD DP2.1` (same rule as Pilot's planModelId). */
+  label: string
+  suffix: string
+  model: string
+  slots: PlanSlots
+}
+
+/** `EAD DP2.1` and `EAD 2.1` name the same plan; the gateway's stored name is `EAD 2.1`. */
+export function planName(raw: string) {
+  const text = raw.trim().replace(/ Plan$/i, "")
+  const hit = text.replace(/\s+/g, "").match(/^EADDP(\d+\.\d+)$/i)
+  return hit ? `EAD ${hit[1]}` : text
+}
+
+export function planLabel(name: string) {
+  return name.startsWith("EAD ") ? `EAD DP${name.slice(4)}` : name
+}
+
+type PlanRow = {
+  name?: string
+  nameSuffix?: string
+  displayOrder?: number
+  slots?: Array<{ slotKey?: string; modelId?: string }>
+}
+
+/**
+ * Every EAD Dynamic Plan the account holds, in the team's display order (Pilot's `assignedPlans`).
+ * A Pilot from before multi-plan support sends only `effectivePlan`, which becomes a one-plan list.
+ */
+export async function loadPlans(token: string, http: Http = eadHttp()): Promise<Plan[]> {
+  const data = (await call(http, `/account-settings/llm-plans/assignment`, token).catch(() => undefined)) as
+    | { assignedPlans?: PlanRow[]; effectivePlan?: PlanRow }
+    | undefined
+  if (!data) return []
+  const rows = (Array.isArray(data.assignedPlans) ? [...data.assignedPlans] : [data.effectivePlan]).filter(
+    (row): row is PlanRow => !!row && typeof row === "object",
+  )
+  const order = (row: PlanRow) => (typeof row.displayOrder === "number" ? row.displayOrder : Number.MAX_SAFE_INTEGER)
+  return rows
+    .sort((a, b) => order(a) - order(b))
+    .flatMap((row) => {
+      const name = planName(String(row.name || ""))
+      if (!PLAN.test(name)) return []
+      const suffix = String(row.nameSuffix || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 40)
+      const slot = slots(row.slots)
+      return [{ name, label: planLabel(name), suffix, model: slot.advanced || slot.reasoning || slot.easy, slots: slot }]
+    })
+    .filter((plan, i, list) => list.findIndex((item) => item.name === plan.name) === i)
 }
 
 export type RunPref = {

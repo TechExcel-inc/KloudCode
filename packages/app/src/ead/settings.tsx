@@ -5,7 +5,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { usePlatform } from "@/context/platform"
 import { persisted } from "@/utils/persist"
-import { loadPlan } from "./api"
+import { loadPlans } from "./api"
 import { bindFilters, emptyOwner, mergeOwner, mergePfm, type OwnerFilter, type PfmFilter } from "./filters"
 import { bindEadHttp } from "./http"
 import type { Lang } from "./i18n"
@@ -171,8 +171,10 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
 
     let linked = ""
     let inflight = ""
+    const [planTick, setPlanTick] = createSignal(0)
     createEffect(() => {
       if (!ready() || !sync.ready) return
+      const key = `${(store.token ?? "").trim()}#${planTick()}`
       const token = (store.token ?? "").trim()
       const on = store.coding !== false
       const auth = sdk.client.auth
@@ -185,21 +187,21 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         void dropPlan({ auth, save, disabled: off })
         return
       }
-      if (linked === token || inflight === token) return
-      inflight = token
+      if (linked === key || inflight === key) return
+      inflight = key
       void (async () => {
-        const row = await loadPlan(token)
+        const plans = await loadPlans(token)
         if ((store.token ?? "").trim() !== token) return
         if (untrack(() => store.coding) === false) return
-        if (!row) return
+        if (plans.length === 0) return
         const cfg = untrack(() => sync.data.config.provider?.[PLAN])
         const off = untrack(() => sync.data.config.disabled_providers)
-        await applyPlan({ token, name: row.name, auth, save, cfg, disabled: off })
+        await applyPlan({ token, plans, auth, save, cfg, disabled: off })
         if ((store.token ?? "").trim() !== token) return
         if (untrack(() => store.coding) === false) return
-        linked = token
+        linked = key
       })().finally(() => {
-        if (inflight === token) inflight = ""
+        if (inflight === key) inflight = ""
       })
     })
 
@@ -479,6 +481,10 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       },
       bumpPilot() {
         setStore("pilotBust", (n) => (n ?? 0) + 1)
+      },
+      /** Re-reads the account's plans and updates the model picker. */
+      refreshPlans() {
+        setPlanTick((n) => n + 1)
       },
       bumpMap() {
         setStore("mapTick", (n) => (n ?? 0) + 1)

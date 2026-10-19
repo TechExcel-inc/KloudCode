@@ -17,48 +17,58 @@ export function gateway() {
   return `${eadOrigin()}/v1`
 }
 
-export function spec(name: string) {
+/** A plan as a picker model: `name` is what the gateway routes on, `label` what people see. */
+export type PlanModel = { name: string; label: string }
+
+/**
+ * One model per EAD Dynamic Plan, in the account's order. Config saves merge models, so the
+ * whitelist keeps a plan the account no longer holds out of the picker.
+ */
+export function spec(plans: PlanModel[]) {
   return {
     npm: NPM,
     name: "EAD",
     options: { baseURL: gateway() },
-    models: { [name]: { name } },
+    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label }])),
+    whitelist: plans.map((plan) => plan.name),
   }
 }
 
-export function match(cfg: unknown, name: string) {
+export function match(cfg: unknown, plans: PlanModel[]) {
   if (!cfg || typeof cfg !== "object") return false
   const row = cfg as {
     npm?: string
     name?: string
     options?: { baseURL?: string }
-    models?: Record<string, unknown>
+    models?: Record<string, { name?: string } | undefined>
+    whitelist?: string[]
   }
   if (row.npm !== NPM) return false
   if (row.name !== "EAD") return false
   if (row.options?.baseURL !== gateway()) return false
-  return Boolean(row.models && name in row.models)
+  const list = row.whitelist ?? []
+  if (list.length !== plans.length || plans.some((plan, i) => list[i] !== plan.name)) return false
+  return plans.every((plan) => row.models?.[plan.name]?.name === plan.label)
 }
 
 export async function apply(opts: {
   token: string
-  name: string
+  plans: PlanModel[]
   auth: Auth
   save: Save
   cfg?: unknown
   disabled?: string[]
 }) {
   const token = opts.token.trim()
-  const name = opts.name.trim()
-  if (!token || !name) return
+  if (!token || opts.plans.length === 0) return
   await opts.auth.set({
     providerID: PLAN,
     auth: { type: "api", key: token },
   })
   const off = opts.disabled ?? []
-  if (match(opts.cfg, name) && !off.includes(PLAN)) return
+  if (match(opts.cfg, opts.plans) && !off.includes(PLAN)) return
   await opts.save({
-    provider: { [PLAN]: spec(name) },
+    provider: { [PLAN]: spec(opts.plans) },
     disabled_providers: off.filter((id) => id !== PLAN),
   })
 }
