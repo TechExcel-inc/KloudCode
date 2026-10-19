@@ -63,6 +63,7 @@ export namespace Git {
     readonly branch: (cwd: string) => Effect.Effect<string | undefined>
     readonly prefix: (cwd: string) => Effect.Effect<string>
     readonly defaultBranch: (cwd: string) => Effect.Effect<Base | undefined>
+    readonly remoteUrl: (cwd: string) => Effect.Effect<string | undefined>
     readonly hasHead: (cwd: string) => Effect.Effect<boolean>
     readonly mergeBase: (cwd: string, base: string, head?: string) => Effect.Effect<string | undefined>
     readonly show: (cwd: string, ref: string, file: string, prefix?: string) => Effect.Effect<string>
@@ -173,6 +174,15 @@ export namespace Git {
         if (list.includes("master")) return { name: "master", ref: "master" } satisfies Base
       })
 
+      /** The address of the main remote (origin, else the only or upstream one), or undefined without one. */
+      const remoteUrl = Effect.fn("Git.remoteUrl")(function* (cwd: string) {
+        const name = yield* primary(cwd)
+        if (!name) return
+        const result = yield* run(["remote", "get-url", name], { cwd })
+        if (result.exitCode !== 0) return
+        return out(result) || undefined
+      })
+
       const hasHead = Effect.fn("Git.hasHead")(function* (cwd: string) {
         const result = yield* run(["rev-parse", "--verify", "HEAD"], { cwd })
         return result.exitCode === 0
@@ -246,6 +256,7 @@ export namespace Git {
         branch,
         prefix,
         defaultBranch,
+        remoteUrl,
         hasHead,
         mergeBase,
         show,

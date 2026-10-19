@@ -45,6 +45,7 @@ import { queuePilot, takePilot, peekPilot, watchPilot } from "./actions"
 import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
+import { cowork, CoworkFail, githubRepo, usage } from "./cowork"
 import { looksLikeProviderApiKey, RENEW, renewDue, tokenExpired, tokenExpiry, tokenUser } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { prober, resolveMcpEntry } from "./ensure-mcp"
@@ -1140,5 +1141,67 @@ describe("ead precheck", () => {
   test("precheck fails closed without token", async () => {
     const block = await precheck("", 9, null)
     expect(block?.failures).toEqual(["EAD Script not found."])
+  })
+})
+
+describe("ead cowork client", () => {
+  test("sends the sign-in, company and body, and reads Pilot's error codes", async () => {
+    applyEnv("production")
+    const seen: { url: string; method?: string; headers: Record<string, string>; body?: string }[] = []
+    const answers = [
+      new Response(JSON.stringify({ projectId: 7, repoId: "1001" }), { status: 200 }),
+      new Response(JSON.stringify({ code: "GITHUB_NOT_CONNECTED", message: "Connect GitHub." }), { status: 409 }),
+      new Response(null, { status: 204 }),
+      new Response(JSON.stringify({ sessions: [], next: null }), { status: 200 }),
+    ]
+    const http = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, method: init?.method, headers: init?.headers as Record<string, string>, body: init?.body as string })
+      return answers.shift()!
+    }) as typeof fetch
+    const api = cowork("tok", 3, http)
+
+    expect((await api.resolve("git@github.com:TechExcel-inc/KloudCode.git")).projectId).toBe(7)
+    expect(seen[0].url).toBe("https://eadfm.com/api/cowork/v1/projects/resolve")
+    expect(seen[0].method).toBe("POST")
+    expect(seen[0].headers.Authorization).toBe("Bearer tok")
+    expect(seen[0].headers["X-Tenant-Id"]).toBe("3")
+    expect(JSON.parse(seen[0].body!)).toEqual({ repoUrl: "git@github.com:TechExcel-inc/KloudCode.git" })
+
+    const fail = await api.recent({ q: "p1 vp", limit: 10 }).catch((err) => err)
+    expect(fail).toBeInstanceOf(CoworkFail)
+    expect([fail.status, fail.code, fail.message]).toEqual([409, "GITHUB_NOT_CONNECTED", "Connect GitHub."])
+    expect(seen[1].url).toBe("https://eadfm.com/api/cowork/v1/projects/recent?q=p1+vp&limit=10")
+
+    expect(await api.unrelate(7, 9)).toBeUndefined()
+    expect(seen[2].url).toBe("https://eadfm.com/api/cowork/v1/projects/7/related/9")
+
+    await api.sessions({ projectIds: [7, 9], state: ["OPEN", "FINISHED"] })
+    expect(seen[3].url).toBe("https://eadfm.com/api/cowork/v1/sessions?projectIds=7%2C9&state=OPEN%2CFINISHED")
+  })
+
+  test("githubRepo reads owner/name from every GitHub remote form", () => {
+    expect(githubRepo("https://github.com/TechExcel-inc/KloudCode.git")).toBe("techexcel-inc/kloudcode")
+    expect(githubRepo("https://someone@github.com/TechExcel-inc/P1_VP12")).toBe("techexcel-inc/p1_vp12")
+    expect(githubRepo("git@github.com:TechExcel-inc/KloudCode.git")).toBe("techexcel-inc/kloudcode")
+    expect(githubRepo("ssh://git@github.com/TechExcel-inc/KloudCode.git")).toBe("techexcel-inc/kloudcode")
+    expect(githubRepo("https://gitlab.com/TechExcel-inc/KloudCode.git")).toBeUndefined()
+    expect(githubRepo("https://github.com/TechExcel-inc/KloudCode/tree/dev")).toBeUndefined()
+    expect(githubRepo(undefined)).toBeUndefined()
+  })
+
+  test("usage totals assistant tokens and cost in millionths", () => {
+    const turn = (input: number, cost: number) => ({
+      role: "assistant",
+      cost,
+      tokens: { input, output: 10, reasoning: 5, cache: { read: 2, write: 1 } },
+    })
+    expect(usage([{ role: "user" }, turn(100, 0.0123), turn(50, 0.0001)])).toEqual({
+      messageCount: 3,
+      inputTokens: 150,
+      outputTokens: 30,
+      cacheReadTokens: 4,
+      cacheWriteTokens: 2,
+      costMicroUsd: 12400,
+    })
   })
 })

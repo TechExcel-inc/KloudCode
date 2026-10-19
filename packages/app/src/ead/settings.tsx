@@ -146,9 +146,12 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       )
     }
 
+    // The Pilot server in use, once applied; calls that depend on it wait for this.
+    const [applied, setApplied] = createSignal<Env>()
     createEffect(() => {
       if (!ready()) return
       applyEnv(store.env === "localhost" ? "localhost" : "production")
+      setApplied(store.env === "localhost" ? "localhost" : "production")
       flushFilters()
       if ((store.token ?? "").trim() && !(store.tokenApiUrl ?? "").trim() && store.env === "localhost") {
         setStore("tokenApiUrl", eadApi())
@@ -297,6 +300,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       ready,
       muted: () => mute,
       token: () => {
+        // Re-evaluate once the Pilot server is applied: before that, eadApi() may still be production.
+        applied()
         const raw = (store.token ?? "").trim()
         if (!raw) return ""
         const saved = normalizeApi(store.tokenApiUrl ?? "")
@@ -325,6 +330,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         return "zh"
       },
       env: (): Env => (store.env === "localhost" ? "localhost" : "production"),
+      /** The Pilot server actually in use; undefined until the saved settings are loaded and applied. */
+      server: applied,
       mcpEntry: () => (store.mcpEntry?.trim() ? store.mcpEntry.trim() : DEFAULT_MCP_ENTRY),
       coding: () => store.coding !== false,
       pilotBust: () => store.pilotBust ?? 0,

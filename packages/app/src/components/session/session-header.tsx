@@ -24,6 +24,7 @@ import { StatusPopover } from "../status-popover"
 import { displayName } from "@/pages/layout/helpers"
 import { projectActions } from "@/pages/layout/project-actions"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
+import { useCowork } from "@/context/cowork"
 
 const OPEN_APPS = [
   "vscode",
@@ -135,6 +136,7 @@ export function SessionHeader() {
   const platform = usePlatform()
   const language = useLanguage()
   const sync = useSync()
+  const cowork = useCowork()
   const { params } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
@@ -262,8 +264,8 @@ export function SessionHeader() {
             <div class="flex items-center gap-1 min-w-0">
               <RecentProjectPicker
                 title={language.t("rail.project")}
-                current={project()?.worktree}
-                onPick={(dir) => projectActions()?.go(dir)}
+                current={cowork.projectOf(project()?.worktree)}
+                onPick={(item) => item.worktree && projectActions()?.go(item.worktree)}
                 triggerProps={{
                   class:
                     "hidden md:flex max-w-[200px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",

@@ -15,7 +15,7 @@ import {
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
-import { useProjectActivity } from "@/context/project-activity"
+import { useCowork } from "@/context/cowork"
 import { useGlobalSync } from "@/context/global-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/util/encode"
@@ -124,7 +124,7 @@ export default function Layout(props: ParentProps) {
   const platform = usePlatform()
   const settings = useSettings()
   const server = useServer()
-  const activity = useProjectActivity()
+  const cowork = useCowork()
   const notification = useNotification()
   const permission = usePermission()
   const navigate = useNavigate()
@@ -595,9 +595,9 @@ export default function Layout(props: ParentProps) {
     if (!untrack(() => state.autoselect)) return
 
     const list = layout.projects.list()
-    // The signed-in person's last active project wins; otherwise the last one this app opened.
-    const recent = await activity.recent({ limit: 1 })
-    const last = recent[0]?.worktree ?? server.projects.last()
+    // The signed-in person's most recently active Pilot project on this computer wins; otherwise the last one this app opened.
+    const recent = await cowork.recent({ limit: 10 })
+    const last = recent.find((item) => item.worktree)?.worktree ?? server.projects.last()
 
     const next = last ?? list[0]?.worktree
     if (!next) return
@@ -2225,7 +2225,7 @@ export default function Layout(props: ParentProps) {
                       scoped(
                         layout.projects.list(),
                         project()?.worktree,
-                        project() ? layout.projects.associated(project()!.worktree) : [],
+                        project() ? cowork.relatedDirs(project()!.worktree) : [],
                       )
                     }
                     sortNow={sortNow}

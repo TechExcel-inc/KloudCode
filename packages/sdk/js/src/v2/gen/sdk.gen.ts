@@ -54,9 +54,10 @@ import type {
   GlobalEadPluginProxyResponses,
   GlobalEventResponses,
   GlobalHealthResponses,
-  GlobalProjectActivityListResponses,
-  GlobalProjectActivityTouchErrors,
-  GlobalProjectActivityTouchResponses,
+  GlobalProjectLinkListErrors,
+  GlobalProjectLinkListResponses,
+  GlobalProjectLinkSaveErrors,
+  GlobalProjectLinkSaveResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeResponses,
@@ -257,48 +258,41 @@ export class Ead extends HeyApiClient {
   }
 }
 
-export class ProjectActivity extends HeyApiClient {
+export class ProjectLink extends HeyApiClient {
   /**
-   * Recent projects
+   * Local project links
    *
-   * Project folders the signed-in user used most recently, newest first.
+   * Which EAD Pilot project each local folder belongs to, for one signed-in person. Newest first.
    */
   public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      user?: string
-      limit?: number
-      query?: string
+    parameters: {
+      user: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "user" },
-            { in: "query", key: "limit" },
-            { in: "query", key: "query" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<GlobalProjectActivityListResponses, unknown, ThrowOnError>({
-      url: "/global/project-activity",
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "user" }] }])
+    return (options?.client ?? this.client).get<
+      GlobalProjectLinkListResponses,
+      GlobalProjectLinkListErrors,
+      ThrowOnError
+    >({
+      url: "/global/project-link",
       ...options,
       ...params,
     })
   }
 
   /**
-   * Mark project active
+   * Link a folder to a project
    *
-   * Record that the signed-in user just opened, closed, or worked in a project folder.
+   * Record that a local folder holds an EAD Pilot project, for one signed-in person.
    */
-  public touch<ThrowOnError extends boolean = false>(
+  public save<ThrowOnError extends boolean = false>(
     parameters?: {
       user?: string
       directory?: string
+      projectId?: number
+      repoId?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -309,16 +303,18 @@ export class ProjectActivity extends HeyApiClient {
           args: [
             { in: "body", key: "user" },
             { in: "body", key: "directory" },
+            { in: "body", key: "projectId" },
+            { in: "body", key: "repoId" },
           ],
         },
       ],
     )
-    return (options?.client ?? this.client).post<
-      GlobalProjectActivityTouchResponses,
-      GlobalProjectActivityTouchErrors,
+    return (options?.client ?? this.client).put<
+      GlobalProjectLinkSaveResponses,
+      GlobalProjectLinkSaveErrors,
       ThrowOnError
     >({
-      url: "/global/project-activity",
+      url: "/global/project-link",
       ...options,
       ...params,
       headers: {
@@ -434,9 +430,9 @@ export class Global extends HeyApiClient {
     return (this._ead ??= new Ead({ client: this.client }))
   }
 
-  private _projectActivity?: ProjectActivity
-  get projectActivity(): ProjectActivity {
-    return (this._projectActivity ??= new ProjectActivity({ client: this.client }))
+  private _projectLink?: ProjectLink
+  get projectLink(): ProjectLink {
+    return (this._projectLink ??= new ProjectLink({ client: this.client }))
   }
 
   private _config?: Config

@@ -388,8 +388,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                       data-action={archive.done(props.session.id) ? "session-reopen" : "session-finish"}
                       onSelect={() =>
                         archive.done(props.session.id)
-                          ? archive.reopen(props.session.id)
-                          : archive.finish(props.session.id)
+                          ? archive.reopen(props.session)
+                          : archive.finish(props.session)
                       }
                     >
                       <DropdownMenu.ItemLabel>

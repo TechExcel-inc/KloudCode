@@ -13,6 +13,7 @@ import { DateTime } from "luxon"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useArchive } from "@/context/archive"
+import { useCowork } from "@/context/cowork"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -45,6 +46,7 @@ export function DialogSearch(props: { project?: string }) {
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const archive = useArchive()
+  const cowork = useCowork()
   const dialog = useDialog()
   const language = useLanguage()
   const layout = useLayout()
@@ -60,14 +62,14 @@ export function DialogSearch(props: { project?: string }) {
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const root = () => props.project
-  const related = createMemo(() => (root() ? layout.projects.associated(root()!) : []))
+  const related = createMemo(() => (root() ? cowork.relatedDirs(root()!) : []))
   // Projects that can be related: every project this app knows, plus the open ones.
   const known = createMemo(() => {
     const dirs = [
       ...layout.projects.list().map((item) => item.worktree),
       ...globalSync.data.project.map((item) => item.worktree),
     ]
-    return [...new Set(dirs)].filter((dir) => dir && dir !== root() && !related().includes(dir))
+    return [...new Set(dirs)].filter((dir) => dir && dir !== root() && !related().includes(dir) && !!cowork.projectOf(dir))
   })
   const label = (dir: string) => {
     const item = layout.projects.list().find((entry) => entry.worktree === dir)
@@ -260,7 +262,7 @@ export function DialogSearch(props: { project?: string }) {
                       class="size-5"
                       data-action="search-related-remove"
                       aria-label={language.t("search.related.remove", { project: label(item) })}
-                      onClick={() => layout.projects.unrelate(dir(), item)}
+                      onClick={() => void cowork.unrelate(dir(), item)}
                     />
                   </span>
                 )}
@@ -291,7 +293,7 @@ export function DialogSearch(props: { project?: string }) {
                         {(item) => (
                           <DropdownMenu.Item
                             data-action="search-related-option"
-                            onSelect={() => layout.projects.relate(dir(), item)}
+                            onSelect={() => void cowork.relate(dir(), cowork.projectOf(item)!)}
                           >
                             <div class="flex flex-col min-w-0">
                               <DropdownMenu.ItemLabel class="truncate">{label(item)}</DropdownMenu.ItemLabel>
@@ -364,7 +366,7 @@ export function DialogSearch(props: { project?: string }) {
                               size="small"
                               data-action={kind() === "finished" ? "search-reopen" : "search-finish"}
                               onClick={() =>
-                                kind() === "finished" ? archive.reopen(session.id) : archive.finish(session.id)
+                                kind() === "finished" ? archive.reopen(session) : archive.finish(session)
                               }
                             >
                               {language.t(kind() === "finished" ? "session.reopen" : "session.finish")}

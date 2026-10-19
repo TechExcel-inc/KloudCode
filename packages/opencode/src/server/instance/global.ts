@@ -15,7 +15,7 @@ import { lazy } from "../../util/lazy"
 import { Config } from "../../config/config"
 import { errors } from "../error"
 import * as EadProxy from "@/ead/proxy"
-import { ProjectActivity } from "../../project/activity"
+import { ProjectLink } from "../../project/link"
 
 const log = Log.create({ service: "server" })
 
@@ -106,46 +106,44 @@ export const GlobalRoutes = lazy(() =>
       },
     )
     .get(
-      "/project-activity",
+      "/project-link",
       describeRoute({
-        summary: "Recent projects",
-        description: "Project folders the signed-in user used most recently, newest first.",
-        operationId: "global.projectActivity.list",
+        summary: "Local project links",
+        description: "Which EAD Pilot project each local folder belongs to, for one signed-in person. Newest first.",
+        operationId: "global.projectLink.list",
         responses: {
           200: {
-            description: "Recent project folders",
-            content: { "application/json": { schema: resolver(ProjectActivity.Info.array()) } },
+            description: "Folder links",
+            content: { "application/json": { schema: resolver(ProjectLink.Info.array()) } },
           },
-        },
-      }),
-      validator(
-        "query",
-        z.object({
-          user: z.string().optional(),
-          limit: z.coerce.number().int().optional(),
-          query: z.string().optional(),
-        }),
-      ),
-      async (c) => {
-        const input = c.req.valid("query")
-        return c.json(ProjectActivity.recent({ user: input.user ?? "", limit: input.limit, query: input.query }))
-      },
-    )
-    .post(
-      "/project-activity",
-      describeRoute({
-        summary: "Mark project active",
-        description: "Record that the signed-in user just opened, closed, or worked in a project folder.",
-        operationId: "global.projectActivity.touch",
-        responses: {
-          200: { description: "Recorded", content: { "application/json": { schema: resolver(z.boolean()) } } },
           ...errors(400),
         },
       }),
-      validator("json", z.object({ user: z.string().optional(), directory: z.string().min(1) })),
+      validator("query", z.object({ user: z.string().min(1) })),
+      async (c) => c.json(ProjectLink.list(c.req.valid("query").user)),
+    )
+    .put(
+      "/project-link",
+      describeRoute({
+        summary: "Link a folder to a project",
+        description: "Record that a local folder holds an EAD Pilot project, for one signed-in person.",
+        operationId: "global.projectLink.save",
+        responses: {
+          200: { description: "Saved", content: { "application/json": { schema: resolver(z.boolean()) } } },
+          ...errors(400),
+        },
+      }),
+      validator(
+        "json",
+        z.object({
+          user: z.string().min(1),
+          directory: z.string().min(1),
+          projectId: z.number().int().positive(),
+          repoId: z.string().min(1),
+        }),
+      ),
       async (c) => {
-        const input = c.req.valid("json")
-        ProjectActivity.touch({ user: input.user ?? "", directory: input.directory })
+        ProjectLink.save(c.req.valid("json"))
         return c.json(true)
       },
     )

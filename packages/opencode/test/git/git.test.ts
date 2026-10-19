@@ -60,6 +60,23 @@ describe("Git", () => {
     })
   })
 
+  test("remoteUrl() returns origin's address, or undefined without a remote", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    await withGit(async (rt) => {
+      expect(await rt.runPromise(Git.Service.use((git) => git.remoteUrl(tmp.path)))).toBeUndefined()
+    })
+
+    await $`git remote add upstream https://github.com/other/fork.git`.cwd(tmp.path).quiet()
+    await $`git remote add origin git@github.com:TechExcel-inc/KloudCode.git`.cwd(tmp.path).quiet()
+
+    await withGit(async (rt) => {
+      expect(await rt.runPromise(Git.Service.use((git) => git.remoteUrl(tmp.path)))).toBe(
+        "git@github.com:TechExcel-inc/KloudCode.git",
+      )
+    })
+  })
+
   test("status() handles special filenames", async () => {
     await using tmp = await tmpdir({ git: true })
     await fs.writeFile(path.join(tmp.path, weird), "hello\n", "utf-8")

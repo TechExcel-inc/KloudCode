@@ -15,8 +15,6 @@ import {
   errorMessage,
   hasProjectPermissions,
   latestRootSession,
-  activityRows,
-  recentProjects,
   workspaceKey,
 } from "./helpers"
 
@@ -253,40 +251,5 @@ describe("displayName", () => {
     expect(displayName({ worktree: "/" })).toBe("/")
     expect(displayName({ worktree: "/Users/me/KloudCode" })).toBe("KloudCode")
     expect(displayName({ name: "Pilot", worktree: "/x" })).toBe("Pilot")
-  })
-})
-
-describe("recentProjects", () => {
-  const projects = [
-    { worktree: "/", sandboxes: ["/tmp/scratch"] },
-    { name: "Vendor Portal", worktree: "/src/P1_VP12", sandboxes: ["/wt/vp12-fix"] },
-    { worktree: "/src/Pilot" },
-  ]
-
-  test("maps folders to project roots, newest first, once each", () => {
-    const rows = [
-      { directory: "/wt/vp12-fix" },
-      { directory: "/src/Pilot" },
-      { directory: "/src/P1_VP12" },
-      { directory: "/tmp/scratch" },
-      { directory: "/gone/Old" },
-    ]
-    expect(recentProjects(rows, projects).map((x) => [x.worktree, x.name])).toEqual([
-      ["/src/P1_VP12", "Vendor Portal"],
-      ["/src/Pilot", "Pilot"],
-      ["/tmp/scratch", "scratch"],
-      ["/gone/Old", "Old"],
-    ])
-  })
-
-  test("treats a non-list server answer as no activity", () => {
-    expect(activityRows("<!doctype html><html></html>")).toEqual([])
-    expect(activityRows(undefined)).toEqual([])
-    expect(activityRows([{ directory: "/a" }, { nope: 1 }, null])).toEqual([{ directory: "/a" }])
-  })
-
-  test("skips the given roots", () => {
-    const rows = [{ directory: "/src/P1_VP12" }, { directory: "/src/Pilot" }]
-    expect(recentProjects(rows, projects, ["/src/P1_VP12"]).map((x) => x.worktree)).toEqual(["/src/Pilot"])
   })
 })

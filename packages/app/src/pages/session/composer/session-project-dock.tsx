@@ -9,6 +9,7 @@ import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { useCowork } from "@/context/cowork"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -23,6 +24,7 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
   const sync = useSync()
   const globalSync = useGlobalSync()
   const layout = useLayout()
+  const cowork = useCowork()
   const language = useLanguage()
   const navigate = useNavigate()
   const [busy, setBusy] = createSignal(false)
@@ -82,8 +84,12 @@ export function SessionProjectDock(props: { request: QuestionRequest; target: Pr
     await sdk.client.question.reply({ requestID: props.request.id, answers: [["moved", session.id]] }).catch(() => {})
     // The two projects become related both ways, so whichever is current lists the other's sessions.
     const root = sync.project?.worktree ?? sdk.directory
-    layout.projects.relate(root, dir)
-    layout.projects.relate(dir, root)
+    const from = cowork.projectOf(root)
+    const to = cowork.projectOf(dir)
+    if (from && to) {
+      void cowork.relate(root, to).catch(() => undefined)
+      void cowork.relate(dir, from).catch(() => undefined)
+    }
     navigate(`/${base64Encode(dir)}/session/${session.id}`)
     if (!fresh()) return
     const id = props.request.sessionID

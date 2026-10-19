@@ -4,8 +4,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { getAvatarColors } from "@/context/layout"
 import { useLanguage } from "@/context/language"
-import { useProjectActivity } from "@/context/project-activity"
-import { workspaceKey, type RecentProject } from "@/pages/layout/helpers"
+import { useCowork, type CoworkEntry } from "@/context/cowork"
 
 const LIMIT = 10
 /** A search box appears once the person has more projects than this. */
@@ -19,17 +18,19 @@ export function RecentProjectPicker(props: {
   trigger: JSX.Element
   triggerProps?: Record<string, unknown>
   title: string
-  /** Shows a check mark on this project. */
-  current?: string
-  /** Leaves these project roots out of the list. */
-  skip?: string[]
+  /** Shows a check mark on this Pilot project. */
+  current?: number
+  /** Leaves these Pilot projects out of the list. */
+  skip?: number[]
   empty?: string
   placement?: "bottom-start" | "bottom-end"
-  onPick: (worktree: string) => void
+  onPick: (item: CoworkEntry) => void
+  /** Allows projects that are not on this computer (they have no folder here). */
+  remote?: boolean
   footer?: (close: () => void) => JSX.Element
 }) {
   const language = useLanguage()
-  const activity = useProjectActivity()
+  const cowork = useCowork()
   const [open, setOpen] = createSignal(false)
   const [query, setQuery] = createSignal("")
   const [text, setText] = createSignal("")
@@ -44,13 +45,13 @@ export function RecentProjectPicker(props: {
   )
 
   const [items] = createResource(
-    () => (open() ? { query: query(), skip: props.skip ?? [], version: activity.version() } : undefined),
-    (input) => activity.recent({ limit: LIMIT, query: input.query, skip: input.skip }),
+    () => (open() ? { query: query(), skip: props.skip ?? [] } : undefined),
+    (input) => cowork.recent({ limit: LIMIT, q: input.query, skip: input.skip }),
   )
   // Whether to offer search is decided by the unfiltered list, so it stays while typing.
   const [total] = createResource(
-    () => (open() ? { skip: props.skip ?? [], version: activity.version() } : undefined),
-    (input) => activity.recent({ limit: SEARCH + 1, skip: input.skip }).then((list) => list.length),
+    () => (open() ? { skip: props.skip ?? [] } : undefined),
+    (input) => cowork.recent({ limit: SEARCH + 1, skip: input.skip }).then((list) => list.length),
   )
 
   const type = (value: string) => {
@@ -59,9 +60,11 @@ export function RecentProjectPicker(props: {
     timer = setTimeout(() => setQuery(value.trim()), 150)
   }
   const close = () => setOpen(false)
-  const pick = (item: RecentProject) => {
+  const usable = (item: CoworkEntry) => !!item.worktree || !!props.remote
+  const pick = (item: CoworkEntry) => {
+    if (!usable(item)) return
     close()
-    props.onPick(item.worktree)
+    props.onPick(item)
   }
 
   return (
@@ -87,7 +90,7 @@ export function RecentProjectPicker(props: {
               onInput={(event) => type(event.currentTarget.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return
-                const first = items()?.[0]
+                const first = items()?.find(usable)
                 if (first) pick(first)
               }}
               placeholder={language.t("rail.project.search")}
@@ -111,21 +114,24 @@ export function RecentProjectPicker(props: {
                   type="button"
                   role="option"
                   data-action="recent-project-option"
-                  class="w-full min-w-0 px-2 py-1.5 rounded-md flex items-center gap-2 text-left hover:bg-surface-raised-base-hover focus-visible:bg-surface-raised-base-hover outline-none"
-                  title={item.worktree}
+                  class="w-full min-w-0 px-2 py-1.5 rounded-md flex items-center gap-2 text-left hover:bg-surface-raised-base-hover focus-visible:bg-surface-raised-base-hover outline-none disabled:opacity-50 disabled:hover:bg-transparent"
+                  title={item.worktree ?? item.repo}
+                  disabled={!usable(item)}
                   onClick={() => pick(item)}
                 >
                   <Avatar
                     fallback={item.name}
                     size="small"
                     class="size-5 shrink-0 rounded"
-                    {...getAvatarColors((item.project as { icon?: { color?: string } } | undefined)?.icon?.color)}
+                    {...getAvatarColors()}
                   />
                   <div class="flex-1 min-w-0 flex flex-col">
                     <span class="truncate text-13-regular text-text-strong">{item.name}</span>
-                    <span class="truncate text-11-regular text-text-weak">{item.worktree}</span>
+                    <span class="truncate text-11-regular text-text-weak">
+                      {item.worktree ?? `${item.repo} · ${language.t("cowork.picker.elsewhere")}`}
+                    </span>
                   </div>
-                  <Show when={props.current && workspaceKey(props.current) === workspaceKey(item.worktree)}>
+                  <Show when={props.current === item.projectId}>
                     <Icon name="check-small" size="small" class="shrink-0" />
                   </Show>
                 </button>

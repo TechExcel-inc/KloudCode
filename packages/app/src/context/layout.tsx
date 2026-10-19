@@ -287,8 +287,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         pluginPanels: { ...DEFAULT_EAD_PANELS } as Record<string, { opened: boolean; width: number }>,
         eadDefaultOpenV1: true,
         nav: "ead" as Nav,
-        // Per current project: other projects whose sessions the sidebar also lists (view only).
-        associated: {} as Record<string, string[]>,
         code: {
           chat: true,
           width: DEFAULT_CODE_CHAT_WIDTH,
@@ -639,22 +637,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         move(directory: string, toIndex: number) {
           server.projects.move(directory, toIndex)
-        },
-        associated(root: string) {
-          return store.associated?.[root] ?? []
-        },
-        /** Shows `other`'s sessions with `root`'s. Opens `other`, since the sidebar lists open projects. */
-        relate(root: string, other: string) {
-          if (root === other) return
-          open(other)
-          const list = store.associated?.[root] ?? []
-          if (list.includes(other)) return
-          setStore("associated", (all) => ({ ...all, [root]: [...list, other] }))
-        },
-        unrelate(root: string, other: string) {
-          const list = store.associated?.[root] ?? []
-          if (!list.includes(other)) return
-          setStore("associated", (all) => ({ ...all, [root]: list.filter((item) => item !== other) }))
         },
       },
       nav: {

@@ -12,6 +12,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { DialogSearch } from "@/components/dialog-search"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { useCowork } from "@/context/cowork"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -37,6 +38,7 @@ export const AllSessions = (props: {
 }): JSX.Element => {
   const language = useLanguage()
   const layout = useLayout()
+  const cowork = useCowork()
   const params = useParams()
   const dialog = useDialog()
   const [state, setState] = createStore({
@@ -103,8 +105,8 @@ export const AllSessions = (props: {
             <RecentProjectPicker
               title={language.t("search.related.select")}
               empty={language.t("search.related.none")}
-              skip={[project().worktree, ...layout.projects.associated(project().worktree)]}
-              onPick={(dir) => layout.projects.relate(project().worktree, dir)}
+              skip={[cowork.projectOf(project().worktree) ?? 0, ...cowork.relatedIds(project().worktree)]}
+              onPick={(item) => void cowork.relate(project().worktree, item.projectId)}
               triggerProps={{
                 class:
                   "w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
@@ -140,7 +142,7 @@ export const AllSessions = (props: {
               onNew={() => props.onNew(project)}
               onHide={() => {
                 const root = props.current()?.worktree
-                if (root) layout.projects.unrelate(root, project.worktree)
+                if (root) void cowork.unrelate(root, project.worktree)
               }}
             />
           )}

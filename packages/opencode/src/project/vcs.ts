@@ -119,6 +119,7 @@ export namespace Vcs {
     .object({
       branch: z.string().optional(),
       default_branch: z.string().optional(),
+      remote_url: z.string().optional(),
     })
     .meta({
       ref: "VcsInfo",
@@ -142,6 +143,7 @@ export namespace Vcs {
     readonly init: () => Effect.Effect<void>
     readonly branch: () => Effect.Effect<string | undefined>
     readonly defaultBranch: () => Effect.Effect<string | undefined>
+    readonly remoteUrl: () => Effect.Effect<string | undefined>
     readonly diff: (mode: Mode) => Effect.Effect<FileDiff[]>
   }
 
@@ -202,6 +204,10 @@ export namespace Vcs {
         }),
         defaultBranch: Effect.fn("Vcs.defaultBranch")(function* () {
           return yield* InstanceState.use(state, (x) => x.root?.name)
+        }),
+        remoteUrl: Effect.fn("Vcs.remoteUrl")(function* () {
+          if (Instance.project.vcs !== "git") return
+          return yield* git.remoteUrl(Instance.directory)
         }),
         diff: Effect.fn("Vcs.diff")(function* (mode: Mode) {
           const value = yield* InstanceState.get(state)

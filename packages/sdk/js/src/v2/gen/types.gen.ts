@@ -12,9 +12,11 @@ export type BadRequestError = {
   success: false
 }
 
-export type ProjectActivity = {
+export type ProjectLink = {
   directory: string
-  timeActive: number
+  projectId: number
+  repoId: string
+  timeLinked: number
 }
 
 export type Project = {
@@ -2097,6 +2099,7 @@ export type Path = {
 export type VcsInfo = {
   branch?: string
   default_branch?: string
+  remote_url?: string
 }
 
 export type VcsFileDiff = {
@@ -2182,55 +2185,62 @@ export type GlobalEadPluginProxyResponses = {
 
 export type GlobalEadPluginProxyResponse = GlobalEadPluginProxyResponses[keyof GlobalEadPluginProxyResponses]
 
-export type GlobalProjectActivityListData = {
+export type GlobalProjectLinkListData = {
   body?: never
   path?: never
-  query?: {
-    user?: string
-    limit?: number
-    query?: string
+  query: {
+    user: string
   }
-  url: "/global/project-activity"
+  url: "/global/project-link"
 }
 
-export type GlobalProjectActivityListResponses = {
-  /**
-   * Recent project folders
-   */
-  200: Array<ProjectActivity>
-}
-
-export type GlobalProjectActivityListResponse =
-  GlobalProjectActivityListResponses[keyof GlobalProjectActivityListResponses]
-
-export type GlobalProjectActivityTouchData = {
-  body?: {
-    user?: string
-    directory: string
-  }
-  path?: never
-  query?: never
-  url: "/global/project-activity"
-}
-
-export type GlobalProjectActivityTouchErrors = {
+export type GlobalProjectLinkListErrors = {
   /**
    * Bad request
    */
   400: BadRequestError
 }
 
-export type GlobalProjectActivityTouchError = GlobalProjectActivityTouchErrors[keyof GlobalProjectActivityTouchErrors]
+export type GlobalProjectLinkListError = GlobalProjectLinkListErrors[keyof GlobalProjectLinkListErrors]
 
-export type GlobalProjectActivityTouchResponses = {
+export type GlobalProjectLinkListResponses = {
   /**
-   * Recorded
+   * Folder links
+   */
+  200: Array<ProjectLink>
+}
+
+export type GlobalProjectLinkListResponse = GlobalProjectLinkListResponses[keyof GlobalProjectLinkListResponses]
+
+export type GlobalProjectLinkSaveData = {
+  body?: {
+    user: string
+    directory: string
+    projectId: number
+    repoId: string
+  }
+  path?: never
+  query?: never
+  url: "/global/project-link"
+}
+
+export type GlobalProjectLinkSaveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalProjectLinkSaveError = GlobalProjectLinkSaveErrors[keyof GlobalProjectLinkSaveErrors]
+
+export type GlobalProjectLinkSaveResponses = {
+  /**
+   * Saved
    */
   200: boolean
 }
 
-export type GlobalProjectActivityTouchResponse =
-  GlobalProjectActivityTouchResponses[keyof GlobalProjectActivityTouchResponses]
+export type GlobalProjectLinkSaveResponse = GlobalProjectLinkSaveResponses[keyof GlobalProjectLinkSaveResponses]
 
 export type GlobalHealthData = {
   body?: never
