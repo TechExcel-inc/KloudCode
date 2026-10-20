@@ -1,4 +1,4 @@
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 export type SessionSummary = {
   /** When the first message was sent; undefined for an empty session. */
@@ -10,14 +10,28 @@ export type SessionSummary = {
    * than five minutes between them is idle time and left out.
    */
   activeMs: number
-  /** Time the AI was answering: replies' start to finish, overlaps counted once. */
+  /** Time the AI was answering: replies' start to finish, overlaps counted once, without its waits for answers. */
   workingMs: number
   cost: number
   /** False when the AI used tokens but no reply had a price, so the cost is unknown rather than zero. */
   priced: boolean
 }
 
-export function sessionSummary(messages: Message[], now = Date.now()): SessionSummary {
+/**
+ * When the AI was waiting on the person: from each question it asked until it was answered (now, while
+ * still open). The answer is a moment of activity.
+ */
+export function waitsFor(parts: Part[], now = Date.now()) {
+  return parts.flatMap((part): [number, number][] => {
+    if (part.type !== "tool" || part.tool !== "question") return []
+    const state = part.state
+    if (state.status === "pending") return []
+    const end = state.status === "running" ? now : state.time.end
+    return [[state.time.start, Math.max(state.time.start, end)]]
+  })
+}
+
+export function sessionSummary(messages: Message[], now = Date.now(), waits: [number, number][] = []): SessionSummary {
   if (messages.length === 0) return { sessionMs: 0, activeMs: 0, workingMs: 0, cost: 0, priced: true }
   const started = Math.min(...messages.map((msg) => msg.time.created))
   let last = started
@@ -34,15 +48,35 @@ export function sessionSummary(messages: Message[], now = Date.now()): SessionSu
     tokens += msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
   }
   const sessionMs = last - started
-  const workingMs = joined(spans, 0)
-  // People's messages are moments: they join periods but add no time of their own.
-  const moments = messages.flatMap((msg): [number, number][] => (msg.role === "user" ? [[msg.time.created, msg.time.created]] : []))
-  const activeMs = Math.min(sessionMs, joined([...spans, ...moments], IDLE_MS))
+  // While the AI waits for an answer it is not working; the wait counts as a gap like any other.
+  const working = without(spans, waits)
+  const workingMs = joined(working, 0)
+  // People's messages and answers are moments: they join periods but add no time of their own.
+  const moments = [
+    ...messages.flatMap((msg): [number, number][] => (msg.role === "user" ? [[msg.time.created, msg.time.created]] : [])),
+    ...waits.filter((wait) => wait[1] < now).map((wait): [number, number] => [wait[1], wait[1]]),
+  ]
+  const activeMs = Math.min(sessionMs, joined([...working, ...moments], IDLE_MS))
   return { started, sessionMs, activeMs, workingMs, cost, priced: cost > 0 || tokens === 0 }
 }
 
 /** A gap longer than this between messages and replies is idle time. */
 const IDLE_MS = 5 * 60_000
+
+/** The spans with the given periods cut out of them. */
+function without(spans: [number, number][], cuts: [number, number][]) {
+  let out = spans
+  for (const [from, to] of cuts) {
+    out = out.flatMap(([start, end]): [number, number][] => {
+      if (to <= start || from >= end) return [[start, end]]
+      return [
+        ...(from > start ? [[start, from] as [number, number]] : []),
+        ...(to < end ? [[to, end] as [number, number]] : []),
+      ]
+    })
+  }
+  return out
+}
 
 /** Total length of the spans once joined: spans that overlap or are at most `gap` apart become one. */
 function joined(spans: [number, number][], gap: number) {

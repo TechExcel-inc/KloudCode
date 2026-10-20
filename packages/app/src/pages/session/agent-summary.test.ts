@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
-import { formatDuration, modelCosts, sessionSummary } from "./agent-summary"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import { formatDuration, modelCosts, sessionSummary, waitsFor } from "./agent-summary"
 
 const MIN = 60_000
 
@@ -76,6 +76,34 @@ describe("active time", () => {
     const summary = sessionSummary([user(0), reply(MIN, undefined, 0.1)], 10 * MIN)
     expect(summary.activeMs).toBeLessThanOrEqual(summary.sessionMs)
     expect(summary.activeMs).toBe(10 * MIN)
+  })
+})
+
+describe("waiting for answers", () => {
+  const question = (start: number, end?: number) =>
+    ({
+      type: "tool",
+      tool: "question",
+      state: end === undefined ? { status: "running", time: { start } } : { status: "completed", time: { start, end } },
+    }) as unknown as Part
+
+  test("time the AI waits on a question is not AI working time", () => {
+    // One long reply from 1 to 31 minutes, of which 29 minutes (2 to 31) waited on a question.
+    const messages = [user(0), reply(1 * MIN, 31 * MIN, 0.1)]
+    const waits = waitsFor([question(2 * MIN, 31 * MIN)])
+    const summary = sessionSummary(messages, 40 * MIN, waits)
+    expect(summary.workingMs).toBe(1 * MIN)
+    // Answering after 29 minutes is idle; the last minute of AI work after the answer is active again.
+    expect(summary.activeMs).toBe(2 * MIN)
+  })
+
+  test("a quick answer keeps the time active, and an open question counts up to now", () => {
+    const messages = [user(0), reply(0, 10 * MIN, 0.1)]
+    const quick = sessionSummary(messages, 20 * MIN, waitsFor([question(2 * MIN, 4 * MIN)]))
+    expect([quick.workingMs, quick.activeMs]).toEqual([8 * MIN, 10 * MIN])
+    const open = sessionSummary([user(0), reply(0, undefined, 0.1)], 30 * MIN, waitsFor([question(5 * MIN)], 30 * MIN))
+    expect([open.workingMs, open.activeMs]).toEqual([5 * MIN, 5 * MIN])
+    expect(open.workingMs).toBeLessThanOrEqual(open.activeMs)
   })
 })
 

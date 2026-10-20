@@ -15,7 +15,7 @@ import { AgentCommit } from "./agent-commit"
 import { contextView, formatPercent, formatTokens, type ContextRowKey } from "./agent-context"
 import { OUTPUT_GROUPS, sessionOutputs, type Output, type OutputGroup } from "./agent-outputs"
 import { sessionBackground, sessionTasks, type Task } from "./agent-tasks"
-import { formatDuration, modelCosts, sessionSummary } from "./agent-summary"
+import { formatDuration, modelCosts, sessionSummary, waitsFor } from "./agent-summary"
 
 export const EDITS_WIDTH = 320
 
@@ -321,7 +321,11 @@ export function AgentEdits(props: {
   const [minute, setMinute] = createSignal(Date.now())
   const tick = setInterval(() => setMinute(Date.now()), 60_000)
   onCleanup(() => clearInterval(tick))
-  const summary = createMemo(() => sessionSummary(messages(), minute()))
+  const summary = createMemo(() => {
+    const now = minute()
+    const parts = messages().flatMap((msg) => sync.data.part[msg.id] ?? [])
+    return sessionSummary(messages(), now, waitsFor(parts, now))
+  })
   // EAD plan answers have no price in the app: Pilot's AI gateway knows the real model behind each
   // one and prices it, so their cost is read from Pilot after each reply.
   const lastReply = createMemo(() => {
