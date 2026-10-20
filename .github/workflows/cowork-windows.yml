@@ -1,6 +1,6 @@
 name: cowork-windows
 
-# Builds the unsigned Kloud CoWork Windows installer (NSIS, x64) on a GitHub-hosted runner.
+# Builds the unsigned EAD SiCode Windows installer (NSIS, x64) on a GitHub-hosted runner.
 # Starts when a `cowork-v*` tag is pushed (or by hand from the Actions tab); the .exe is attached
 # to the run as the "kloud-cowork-windows" artifact.
 #

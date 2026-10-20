@@ -261,7 +261,7 @@ export function formatContextMarkdown(ctx: ContextPayload, fallback: { nodeId: n
   return [
     "# Active EAD PFM Context",
     "",
-    "_Auto-synced by Kloud CoWork EAD Map when you select a PFM node._",
+    "_Auto-synced by EAD SiCode EAD Map when you select a PFM node._",
     "",
     "## Node",
     `- Product: ${product.productName || "Unknown"}${product.productId ? ` (${product.productId})` : ""}`,

@@ -5,8 +5,8 @@ import { createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 
-/** Where "Online Help" goes: the Kloud CoWork page on eadfm.com. */
-export const HELP_URL = "https://eadfm.com/cowork/"
+/** Where "Online Help" goes: the EAD SiCode page on eadfm.com. */
+export const HELP_URL = "https://eadfm.com/sicode/"
 
 /** The rail's About button: product name, version, build number, and a link to online help. */
 export function AboutPopover(props: { mobile?: boolean }) {

@@ -53,7 +53,7 @@ impl MainWindow {
             app,
             decorations,
         )
-        .title("Kloud CoWork")
+        .title("EAD SiCode")
         .disable_drag_drop_handler()
         .zoom_hotkeys_enabled(false)
         .inner_size(1280.0, 800.0)

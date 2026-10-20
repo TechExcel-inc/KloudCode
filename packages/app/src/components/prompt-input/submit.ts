@@ -313,7 +313,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // While the AI waits on a question, a typed message is the answer in the person's own words.
-    const asked = params.id ? sessionQuestionRequest(sync.data.session, sync.data.question, params.id) : undefined
+    const asked = params.id ? sessionQuestionRequest(sync.data.session ?? [], sync.data.question ?? {}, params.id) : undefined
     if (asked && text.trim().length > 0) {
       input.addToHistory(currentPrompt, mode)
       input.resetHistoryNavigation()

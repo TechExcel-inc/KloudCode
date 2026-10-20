@@ -40,7 +40,7 @@ if [[ ! -f "$cfg" ]]; then
   cat > "$cfg" <<'EOF'
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Kloud CoWork",
+  "productName": "EAD SiCode",
   "identifier": "ai.kloudcode.desktop",
   "bundle": {
     "createUpdaterArtifacts": false,
@@ -131,7 +131,7 @@ echo "==> tauri build (unsigned release)"
 bun run tauri build --target "$target" --config ./src-tauri/tauri.unsigned.conf.json
 
 bundle="$desktop/src-tauri/target/$target/release/bundle"
-app="$(find "$bundle/macos" -maxdepth 1 -name 'Kloud CoWork.app' -type d | head -1)"
+app="$(find "$bundle/macos" -maxdepth 1 -name 'EAD SiCode.app' -type d | head -1)"
 if [[ -z "$app" ]]; then
   app="$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d -newer "$bundle/dmg" 2>/dev/null | head -1)"
 fi
