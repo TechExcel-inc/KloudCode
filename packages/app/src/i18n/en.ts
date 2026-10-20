@@ -808,6 +808,7 @@ export const dict = {
   "agent.panel.title": "Session details",
   "agent.summary.title": "Summary",
   "agent.summary.started": "Started {{time}}",
+  "agent.summary.active": "Session active time",
   "agent.summary.working": "AI working time",
   "agent.summary.cost": "Estimated cost",
   "agent.summary.costPilot": "EAD plan answers are priced by EAD Pilot at the real model's provider price",

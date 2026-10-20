@@ -710,6 +710,7 @@ export const dict = {
   "agent.panel.title": "工作階段詳情",
   "agent.summary.title": "概要",
   "agent.summary.started": "開始於 {{time}}",
+  "agent.summary.active": "工作階段活躍時長",
   "agent.summary.working": "AI 工作時長",
   "agent.summary.cost": "預估費用",
   "agent.summary.costPilot": "EAD 方案的回答由 EAD Pilot 按實際模型的供應商價格計費",

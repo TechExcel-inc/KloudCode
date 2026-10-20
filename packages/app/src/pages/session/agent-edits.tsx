@@ -401,6 +401,11 @@ export function AgentEdits(props: {
             )}
           </Show>
           <Show when={summary().started}>
+            <Row icon={<Icon name="status-active" size="small" />} right={formatDuration(summary().activeMs)}>
+              {language.t("agent.summary.active")}
+            </Row>
+          </Show>
+          <Show when={summary().started}>
             <Row icon={<Icon name="brain" size="small" />} right={formatDuration(summary().workingMs)}>
               {language.t("agent.summary.working")}
             </Row>

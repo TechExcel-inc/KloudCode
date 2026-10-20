@@ -722,6 +722,7 @@ export const dict = {
   "agent.panel.title": "会话详情",
   "agent.summary.title": "概要",
   "agent.summary.started": "开始于 {{time}}",
+  "agent.summary.active": "会话活跃时长",
   "agent.summary.working": "AI 工作时长",
   "agent.summary.cost": "预估费用",
   "agent.summary.costPilot": "EAD 套餐的回答由 EAD Pilot 按实际模型的供应商价格计费",

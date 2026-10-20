@@ -40,7 +40,42 @@ describe("sessionSummary", () => {
     expect(sessionSummary([user(0), reply(MIN, 2 * MIN, 0)]).priced).toBe(false)
     expect(sessionSummary([user(0), reply(MIN, 2 * MIN, 0, 0)]).priced).toBe(false)
     expect(sessionSummary([user(0)]).priced).toBe(true)
-    expect(sessionSummary([])).toEqual({ sessionMs: 0, workingMs: 0, cost: 0, priced: true })
+    expect(sessionSummary([])).toEqual({ sessionMs: 0, activeMs: 0, workingMs: 0, cost: 0, priced: true })
+  })
+})
+
+describe("active time", () => {
+  test("gaps of up to five minutes count, longer gaps are idle", () => {
+    const summary = sessionSummary([
+      user(0),
+      reply(1 * MIN, 5 * MIN, 0.1),
+      user(8 * MIN),
+      reply(9 * MIN, 12 * MIN, 0.1),
+      user(60 * MIN),
+      reply(61 * MIN, 65 * MIN, 0.1),
+    ])
+    // 0 to 12 minutes is one period (gaps of 1, 3 and 1 minutes), then 48 idle minutes, then 60 to 65.
+    expect(summary.activeMs).toBe(12 * MIN + 5 * MIN)
+    expect(summary.sessionMs).toBe(65 * MIN)
+    expect(summary.workingMs).toBe(11 * MIN)
+  })
+
+  test("a message bridges a gap but adds no time of its own", () => {
+    const summary = sessionSummary([reply(0, 2 * MIN, 0.1), user(6 * MIN), reply(10 * MIN, 11 * MIN, 0.1)])
+    expect(summary.activeMs).toBe(11 * MIN)
+    const alone = sessionSummary([user(0), user(20 * MIN)])
+    expect(alone.activeMs).toBe(0)
+  })
+
+  test("a gap of exactly five minutes still counts, and a long reply counts in full", () => {
+    expect(sessionSummary([user(0), reply(5 * MIN, 25 * MIN, 0.1)]).activeMs).toBe(25 * MIN)
+    expect(sessionSummary([user(0), reply(5 * MIN + 1, 25 * MIN, 0.1)]).activeMs).toBe(20 * MIN - 1)
+  })
+
+  test("active time never exceeds the session time", () => {
+    const summary = sessionSummary([user(0), reply(MIN, undefined, 0.1)], 10 * MIN)
+    expect(summary.activeMs).toBeLessThanOrEqual(summary.sessionMs)
+    expect(summary.activeMs).toBe(10 * MIN)
   })
 })
 

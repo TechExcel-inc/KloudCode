@@ -5,6 +5,11 @@ export type SessionSummary = {
   started?: number
   /** From the first message to the latest activity. */
   sessionMs: number
+  /**
+   * Time spent working with the AI: messages and replies joined into periods, where a gap of more
+   * than five minutes between them is idle time and left out.
+   */
+  activeMs: number
   /** Time the AI was answering: replies' start to finish, overlaps counted once. */
   workingMs: number
   cost: number
@@ -13,7 +18,7 @@ export type SessionSummary = {
 }
 
 export function sessionSummary(messages: Message[], now = Date.now()): SessionSummary {
-  if (messages.length === 0) return { sessionMs: 0, workingMs: 0, cost: 0, priced: true }
+  if (messages.length === 0) return { sessionMs: 0, activeMs: 0, workingMs: 0, cost: 0, priced: true }
   const started = Math.min(...messages.map((msg) => msg.time.created))
   let last = started
   let cost = 0
@@ -28,19 +33,32 @@ export function sessionSummary(messages: Message[], now = Date.now()): SessionSu
     cost += msg.cost
     tokens += msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
   }
-  spans.sort((a, b) => a[0] - b[0])
-  let workingMs = 0
+  const sessionMs = last - started
+  const workingMs = joined(spans, 0)
+  // People's messages are moments: they join periods but add no time of their own.
+  const moments = messages.flatMap((msg): [number, number][] => (msg.role === "user" ? [[msg.time.created, msg.time.created]] : []))
+  const activeMs = Math.min(sessionMs, joined([...spans, ...moments], IDLE_MS))
+  return { started, sessionMs, activeMs, workingMs, cost, priced: cost > 0 || tokens === 0 }
+}
+
+/** A gap longer than this between messages and replies is idle time. */
+const IDLE_MS = 5 * 60_000
+
+/** Total length of the spans once joined: spans that overlap or are at most `gap` apart become one. */
+function joined(spans: [number, number][], gap: number) {
+  const sorted = [...spans].sort((a, b) => a[0] - b[0])
+  let total = 0
   let open: [number, number] | undefined
-  for (const span of spans) {
-    if (open && span[0] <= open[1]) {
+  for (const span of sorted) {
+    if (open && span[0] - open[1] <= gap) {
       open[1] = Math.max(open[1], span[1])
       continue
     }
-    if (open) workingMs += open[1] - open[0]
+    if (open) total += open[1] - open[0]
     open = [span[0], span[1]]
   }
-  if (open) workingMs += open[1] - open[0]
-  return { started, sessionMs: last - started, workingMs, cost, priced: cost > 0 || tokens === 0 }
+  if (open) total += open[1] - open[0]
+  return total
 }
 
 /** "<1m", "42m", "3h 20m", "2d 4h" */
