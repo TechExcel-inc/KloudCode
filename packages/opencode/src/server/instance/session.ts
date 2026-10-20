@@ -13,6 +13,8 @@ import { SessionShare } from "@/share/session"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "../../session/todo"
+import { ContextSize } from "../../session/context-size"
+import { SystemPrompt } from "../../session/system"
 import { Effect } from "effect"
 import { AppRuntime } from "../../effect/app-runtime"
 import { Agent } from "../../agent/agent"
@@ -189,6 +191,39 @@ export const SessionRoutes = lazy(() =>
         const sessionID = c.req.valid("param").sessionID
         const todos = await AppRuntime.runPromise(Todo.Service.use((svc) => svc.get(sessionID)))
         return c.json(todos)
+      },
+    )
+    .get(
+      "/:sessionID/context",
+      describeRoute({
+        summary: "Get session context size",
+        description:
+          "How much of the model's context window each part of the next turn takes: system prompt, tools, MCP tools, skills, memory files, custom agents and the auto-compact buffer.",
+        operationId: "session.context",
+        responses: {
+          200: {
+            description: "Context size",
+            content: {
+              "application/json": {
+                schema: resolver(ContextSize.Info),
+              },
+            },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "param",
+        z.object({
+          sessionID: SessionID.zod,
+        }),
+      ),
+      async (c) => {
+        const sessionID = c.req.valid("param").sessionID
+        const size = await AppRuntime.runPromise(
+          ContextSize.compute(sessionID).pipe(Effect.provide(SystemPrompt.layer)),
+        )
+        return c.json(size)
       },
     )
     .post(

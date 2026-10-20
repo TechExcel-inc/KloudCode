@@ -37,6 +37,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -336,6 +337,7 @@ export default function Page() {
   const dialog = useDialog()
   const language = useLanguage()
   const sdk = useSDK()
+  const platform = usePlatform()
   const settings = useSettings()
   const prompt = usePrompt()
   const comments = useComments()
@@ -2117,13 +2119,24 @@ export default function Page() {
         <Show when={editsOpen()}>
           <AgentEdits
             diffs={diffs}
-            todos={composer.todos}
             session={params.id}
             onOpen={(path) => {
               layout.nav.set("code")
               layout.fileTree.open()
               openReviewPanel()
               focusReviewDiff(path)
+            }}
+            onOpenOutput={(path) => {
+              const root = sdk.directory.replace(/[\\/]+$/, "")
+              const inside = path === root || path.startsWith(root + "/") || path.startsWith(root + "\\")
+              if (!inside) {
+                void platform.openPath?.(path)
+                return
+              }
+              layout.nav.set("code")
+              layout.fileTree.open()
+              openReviewPanel()
+              openReviewFile(path.slice(root.length + 1).replaceAll("\\", "/"))
             }}
           />
         </Show>

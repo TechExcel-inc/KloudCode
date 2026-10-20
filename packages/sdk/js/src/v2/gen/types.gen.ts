@@ -1878,6 +1878,27 @@ export type McpResource = {
   client: string
 }
 
+export type ContextSizeItem = {
+  name: string
+  tokens: number
+}
+
+export type ContextSize = {
+  providerID: string
+  modelID: string
+  limit: number
+  systemPrompt: number
+  systemTools: number
+  mcpTools: number
+  skills: number
+  memoryFiles: number
+  customAgents: number
+  autocompactBuffer: number
+  mcpToolList: Array<ContextSizeItem>
+  memoryFileList: Array<ContextSizeItem>
+  customAgentList: Array<ContextSizeItem>
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -3544,6 +3565,40 @@ export type SessionTodoResponses = {
 }
 
 export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
+export type SessionContextData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/context"
+}
+
+export type SessionContextErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionContextError = SessionContextErrors[keyof SessionContextErrors]
+
+export type SessionContextResponses = {
+  /**
+   * Context size
+   */
+  200: ContextSize
+}
+
+export type SessionContextResponse = SessionContextResponses[keyof SessionContextResponses]
 
 export type SessionInitData = {
   body?: {

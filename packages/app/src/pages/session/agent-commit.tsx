@@ -30,7 +30,12 @@ const output = (parts: Part[]) =>
     })
     .join("\n")
 
-export function AgentCommit(props: { session?: string; diffs: () => (SnapshotFileDiff | VcsFileDiff)[] }) {
+export function AgentCommit(props: {
+  session?: string
+  diffs: () => (SnapshotFileDiff | VcsFileDiff)[]
+  /** Sits inside another box (the Changes box), without its own border. */
+  inline?: boolean
+}) {
   const sdk = useSDK()
   const language = useLanguage()
   const [state, setState] = createStore({
@@ -105,7 +110,11 @@ export function AgentCommit(props: { session?: string; diffs: () => (SnapshotFil
   }
 
   return (
-    <div data-component="agent-commit" class="shrink-0 flex flex-col gap-2 px-4 py-3 border-t border-border-weaker-base">
+    <div
+      data-component="agent-commit"
+      class="shrink-0 flex flex-col gap-2"
+      classList={{ "px-4 py-3 border-t border-border-weaker-base": !props.inline, "pt-3": props.inline }}
+    >
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2 text-14-medium text-text-strong">
           <Icon name="branch" size="small" />
