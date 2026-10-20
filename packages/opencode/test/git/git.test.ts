@@ -77,6 +77,28 @@ describe("Git", () => {
     })
   })
 
+  test("unpushed() counts commits no remote branch has yet", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await using remote = await tmpdir()
+    await $`git init --bare -q`.cwd(remote.path).quiet()
+    const count = () => withGit((rt) => rt.runPromise(Git.Service.use((git) => git.unpushed(tmp.path))))
+
+    expect(await count()).toBeUndefined()
+    await $`git remote add origin ${remote.path}`.cwd(tmp.path).quiet()
+    await $`git branch -M main`.cwd(tmp.path).quiet()
+    await $`git push -q -u origin main`.cwd(tmp.path).quiet()
+    expect(await count()).toBe(0)
+
+    await fs.writeFile(path.join(tmp.path, "a.txt"), "a\n", "utf-8")
+    await $`git add a.txt && git -c user.email=t@t -c user.name=t commit -q -m a`.cwd(tmp.path).quiet()
+    await fs.writeFile(path.join(tmp.path, "b.txt"), "b\n", "utf-8")
+    await $`git add b.txt && git -c user.email=t@t -c user.name=t commit -q -m b`.cwd(tmp.path).quiet()
+    expect(await count()).toBe(2)
+
+    await $`git push -q`.cwd(tmp.path).quiet()
+    expect(await count()).toBe(0)
+  })
+
   test("status() handles special filenames", async () => {
     await using tmp = await tmpdir({ git: true })
     await fs.writeFile(path.join(tmp.path, weird), "hello\n", "utf-8")

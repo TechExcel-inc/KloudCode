@@ -64,6 +64,7 @@ export namespace Git {
     readonly prefix: (cwd: string) => Effect.Effect<string>
     readonly defaultBranch: (cwd: string) => Effect.Effect<Base | undefined>
     readonly remoteUrl: (cwd: string) => Effect.Effect<string | undefined>
+    readonly unpushed: (cwd: string) => Effect.Effect<number | undefined>
     readonly hasHead: (cwd: string) => Effect.Effect<boolean>
     readonly mergeBase: (cwd: string, base: string, head?: string) => Effect.Effect<string | undefined>
     readonly show: (cwd: string, ref: string, file: string, prefix?: string) => Effect.Effect<string>
@@ -183,6 +184,15 @@ export namespace Git {
         return out(result) || undefined
       })
 
+      /** Commits on HEAD that no remote branch has yet; undefined without a remote or a first commit. */
+      const unpushed = Effect.fn("Git.unpushed")(function* (cwd: string) {
+        if (!(yield* primary(cwd))) return
+        const result = yield* run(["rev-list", "--count", "HEAD", "--not", "--remotes"], { cwd })
+        if (result.exitCode !== 0) return
+        const count = Number.parseInt(out(result), 10)
+        return Number.isFinite(count) ? count : undefined
+      })
+
       const hasHead = Effect.fn("Git.hasHead")(function* (cwd: string) {
         const result = yield* run(["rev-parse", "--verify", "HEAD"], { cwd })
         return result.exitCode === 0
@@ -257,6 +267,7 @@ export namespace Git {
         prefix,
         defaultBranch,
         remoteUrl,
+        unpushed,
         hasHead,
         mergeBase,
         show,

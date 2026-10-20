@@ -124,11 +124,11 @@ export const InstanceRoutes = (upgrade: UpgradeWebSocket): Hono =>
           await AppRuntime.runPromise(
             Effect.gen(function* () {
               const vcs = yield* Vcs.Service
-              const [branch, default_branch, remote_url] = yield* Effect.all(
-                [vcs.branch(), vcs.defaultBranch(), vcs.remoteUrl()],
+              const [branch, default_branch, remote_url, unpushed] = yield* Effect.all(
+                [vcs.branch(), vcs.defaultBranch(), vcs.remoteUrl(), vcs.unpushed()],
                 { concurrency: 3 },
               )
-              return { branch, default_branch, remote_url }
+              return { branch, default_branch, remote_url, unpushed }
             }),
           ),
         )

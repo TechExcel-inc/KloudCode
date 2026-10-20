@@ -120,6 +120,8 @@ export namespace Vcs {
       branch: z.string().optional(),
       default_branch: z.string().optional(),
       remote_url: z.string().optional(),
+      /** Commits on this computer that are not on the remote yet. */
+      unpushed: z.number().optional(),
     })
     .meta({
       ref: "VcsInfo",
@@ -144,6 +146,7 @@ export namespace Vcs {
     readonly branch: () => Effect.Effect<string | undefined>
     readonly defaultBranch: () => Effect.Effect<string | undefined>
     readonly remoteUrl: () => Effect.Effect<string | undefined>
+    readonly unpushed: () => Effect.Effect<number | undefined>
     readonly diff: (mode: Mode) => Effect.Effect<FileDiff[]>
   }
 
@@ -208,6 +211,10 @@ export namespace Vcs {
         remoteUrl: Effect.fn("Vcs.remoteUrl")(function* () {
           if (Instance.project.vcs !== "git") return
           return yield* git.remoteUrl(Instance.directory)
+        }),
+        unpushed: Effect.fn("Vcs.unpushed")(function* () {
+          if (Instance.project.vcs !== "git") return
+          return yield* git.unpushed(Instance.directory)
         }),
         diff: Effect.fn("Vcs.diff")(function* (mode: Mode) {
           const value = yield* InstanceState.get(state)

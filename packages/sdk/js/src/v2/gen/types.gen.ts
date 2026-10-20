@@ -2121,6 +2121,7 @@ export type VcsInfo = {
   branch?: string
   default_branch?: string
   remote_url?: string
+  unpushed?: number
 }
 
 export type VcsFileDiff = {
