@@ -100,34 +100,14 @@ export const AllSessions = (props: {
             </button>
           )}
         </Show>
-        <Show when={props.current()}>
-          {(project) => (
-            <RecentProjectPicker
-              title={language.t("search.related.select")}
-              empty={language.t("search.related.none")}
-              skip={[cowork.projectOf(project().worktree) ?? 0, ...cowork.relatedIds(project().worktree)]}
-              onPick={(item) => void cowork.relate(project().worktree, item.projectId)}
-              triggerProps={{
-                class:
-                  "w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
-                "data-action": "session-related-project",
-              }}
-              trigger={
-                <>
-                  <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
-                  <span class="truncate">{language.t("search.related.label")}</span>
-                </>
-              }
-            />
-          )}
-        </Show>
       </div>
       <div
         ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
         class="flex-1 min-h-0 flex flex-col gap-3 pb-3 overflow-y-auto no-scrollbar [overflow-anchor:none]"
       >
         <For each={props.projects()}>
-          {(project) => (
+          {(project, index) => (
+            <>
             <Group
               ctx={props.ctx}
               project={project}
@@ -145,6 +125,35 @@ export const AllSessions = (props: {
                 if (root) void cowork.unrelate(root, project.worktree)
               }}
             />
+            {/* Related Projects sits right after the current project's sessions, above the related groups. */}
+            <Show when={index() === 0 && props.current()}>
+              {(current) => (
+                <RecentProjectPicker
+                  title={language.t("search.related.select")}
+                  empty={language.t("search.related.none")}
+                  pilot
+                  skip={[cowork.projectOf(current().worktree) ?? 0, ...cowork.relatedIds(current().worktree)]}
+                  onPick={(item) => item.projectId && void cowork.relate(current().worktree, item.projectId)}
+                  triggerProps={{
+                    class:
+                      "group/related w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
+                    "data-action": "session-related-project",
+                  }}
+                  trigger={
+                    <>
+                      <Icon name="folder-add-left" size="small" class="shrink-0 text-icon-base" />
+                      <span class="truncate">{language.t("search.related.label")}</span>
+                      <Icon
+                        name="chevron-down"
+                        size="small"
+                        class="shrink-0 text-icon-weak opacity-0 group-hover/related:opacity-100 group-data-[expanded]/related:opacity-100"
+                      />
+                    </>
+                  }
+                />
+              )}
+            </Show>
+            </>
           )}
         </For>
       </div>

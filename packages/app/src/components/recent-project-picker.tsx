@@ -5,6 +5,7 @@ import { Popover } from "@opencode-ai/ui/popover"
 import { getAvatarColors } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useCowork, type CoworkEntry } from "@/context/cowork"
+import { workspaceKey } from "@/pages/layout/helpers"
 
 const LIMIT = 10
 /** A search box appears once the person has more projects than this. */
@@ -18,8 +19,10 @@ export function RecentProjectPicker(props: {
   trigger: JSX.Element
   triggerProps?: Record<string, unknown>
   title: string
-  /** Shows a check mark on this Pilot project. */
-  current?: number
+  /** The open project's folder: always listed, with a check mark. */
+  current?: string
+  /** Lists EAD Pilot projects only, for choices that Pilot must save (related projects). */
+  pilot?: boolean
   /** Leaves these Pilot projects out of the list. */
   skip?: number[]
   empty?: string
@@ -46,12 +49,13 @@ export function RecentProjectPicker(props: {
 
   const [items] = createResource(
     () => (open() ? { query: query(), skip: props.skip ?? [] } : undefined),
-    (input) => cowork.recent({ limit: LIMIT, q: input.query, skip: input.skip }),
+    (input) => cowork.recent({ limit: LIMIT, q: input.query, skip: input.skip, current: props.current, pilot: props.pilot }),
   )
   // Whether to offer search is decided by the unfiltered list, so it stays while typing.
   const [total] = createResource(
     () => (open() ? { skip: props.skip ?? [] } : undefined),
-    (input) => cowork.recent({ limit: SEARCH + 1, skip: input.skip }).then((list) => list.length),
+    (input) =>
+      cowork.recent({ limit: SEARCH + 1, skip: input.skip, current: props.current, pilot: props.pilot }).then((list) => list.length),
   )
 
   const type = (value: string) => {
@@ -131,7 +135,7 @@ export function RecentProjectPicker(props: {
                       {item.worktree ?? `${item.repo} · ${language.t("cowork.picker.elsewhere")}`}
                     </span>
                   </div>
-                  <Show when={props.current === item.projectId}>
+                  <Show when={!!props.current && !!item.worktree && workspaceKey(props.current) === workspaceKey(item.worktree)}>
                     <Icon name="check-small" size="small" class="shrink-0" />
                   </Show>
                 </button>

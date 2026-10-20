@@ -16,6 +16,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
 import { useCowork } from "@/context/cowork"
+import { AboutPopover } from "@/components/about-popover"
 import { useGlobalSync } from "@/context/global-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/util/encode"
@@ -2396,15 +2397,7 @@ export default function Layout(props: ParentProps) {
         onClick={() => sessionView.terminal.toggle()}
       />
       <RailUsage mobile={mobile} />
-      <Tooltip placement={mobile ? "bottom" : "right"} value={language.t("sidebar.help")}>
-        <IconButton
-          icon="help"
-          variant="ghost"
-          size="large"
-          onClick={() => platform.openLink("https://opencode.ai/docs")}
-          aria-label={language.t("sidebar.help")}
-        />
-      </Tooltip>
+      <AboutPopover mobile={mobile} />
       <DropdownMenu placement={mobile ? "bottom" : "right-end"}>
         <DropdownMenu.Trigger
           as={IconButton}

@@ -31,7 +31,8 @@ const later = (fn: () => void, tries = 150, seen?: Element, since = 0) => {
 const absolute = (dir: string | undefined) => !!dir && (dir.startsWith("/") || /^[A-Za-z]:[\\/]/.test(dir))
 
 /** A Pilot project with this computer's folder for it, when there is one. */
-export type CoworkEntry = { projectId: number; name: string; repo: string; worktree?: string }
+/** A project for the pickers: from EAD Pilot (with `projectId`) or only on this computer (without). */
+export type CoworkEntry = { projectId?: number; name: string; repo: string; worktree?: string }
 
 /**
  * CoWork's link to EAD Pilot. Projects, recent use, related projects and the GitHub connection
@@ -290,17 +291,42 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
       link,
       projectOf,
       folderOf,
-      /** The person's Pilot projects, most recently active first, with this computer's folder for each. */
-      async recent(input: { limit?: number; q?: string; skip?: number[] } = {}) {
+      /**
+       * Projects for the pickers, most recently used first: the person's EAD Pilot projects, then the
+       * projects on this computer that Pilot does not list (all of them while Pilot is unavailable).
+       * `current` is always included. `pilot` lists Pilot projects only, for choices Pilot must save.
+       */
+      async recent(input: { limit?: number; q?: string; skip?: number[]; current?: string; pilot?: boolean } = {}) {
         const client = api()
-        if (!client) return [] as CoworkEntry[]
         const limit = input.limit ?? 10
         const skip = new Set(input.skip ?? [])
+        const text = input.q?.trim().toLowerCase() ?? ""
         const [list] = await Promise.all([
-          client.recent({ limit: Math.min(100, limit + skip.size), q: input.q || undefined }).catch(() => []),
-          discover(),
+          client
+            ? client.recent({ limit: Math.min(100, limit + skip.size), q: text || undefined }).catch(() => [])
+            : Promise.resolve([] as CoworkProject[]),
+          client ? discover() : Promise.resolve(),
         ])
-        return list.filter((item) => !skip.has(item.projectId)).slice(0, limit).map(entry)
+        const pilot = list.filter((item) => !skip.has(item.projectId)).map(entry)
+        if (input.pilot) return pilot.slice(0, limit)
+        const seen = new Set(pilot.flatMap((item) => (item.worktree ? [workspaceKey(item.worktree)] : [])))
+        const local = [...layout.projects.list(), ...sync.data.project]
+          .toSorted((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
+          .flatMap((item): CoworkEntry[] => {
+            const key = workspaceKey(item.worktree)
+            if (!absolute(item.worktree) || item.worktree === "/" || seen.has(key)) return []
+            const id = projectOf(item.worktree)
+            if (id && skip.has(id)) return []
+            seen.add(key)
+            return [{ projectId: id, name: item.name || getFilename(item.worktree) || item.worktree, repo: "", worktree: item.worktree }]
+          })
+          .filter((item) => !text || item.name.toLowerCase().includes(text) || item.worktree!.toLowerCase().includes(text))
+        const out = [...pilot, ...local].slice(0, limit)
+        const current = input.current
+        if (current && !text && !out.some((item) => item.worktree && workspaceKey(item.worktree) === workspaceKey(current))) {
+          out.unshift({ projectId: projectOf(current), name: getFilename(current) || current, repo: "", worktree: current })
+        }
+        return out.slice(0, limit)
       },
       /** Folders of the projects related to the project in `root`, that exist on this computer. */
       relatedDirs(root: string) {
