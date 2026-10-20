@@ -16,3 +16,10 @@ export function eadHttp(): Http {
   }
   return platform?.fetch ?? globalThis.fetch.bind(globalThis)
 }
+
+/** True for a failed connection (Wi-Fi reconnecting, the Mac waking up) rather than an answer from EAD Pilot. */
+export function offline(message: string) {
+  return /load failed|failed to fetch|networkerror|network connection|unable to connect|could not connect|timed out|offline/i.test(
+    message,
+  )
+}

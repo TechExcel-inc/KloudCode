@@ -52,7 +52,7 @@ import { ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } fr
 import { type TipId } from "@/ead/help-tips"
 import { t, type Lang } from "@/ead/i18n"
 import { expandKey, useEad, type EadNodeHit } from "@/ead/settings"
-import { eadHttp } from "@/ead/http"
+import { eadHttp, offline } from "@/ead/http"
 import {
   ancestorPaths,
   buildTree,
@@ -1201,6 +1201,18 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   let loadedSchema = 0
   let expandTimer: ReturnType<typeof setTimeout> | undefined
 
+  let retries = 0
+  let retrying: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => clearTimeout(retrying))
+  // Coming back online after a dropped connection reloads a map that failed to load.
+  const online = () => {
+    if (!panelOpen() || !err() || !offline(err())) return
+    retries = 0
+    void refresh({ soft: true })
+  }
+  window.addEventListener("online", online)
+  onCleanup(() => window.removeEventListener("online", online))
+
   const refresh = async (opts?: { soft?: boolean; syncLinked?: boolean }) => {
     const soft = opts?.soft === true
     // Soft poll must not cancel an in-flight full refresh (that left the loading banner stuck).
@@ -1378,6 +1390,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
           : map.root
             ? collectIds([map.root]).length
             : 0
+      retries = 0
       markStartup(tx("refreshComplete", { count: String(count) }), "ok")
       bumpPipeline()
       if (!soft) flash("ok", tx("refreshed"))
@@ -1407,6 +1420,14 @@ export function EadMapPanel(props: { sizing: Sizing }) {
       }
       setErr(msg)
       if (!soft) flash("error", msg)
+      // A dropped connection is retried soon instead of leaving "Load failed" up until the next click.
+      if (offline(msg) && retries < 5) {
+        retries++
+        clearTimeout(retrying)
+        retrying = setTimeout(() => {
+          if (panelOpen()) void refresh({ soft: true })
+        }, 2000 * retries)
+      }
       if (!schemaLoad()) {
         setRoot(undefined)
         setSource([])

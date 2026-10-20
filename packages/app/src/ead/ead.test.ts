@@ -46,6 +46,7 @@ import { t } from "./i18n"
 import { beginDiag, formatDiag, noteDiag, readStartup } from "./diag"
 import { applyEnv, eadApi, eadEnv, eadOrigin, eadServer, EAD_CURSOR_EXTENSION_VERSION, frameOrigin, isEadHost, isProxy, proxyOrigin, rewrite } from "./urls"
 import { cowork, CoworkFail, githubRepo, usage } from "./cowork"
+import { offline } from "./http"
 import { looksLikeProviderApiKey, RENEW, renewDue, tokenExpired, tokenExpiry, tokenUser } from "./auth"
 import { mcpCandidates } from "./mcp"
 import { prober, resolveMcpEntry } from "./ensure-mcp"
@@ -1187,6 +1188,15 @@ describe("ead cowork client", () => {
     expect(githubRepo("https://gitlab.com/TechExcel-inc/KloudCode.git")).toBeUndefined()
     expect(githubRepo("https://github.com/TechExcel-inc/KloudCode/tree/dev")).toBeUndefined()
     expect(githubRepo(undefined)).toBeUndefined()
+  })
+
+  test("offline tells a dropped connection from an answer", () => {
+    expect(offline("Load failed")).toBe(true)
+    expect(offline("Failed to fetch")).toBe(true)
+    expect(offline("Unable to connect. Is the computer able to access the url?")).toBe(true)
+    expect(offline("The network connection was lost.")).toBe(true)
+    expect(offline("HTTP 500")).toBe(false)
+    expect(offline("AUTH_EXPIRED")).toBe(false)
   })
 
   test("usage totals assistant tokens and cost in millionths", () => {

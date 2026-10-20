@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { allowed, crawl, ensure, handle, rewrite, stop } from "../../src/ead/proxy"
+import { allowed, crawl, ensure, handle, rewrite, stop, unreachable } from "../../src/ead/proxy"
 
 afterEach(async () => {
   await stop()
@@ -58,6 +58,46 @@ describe("ead plugin proxy", () => {
     const go = await handle(new Request("http://127.0.0.1:5190/go"), target, 5190)
     expect(go.status).toBe(302)
     expect(go.headers.get("location")).toBe("http://127.0.0.1:5190/plugin/ai-code")
+  })
+
+  test("retries a page load that fails while eadfm.com is briefly unreachable", async () => {
+    // Pick a free port, leave it closed for the first try, then start the server before the retry.
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("") })
+    const port = probe.port
+    probe.stop(true)
+    let server: ReturnType<typeof Bun.serve> | undefined
+    setTimeout(() => {
+      server = Bun.serve({ port, fetch: () => new Response("<html>pilot</html>", { headers: { "content-type": "text/html" } }) })
+    }, 100)
+    try {
+      const res = await handle(
+        new Request("http://127.0.0.1:5190/plugin/ai-code", { headers: { accept: "text/html" } }),
+        `http://127.0.0.1:${port}`,
+        5190,
+      )
+      expect(res.status).toBe(200)
+      expect(await res.text()).toBe("<html>pilot</html>")
+    } finally {
+      server?.stop(true)
+    }
+  })
+
+  test("shows a self-refreshing page when eadfm.com stays unreachable", async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response("") })
+    const target = `http://127.0.0.1:${probe.port}`
+    probe.stop(true)
+
+    const page = await handle(new Request("http://127.0.0.1:5190/plugin/ai-code", { headers: { accept: "text/html" } }), target, 5190)
+    expect(page.status).toBe(502)
+    expect(page.headers.get("content-type")).toContain("text/html")
+    const html = await page.text()
+    expect(html).toContain('http-equiv="refresh" content="5"')
+    expect(html).toContain(`Can't reach ${target} right now`)
+
+    const api = await handle(new Request("http://127.0.0.1:5190/api/x", { headers: { accept: "application/json" } }), target, 5190)
+    expect(api.status).toBe(502)
+    expect(api.headers.get("content-type")).toContain("text/plain")
+    expect(unreachable("https://eadfm.com", "<b>")).toContain("&lt;b&gt;")
   })
 
   test("ensure binds a loopback ping", async () => {

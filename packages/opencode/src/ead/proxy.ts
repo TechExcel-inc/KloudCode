@@ -9,6 +9,19 @@ let server: ReturnType<typeof Bun.serve> | undefined
 let bound = 0
 let upstream = ""
 
+/** Waits before each retry of a failed page load. */
+const RETRY = [300, 1000]
+
+/** Shown in the EAD Pilot panel when eadfm.com cannot be reached; it tries again by itself every 5 seconds. */
+export function unreachable(base: string, detail: string) {
+  const text = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="5">
+<body style="font:14px system-ui,sans-serif;color:#ccc;background:#111;padding:24px">
+<p>Can't reach ${text(base)} right now. Trying again every 5 seconds…</p>
+<p style="color:#888">${text(detail)}</p>
+<p><a href="" style="color:#9ab">Try now</a></p></body>`
+}
+
 /** Map `/api/crawl-vision/*` Playwright endpoints → local executor paths. */
 export function crawl(requestUrl: string): string | null {
   const url = URL.canParse(requestUrl, "http://127.0.0.1") ? new URL(requestUrl, "http://127.0.0.1") : undefined
@@ -153,12 +166,24 @@ async function pipe(
   headers.delete("transfer-encoding")
 
   const method = req.method.toUpperCase()
-  const upstream = await fetch(`${base}${path}`, {
-    method: req.method,
-    headers,
-    body: method === "GET" || method === "HEAD" ? undefined : req.body,
-    redirect: "manual",
-  }).catch((err: unknown) => err)
+  const safe = method === "GET" || method === "HEAD"
+  const send = (keepalive: boolean) =>
+    fetch(`${base}${path}`, {
+      method: req.method,
+      headers,
+      body: safe ? undefined : req.body,
+      redirect: "manual",
+      keepalive,
+    }).catch((err: unknown) => err)
+  // A network blip (the Mac waking up, Wi-Fi reconnecting, a pooled connection gone stale) fails the
+  // first try; page loads are retried on a fresh connection before giving up.
+  let upstream = await send(true)
+  for (const wait of safe && !opts.crawl ? RETRY : []) {
+    if (upstream instanceof Response) break
+    log.warn("upstream retry", { path, error: upstream instanceof Error ? upstream.message : String(upstream) })
+    await Bun.sleep(wait)
+    upstream = await send(false)
+  }
 
   if (!(upstream instanceof Response)) {
     const detail = upstream instanceof Error ? upstream.message : "Unknown proxy error"
@@ -174,9 +199,16 @@ async function pipe(
         { status: 503 },
       )
     }
-    return new Response(`EAD plugin proxy could not reach ${base}: ${detail}`, {
+    log.error("upstream unreachable", { path, error: detail })
+    if (!safe || !(req.headers.get("accept") ?? "").includes("text/html")) {
+      return new Response(`EAD plugin proxy could not reach ${base}: ${detail}`, {
+        status: 502,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      })
+    }
+    return new Response(unreachable(base, detail), {
       status: 502,
-      headers: { "content-type": "text/plain; charset=utf-8" },
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     })
   }
 
