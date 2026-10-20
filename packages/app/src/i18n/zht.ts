@@ -732,6 +732,7 @@ export const dict = {
   "agent.context.memoryFiles.hint": "包含專案規則的 AGENTS.md 和 CLAUDE.md 檔案，每則訊息都會附帶。",
   "agent.context.customAgents.hint": "你新增的、AI 可以委派工作的代理。",
   "agent.tasks.title": "任務",
+  "agent.tasks.empty": "本次工作階段還沒有任務",
   "agent.tasks.untitled": "未命名任務",
   "agent.tasks.documents": "文件",
   "agent.tasks.code": "程式碼 · {{count}} 個檔案",

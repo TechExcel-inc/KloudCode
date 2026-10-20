@@ -461,13 +461,16 @@ export function AgentEdits(props: {
           </Show>
         </Box>
 
-        <Show when={tasks().length > 0}>
-          <Box
-            name="tasks"
-            title={language.t("agent.tasks.title")}
-            open={open().tasks}
-            onToggle={() => toggle("tasks")}
-            right={<span>{tasks().length}</span>}
+        <Box
+          name="tasks"
+          title={language.t("agent.tasks.title")}
+          open={open().tasks}
+          onToggle={() => toggle("tasks")}
+          right={<span>{tasks().length}</span>}
+        >
+          <Show
+            when={tasks().length > 0}
+            fallback={<div class="py-1 text-12-regular text-text-weak">{language.t("agent.tasks.empty")}</div>}
           >
             <For each={tasks()}>
               {(task, index) => (
@@ -481,8 +484,8 @@ export function AgentEdits(props: {
                 />
               )}
             </For>
-          </Box>
-        </Show>
+          </Show>
+        </Box>
 
         <Show when={background().running.length + background().finished > 0}>
           <Box

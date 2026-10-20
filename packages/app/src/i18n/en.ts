@@ -830,6 +830,7 @@ export const dict = {
   "agent.context.memoryFiles.hint": "AGENTS.md and CLAUDE.md files with your project rules, sent with each message.",
   "agent.context.customAgents.hint": "Agents you added that the AI can hand work to.",
   "agent.tasks.title": "Tasks",
+  "agent.tasks.empty": "No tasks in this session yet",
   "agent.tasks.untitled": "Untitled task",
   "agent.tasks.documents": "Documents",
   "agent.tasks.code": "Code · {{count}} files",

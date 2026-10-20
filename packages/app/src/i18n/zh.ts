@@ -744,6 +744,7 @@ export const dict = {
   "agent.context.memoryFiles.hint": "包含项目规则的 AGENTS.md 和 CLAUDE.md 文件，每条消息都会附带。",
   "agent.context.customAgents.hint": "你添加的、AI 可以委派工作的智能体。",
   "agent.tasks.title": "任务",
+  "agent.tasks.empty": "本次会话还没有任务",
   "agent.tasks.untitled": "未命名任务",
   "agent.tasks.documents": "文档",
   "agent.tasks.code": "代码 · {{count}} 个文件",
