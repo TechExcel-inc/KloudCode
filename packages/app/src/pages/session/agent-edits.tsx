@@ -7,13 +7,13 @@ import type { AssistantMessage, SnapshotFileDiff, VcsFileDiff } from "@opencode-
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { useCowork } from "@/context/cowork"
 import { githubRepo } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
 import { AgentCommit } from "./agent-commit"
 import { contextView, formatPercent, formatTokens, type ContextRowKey } from "./agent-context"
 import { OUTPUT_GROUPS, sessionOutputs, type Output, type OutputGroup } from "./agent-outputs"
 import { sessionBackground, sessionTasks, type Task } from "./agent-tasks"
+import { formatDuration, sessionSummary } from "./agent-summary"
 
 export const EDITS_WIDTH = 320
 
@@ -268,8 +268,7 @@ export function AgentEdits(props: {
   const language = useLanguage()
   const sdk = useSDK()
   const sync = useSync()
-  const cowork = useCowork()
-  const [open, setOpen] = createSignal({ environment: true, context: false, tasks: true, background: true, outputs: false, changes: true })
+  const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const [shown, setShown] = createSignal<Partial<Record<OutputGroup, boolean>>>({})
 
@@ -289,8 +288,6 @@ export function AgentEdits(props: {
         .then((res) => res.data)
         .catch(() => undefined),
   )
-  // Real token counts priced at the model's list price, so only an estimate of the bill.
-  const cost = createMemo(() => messages().reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0))
   const money = (value: number) =>
     value.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: value < 0.01 && value > 0 ? 4 : 2 })
 
@@ -314,8 +311,18 @@ export function AgentEdits(props: {
     return OUTPUT_GROUPS.flatMap((group) => (out[group] ? [{ group, items: out[group]! }] : []))
   })
   const time = (value: number) => new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+  /** The time alone today, with the date on other days. */
+  const when = (value: number) =>
+    new Date(value).toDateString() === new Date().toDateString()
+      ? time(value)
+      : new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 
   const tasks = createMemo(() => sessionTasks(messages(), sync.data.part))
+  // Ticks once a minute so a running session's times stay current.
+  const [minute, setMinute] = createSignal(Date.now())
+  const tick = setInterval(() => setMinute(Date.now()), 60_000)
+  onCleanup(() => clearInterval(tick))
+  const summary = createMemo(() => sessionSummary(messages(), minute()))
   // The newest task starts open; people can open or close any of them.
   const [taskOpen, setTaskOpen] = createSignal<Record<string, boolean>>({})
   const taskIsOpen = (task: Task, index: number) => taskOpen()[task.id] ?? index === 0
@@ -353,22 +360,36 @@ export function AgentEdits(props: {
       style={{ width: `${EDITS_WIDTH}px` }}
     >
       <div class="p-3 flex flex-col gap-3">
-        <Box name="environment" title={language.t("agent.environment.title")} open={open().environment} onToggle={() => toggle("environment")}>
-          <Show when={repo()}>
-            {(value) => <Row icon={<Icon name="github" size="small" />}>{value()}</Row>}
-          </Show>
-          <Row icon={<Icon name="folder" size="small" />} title={directory()}>
+        <Box name="summary" title={language.t("agent.summary.title")} open={open().summary} onToggle={() => toggle("summary")}>
+          <Row icon={<Icon name="folder" size="small" />} title={repo() ? `${repo()} · ${directory()}` : directory()}>
             {getFilename(directory()) || directory()}
             <span class="text-text-weak"> · {home(directory())}</span>
           </Row>
           <Show when={sync.data.vcs?.branch}>
             {(branch) => <Row icon={<Icon name="branch" size="small" />}>{branch()}</Row>}
           </Show>
+          <Show when={summary().started}>
+            {(started) => (
+              <Row
+                icon={<Icon name="status" size="small" />}
+                right={formatDuration(summary().sessionMs)}
+                title={new Date(started()).toLocaleString()}
+              >
+                {language.t("agent.summary.started", { time: when(started()) })}
+              </Row>
+            )}
+          </Show>
+          <Show when={summary().started}>
+            <Row icon={<Icon name="brain" size="small" />} right={formatDuration(summary().workingMs)}>
+              {language.t("agent.summary.working")}
+            </Row>
+          </Show>
           <Row
-            icon={<Icon name="server" size="small" />}
-            right={language.t(cowork.signedIn() ? "agent.environment.enabled" : "agent.environment.off")}
+            icon={<Icon name="providers" size="small" />}
+            right={summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")}
+            title={language.t("agent.context.cost.hint")}
           >
-            {language.t("agent.environment.enterprise")}
+            {language.t("agent.summary.cost")}
           </Row>
         </Box>
 
@@ -380,15 +401,6 @@ export function AgentEdits(props: {
           right={
             <Show when={view()}>
               {(value) => (
-                <Tooltip
-                  placement="left"
-                  value={
-                    <div data-component="agent-context-cost" class="flex flex-col gap-0.5">
-                      <span>{language.t("agent.context.cost", { cost: money(cost()) })}</span>
-                      <span class="opacity-70">{language.t("agent.context.cost.hint")}</span>
-                    </div>
-                  }
-                >
                   <span class="flex items-center gap-2">
                     <span>{Math.round(value().percent)}%</span>
                     <span class="w-11 h-3.5 rounded-full bg-surface-base border border-border-weak-base relative overflow-hidden">
@@ -398,7 +410,6 @@ export function AgentEdits(props: {
                       />
                     </span>
                   </span>
-                </Tooltip>
               )}
             </Show>
           }
@@ -486,50 +497,6 @@ export function AgentEdits(props: {
             </For>
           </Show>
         </Box>
-
-        <Show when={background().running.length + background().finished > 0}>
-          <Box
-            name="background"
-            title={language.t("agent.background.title")}
-            open={open().background}
-            onToggle={() => toggle("background")}
-            right={
-              <Show when={background().running.length > 0}>
-                <span>{background().running.length}</span>
-              </Show>
-            }
-          >
-            <For each={background().running}>
-              {(job) => (
-                <div data-component="agent-background-job" class="h-8 flex items-center gap-2.5 min-w-0">
-                  <Icon name="task" size="small" class="shrink-0 text-icon-weak" />
-                  <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong" title={job.title}>
-                    {job.title}
-                  </span>
-                  <span class="shrink-0 text-12-regular text-text-weak">{elapsed(job.started)}</span>
-                  <Show when={job.sessionID}>
-                    <button
-                      type="button"
-                      data-action="agent-background-stop"
-                      aria-label={language.t("agent.background.stop")}
-                      title={language.t("agent.background.stop")}
-                      class="shrink-0 size-6 flex items-center justify-center rounded hover:bg-surface-base-hover"
-                      onClick={() => stop(job.sessionID)}
-                    >
-                      <Icon name="stop" size="small" class="text-icon-weak" />
-                    </button>
-                  </Show>
-                </div>
-              )}
-            </For>
-            <Show when={background().finished > 0}>
-              <div class="h-8 flex items-center gap-2.5 text-13-regular text-text-weak">
-                <Icon name="check" size="small" class="shrink-0 text-icon-weak" />
-                {language.t("agent.background.finished", { count: background().finished })}
-              </div>
-            </Show>
-          </Box>
-        </Show>
 
         <Box
           name="outputs"
@@ -643,6 +610,50 @@ export function AgentEdits(props: {
           </Show>
           <AgentCommit session={props.session} diffs={props.diffs} inline />
         </Box>
+
+        <Show when={background().running.length + background().finished > 0}>
+          <Box
+            name="background"
+            title={language.t("agent.background.title")}
+            open={open().background}
+            onToggle={() => toggle("background")}
+            right={
+              <Show when={background().running.length > 0}>
+                <span>{background().running.length}</span>
+              </Show>
+            }
+          >
+            <For each={background().running}>
+              {(job) => (
+                <div data-component="agent-background-job" class="h-8 flex items-center gap-2.5 min-w-0">
+                  <Icon name="task" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong" title={job.title}>
+                    {job.title}
+                  </span>
+                  <span class="shrink-0 text-12-regular text-text-weak">{elapsed(job.started)}</span>
+                  <Show when={job.sessionID}>
+                    <button
+                      type="button"
+                      data-action="agent-background-stop"
+                      aria-label={language.t("agent.background.stop")}
+                      title={language.t("agent.background.stop")}
+                      class="shrink-0 size-6 flex items-center justify-center rounded hover:bg-surface-base-hover"
+                      onClick={() => stop(job.sessionID)}
+                    >
+                      <Icon name="stop" size="small" class="text-icon-weak" />
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <Show when={background().finished > 0}>
+              <div class="h-8 flex items-center gap-2.5 text-13-regular text-text-weak">
+                <Icon name="check" size="small" class="shrink-0 text-icon-weak" />
+                {language.t("agent.background.finished", { count: background().finished })}
+              </div>
+            </Show>
+          </Box>
+        </Show>
       </div>
     </aside>
   )
