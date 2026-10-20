@@ -1012,7 +1012,10 @@ describe("ead i18n + env + mcp", () => {
       npm: "@ai-sdk/openai-compatible",
       name: "EAD",
       options: { baseURL: "https://eadfm.com/v1" },
-      models: { "EAD 2.1": { name: "EAD DP2.1" }, "EAD 3.0": { name: "EAD DP3.0" } },
+      models: {
+        "EAD 2.1": { name: "EAD DP2.1", attachment: true, modalities: { input: ["text", "image"], output: ["text"] } },
+        "EAD 3.0": { name: "EAD DP3.0", attachment: true, modalities: { input: ["text", "image"], output: ["text"] } },
+      },
       whitelist: ["EAD 2.1", "EAD 3.0"],
     })
     expect(match(spec(two), two)).toBe(true)
@@ -1024,10 +1027,25 @@ describe("ead i18n + env + mcp", () => {
   test("plan spec carries the plan's token limits, and a change in them rewrites the config", () => {
     applyEnv("production")
     const sized = [{ name: "EAD 3.2", label: "EAD DP3.2", context: 200_000, output: 32_768 }]
-    expect(spec(sized).models).toEqual({ "EAD 3.2": { name: "EAD DP3.2", limit: { context: 200_000, output: 32_768 } } })
+    expect(spec(sized).models).toEqual({
+      "EAD 3.2": {
+        name: "EAD DP3.2",
+        attachment: true,
+        modalities: { input: ["text", "image"], output: ["text"] },
+        limit: { context: 200_000, output: 32_768 },
+      },
+    })
     expect(match(spec(sized), sized)).toBe(true)
     expect(match(spec([{ name: "EAD 3.2", label: "EAD DP3.2" }]), sized)).toBe(false)
     expect(match(spec(sized), [{ ...sized[0]!, context: 128_000 }])).toBe(false)
+  })
+
+  test("plan models take images, and a saved config without them is rewritten", () => {
+    applyEnv("production")
+    const plans = [{ name: "EAD 3.2", label: "EAD DP3.2" }]
+    const old = { ...spec(plans), models: { "EAD 3.2": { name: "EAD DP3.2" } } }
+    expect(match(old, plans)).toBe(false)
+    expect(match(spec(plans), plans)).toBe(true)
   })
 
   test("apply skips save when the plan is already registered", async () => {

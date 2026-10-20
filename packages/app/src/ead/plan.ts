@@ -23,6 +23,8 @@ export function gateway() {
  */
 export type PlanModel = { name: string; label: string; context?: number; output?: number }
 
+const IMAGES = { attachment: true, modalities: { input: ["text", "image"] as ("text" | "image")[], output: ["text"] as "text"[] } }
+
 const limit = (plan: PlanModel) =>
   plan.context && plan.output ? { limit: { context: plan.context, output: plan.output } } : {}
 
@@ -35,7 +37,8 @@ export function spec(plans: PlanModel[]) {
     npm: NPM,
     name: "EAD",
     options: { baseURL: gateway() },
-    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label, ...limit(plan) }])),
+    // Plans take images: EAD Pilot reads them for a plan model that cannot, so the engine must send them.
+    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label, ...IMAGES, ...limit(plan) }])),
     whitelist: plans.map((plan) => plan.name),
   }
 }
@@ -46,7 +49,16 @@ export function match(cfg: unknown, plans: PlanModel[]) {
     npm?: string
     name?: string
     options?: { baseURL?: string }
-    models?: Record<string, { name?: string; limit?: { context?: number; output?: number } } | undefined>
+    models?: Record<
+      string,
+      | {
+          name?: string
+          attachment?: boolean
+          modalities?: { input?: string[] }
+          limit?: { context?: number; output?: number }
+        }
+      | undefined
+    >
     whitelist?: string[]
   }
   if (row.npm !== NPM) return false
@@ -57,6 +69,7 @@ export function match(cfg: unknown, plans: PlanModel[]) {
   return plans.every((plan) => {
     const model = row.models?.[plan.name]
     if (model?.name !== plan.label) return false
+    if (!model.attachment || !model.modalities?.input?.includes("image")) return false
     const want = limit(plan).limit
     return want ? model.limit?.context === want.context && model.limit?.output === want.output : !model.limit
   })
