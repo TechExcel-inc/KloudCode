@@ -21,6 +21,9 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     const platform = usePlatform()
     const abort = new AbortController()
 
+    // The engine on this computer is reached with the window's own fetch: it runs requests in
+    // parallel, while the desktop HTTP plugin sends each one through the native layer and made
+    // start-up take half a minute. A remote plain-http server still needs the plugin.
     const eventFetch = (() => {
       if (!platform.fetch || !server.current) return
       try {
@@ -229,7 +232,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
 
     const sdk = createSdkForServer({
       server: server.current.http,
-      fetch: platform.fetch,
+      fetch: eventFetch,
       throwOnError: true,
     })
 
@@ -246,7 +249,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
         if (!s) throw new Error(language.t("error.globalSDK.serverNotAvailable"))
         return createSdkForServer({
           server: s.http,
-          fetch: platform.fetch,
+          fetch: eventFetch,
           ...opts,
         })
       },

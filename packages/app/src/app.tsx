@@ -69,10 +69,23 @@ const Loading = () => {
     clearTimeout(slow)
     if (performance.now() - start > 3000) note("page loaded slowly")
   })
+  // A popup over a dimmed window: clearly visible, blocks clicks while loading, and closes by itself.
   return (
-    <div class="page-loading size-full flex items-center justify-center gap-2 text-13-regular text-text-weak">
-      <Spinner class="size-4" />
-      {language.t("app.loading")}
+    <div
+      class="page-loading fixed inset-0 z-[100] flex items-center justify-center bg-black/40 cursor-wait"
+      role="alertdialog"
+      aria-modal="true"
+      aria-busy="true"
+      aria-label={language.t("app.loading")}
+      onPointerDown={(event) => event.preventDefault()}
+      onKeyDown={(event) => event.preventDefault()}
+      tabIndex={-1}
+      ref={(el) => queueMicrotask(() => el.focus())}
+    >
+      <div class="flex items-center gap-3 px-5 py-4 rounded-lg bg-surface-raised-stronger-non-alpha border border-border-weak-base shadow-lg text-14-medium text-text-strong">
+        <Spinner class="size-5" />
+        {language.t("app.loading")}
+      </div>
     </div>
   )
 }
