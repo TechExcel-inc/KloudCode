@@ -151,6 +151,11 @@ export function AgentEdits(props: {
         .then((res) => res.data)
         .catch(() => undefined),
   )
+  // Real token counts priced at the model's list price, so only an estimate of the bill.
+  const cost = createMemo(() => messages().reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0))
+  const money = (value: number) =>
+    value.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: value < 0.01 && value > 0 ? 4 : 2 })
+
   // The conversation's own size, estimated from its text; scaled with the rest to the real count.
   const conversation = createMemo(() =>
     estimateSessionContextBreakdown({ messages: messages(), parts: sync.data.part, input: Number.MAX_SAFE_INTEGER })
@@ -217,15 +222,25 @@ export function AgentEdits(props: {
           right={
             <Show when={view()}>
               {(value) => (
-                <>
-                  <span>{Math.round(value().percent)}%</span>
-                  <span class="w-11 h-3.5 rounded-full bg-surface-base border border-border-weak-base relative overflow-hidden">
-                    <span
-                      class="absolute left-0.5 top-0.5 bottom-0.5 rounded-full"
-                      style={{ background: ROW_COLOR.messages, width: `max(8px, ${Math.min(100, value().percent)}%)` }}
-                    />
+                <Tooltip
+                  placement="left"
+                  value={
+                    <div data-component="agent-context-cost" class="flex flex-col gap-0.5">
+                      <span>{language.t("agent.context.cost", { cost: money(cost()) })}</span>
+                      <span class="opacity-70">{language.t("agent.context.cost.hint")}</span>
+                    </div>
+                  }
+                >
+                  <span class="flex items-center gap-2">
+                    <span>{Math.round(value().percent)}%</span>
+                    <span class="w-11 h-3.5 rounded-full bg-surface-base border border-border-weak-base relative overflow-hidden">
+                      <span
+                        class="absolute left-0.5 top-0.5 bottom-0.5 rounded-full"
+                        style={{ background: ROW_COLOR.messages, width: `max(8px, ${Math.min(100, value().percent)}%)` }}
+                      />
+                    </span>
                   </span>
-                </>
+                </Tooltip>
               )}
             </Show>
           }

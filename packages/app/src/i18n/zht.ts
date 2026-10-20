@@ -715,6 +715,8 @@ export const dict = {
   "agent.context.title": "上下文",
   "agent.context.loading": "正在計算…",
   "agent.context.used": "已用 {{percent}}%",
+  "agent.context.cost": "預估費用：{{cost}}",
+  "agent.context.cost.hint": "按模型公開價格計算的實際用量",
   "agent.context.messages": "訊息",
   "agent.context.systemTools": "系統工具",
   "agent.context.mcpTools": "MCP 工具",

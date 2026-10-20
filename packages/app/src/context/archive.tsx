@@ -5,7 +5,7 @@ import { createEffect, on, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useCowork } from "@/context/cowork"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { CoworkFail, usage, type CoworkSession } from "@/ead/cowork"
+import { CoworkFail, modelUsage, usage, type CoworkSession } from "@/ead/cowork"
 import { DAY, stale } from "@/utils/archive"
 
 const PLAN = /^EAD \d+(\.\d+)?$/
@@ -72,7 +72,7 @@ export const { use: useArchive, provider: ArchiveProvider } = createSimpleContex
             projectId,
             parentSessionUid: session.parentID,
             title: session.title || session.id,
-            ...(messages ? usage(messages) : {}),
+            ...(messages ? { ...usage(messages), models: modelUsage(messages) } : {}),
             linesAdded: session.summary?.additions,
             linesDeleted: session.summary?.deletions,
             filesChanged: session.summary?.files,

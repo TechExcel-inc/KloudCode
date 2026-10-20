@@ -813,6 +813,8 @@ export const dict = {
   "agent.context.title": "Context",
   "agent.context.loading": "Measuring…",
   "agent.context.used": "{{percent}}% used",
+  "agent.context.cost": "Estimated cost: {{cost}}",
+  "agent.context.cost.hint": "Real token counts at the model's list price",
   "agent.context.messages": "Messages",
   "agent.context.systemTools": "System tools",
   "agent.context.mcpTools": "MCP tools",

@@ -82,6 +82,21 @@ export type CoworkSessionBody = {
   modelName?: string
   agentName?: string
   modelVariant?: string
+  /** The session's use of each model per day (UTC); replaces what Pilot had for the session. */
+  models?: CoworkModelUse[]
+}
+
+export type CoworkModelUse = {
+  usageDate: string
+  providerId: string
+  modelId: string
+  messageCount: number
+  inputTokens: number
+  outputTokens: number
+  reasoningTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  listCostMicroUsd: number
 }
 
 export type CoworkSettings = {
@@ -213,4 +228,50 @@ export function usage(
 export const githubRepo = (url: string | undefined) => {
   const match = url?.trim().match(/^(?:https?:\/\/(?:[^@/]+@)?|ssh:\/\/git@|git@)github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/i)
   return match ? `${match[1]}/${match[2]}`.toLowerCase() : undefined
+}
+
+/**
+ * The session's use of each model per day, for Pilot's usage report: the company prices each model
+ * with its own price, so tokens are kept apart by model. Days are UTC dates of each reply.
+ */
+export function modelUsage(
+  messages: {
+    role: string
+    providerID?: string
+    modelID?: string
+    cost?: number
+    time?: { created: number }
+    tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  }[],
+): CoworkModelUse[] {
+  const out = new Map<string, CoworkModelUse>()
+  for (const item of messages) {
+    if (item.role !== "assistant" || !item.tokens || !item.providerID || !item.modelID || !item.time) continue
+    const usageDate = new Date(item.time.created).toISOString().slice(0, 10)
+    const key = `${usageDate}|${item.providerID}|${item.modelID}`
+    const row =
+      out.get(key) ??
+      out
+        .set(key, {
+          usageDate,
+          providerId: item.providerID,
+          modelId: item.modelID,
+          messageCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          listCostMicroUsd: 0,
+        })
+        .get(key)!
+    row.messageCount += 1
+    row.inputTokens += item.tokens.input
+    row.outputTokens += item.tokens.output
+    row.reasoningTokens += item.tokens.reasoning
+    row.cacheReadTokens += item.tokens.cache.read
+    row.cacheWriteTokens += item.tokens.cache.write
+    row.listCostMicroUsd += Math.round((item.cost ?? 0) * 1_000_000)
+  }
+  return [...out.values()]
 }

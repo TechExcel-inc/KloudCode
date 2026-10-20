@@ -15,6 +15,7 @@ import {
   updatePfmSelection,
 } from "./bridge"
 import { expandKey } from "./settings"
+import { modelUsage } from "./cowork"
 import { buildModal, formatModal, kindLabel } from "./context-modal"
 import { clearPfmFilter, ownerSummary, readOwner, readPfmFilter, writeOwner, writePfmFilter } from "./filters"
 import { formatJobCounts } from "./jobs"
@@ -1213,5 +1214,42 @@ describe("ead cowork client", () => {
       cacheWriteTokens: 2,
       costMicroUsd: 12400,
     })
+  })
+})
+
+describe("modelUsage", () => {
+  const reply = (modelID: string, created: string, input: number, cost: number) => ({
+    role: "assistant",
+    providerID: "deepseek",
+    modelID,
+    cost,
+    time: { created: Date.parse(created) },
+    tokens: { input, output: 10, reasoning: 2, cache: { read: 100, write: 1 } },
+  })
+
+  test("keeps each model and UTC day apart", () => {
+    const rows = modelUsage([
+      { role: "user" },
+      reply("v4-pro", "2026-10-20T01:00:00Z", 5, 0.001),
+      reply("v4-pro", "2026-10-20T23:00:00Z", 7, 0.002),
+      reply("v4-flash", "2026-10-20T02:00:00Z", 1, 0),
+      reply("v4-pro", "2026-10-21T00:30:00Z", 3, 0.0005),
+    ])
+    expect(rows).toEqual([
+      {
+        usageDate: "2026-10-20",
+        providerId: "deepseek",
+        modelId: "v4-pro",
+        messageCount: 2,
+        inputTokens: 12,
+        outputTokens: 20,
+        reasoningTokens: 4,
+        cacheReadTokens: 200,
+        cacheWriteTokens: 2,
+        listCostMicroUsd: 3000,
+      },
+      expect.objectContaining({ usageDate: "2026-10-20", modelId: "v4-flash", messageCount: 1, inputTokens: 1 }),
+      expect.objectContaining({ usageDate: "2026-10-21", modelId: "v4-pro", messageCount: 1, listCostMicroUsd: 500 }),
+    ])
   })
 })
