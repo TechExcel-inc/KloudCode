@@ -353,6 +353,13 @@ export const { use: useCowork, provider: CoworkProvider } = createSimpleContext(
         const dir = folderOf(relatedProjectId)
         if (dir) layout.projects.open(dir)
       },
+      /** Relates a picked project; a folder Pilot does not know yet is first registered through its GitHub repository. */
+      async relateEntry(root: string, item: CoworkEntry) {
+        const id = item.projectId ?? (item.worktree ? (await link(item.worktree, true))?.projectId : undefined)
+        if (!id) return
+        if (!projectOf(root)) await link(root, true)
+        await this.relate(root, id)
+      },
       async unrelate(root: string, relatedDir: string) {
         const client = api()
         const id = projectOf(root)

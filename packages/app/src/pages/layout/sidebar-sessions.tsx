@@ -135,7 +135,7 @@ export const AllSessions = (props: {
                   note={cowork.signedIn() ? undefined : language.t("search.related.pilot")}
                   exclude={props.projects().map((item) => item.worktree)}
                   skip={[cowork.projectOf(current().worktree) ?? 0, ...cowork.relatedIds(current().worktree)]}
-                  onPick={(item) => item.projectId && void cowork.relate(current().worktree, item.projectId)}
+                  onPick={(item) => void cowork.relateEntry(current().worktree, item)}
                   triggerProps={{
                     class:
                       "group/related w-full h-8 px-2 rounded-md flex items-center gap-2 text-left text-13-regular text-text-strong hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",

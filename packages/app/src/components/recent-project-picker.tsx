@@ -77,7 +77,8 @@ export function RecentProjectPicker(props: {
   const close = () => setOpen(false)
   const hidden = (item: CoworkEntry) =>
     !!item.worktree && !!props.exclude?.some((dir) => workspaceKey(dir) === workspaceKey(item.worktree!))
-  const usable = (item: CoworkEntry) => (props.pilot ? !!item.projectId : true) && (!!item.worktree || !!props.remote)
+  const usable = (item: CoworkEntry) =>
+    (props.pilot ? !!item.projectId || (cowork.signedIn() && !!item.worktree) : true) && (!!item.worktree || !!props.remote)
   const pick = (item: CoworkEntry) => {
     if (!usable(item)) return
     close()
