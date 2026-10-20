@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, For, on, Show, type JSX } from "solid-js"
+import { createEffect, createResource, createSignal, For, on, Show, Suspense, type JSX } from "solid-js"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -95,6 +95,9 @@ export function RecentProjectPicker(props: {
       trigger={props.trigger}
       class="recent-project-picker !max-w-[340px] w-[300px] [&_[data-slot=popover-body]]:p-1"
     >
+      {/* Loading stays inside the dropdown: a suspended read here would show the app's Loading popup,
+          which takes focus and closes the dropdown the moment it opens. */}
+      <Suspense fallback={<div class="px-2 py-1.5 text-12-regular text-text-weak">…</div>}>
       <div class="flex flex-col gap-1">
         <div class="px-2 pt-1 text-12-regular text-text-weak">{props.title}</div>
         <Show when={props.note}>
@@ -102,7 +105,7 @@ export function RecentProjectPicker(props: {
             {props.note}
           </div>
         </Show>
-        <Show when={(total() ?? 0) > SEARCH}>
+        <Show when={(total.latest ?? 0) > SEARCH}>
           <div class="mx-1 flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
             <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
             <input
@@ -113,7 +116,7 @@ export function RecentProjectPicker(props: {
               onInput={(event) => type(event.currentTarget.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return
-                const first = items()?.find(usable)
+                const first = items.latest?.find(usable)
                 if (first) pick(first)
               }}
               placeholder={language.t("rail.project.search")}
@@ -124,14 +127,14 @@ export function RecentProjectPicker(props: {
         </Show>
         <div class="max-h-80 overflow-y-auto flex flex-col" role="listbox">
           <Show
-            when={(items() ?? []).length > 0}
+            when={(items.latest ?? []).length > 0}
             fallback={
               <div class="px-2 py-1.5 text-12-regular text-text-weak">
                 {items.loading ? "…" : (props.empty ?? language.t("rail.project.none"))}
               </div>
             }
           >
-            <For each={items()}>
+            <For each={items.latest}>
               {(item) => (
                 <button
                   type="button"
@@ -164,6 +167,7 @@ export function RecentProjectPicker(props: {
         </div>
         <Show when={props.footer}>{(footer) => footer()(close)}</Show>
       </div>
+      </Suspense>
     </Popover>
   )
 }
