@@ -26,11 +26,12 @@ import {
   Suspense,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { ArchiveProvider } from "@/context/archive"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
-import { GlobalSDKProvider } from "@/context/global-sdk"
+import { GlobalSDKProvider, useGlobalSDK } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
@@ -53,7 +54,28 @@ import { useCheckServerHealth } from "./utils/server-health"
 const HomeRoute = lazy(() => import("@/pages/home"))
 const loadSession = () => import("@/pages/session")
 const Session = lazy(loadSession)
-const Loading = () => <div class="size-full" />
+/** Shown while a page loads. A load that takes over 3 seconds is written to the engine log with its time. */
+const Loading = () => {
+  const language = useLanguage()
+  const sdk = useGlobalSDK()
+  const start = performance.now()
+  const where = typeof location === "object" ? location.pathname : ""
+  const note = (message: string) =>
+    void sdk.client.app
+      .log({ service: "app", level: "warn", message, extra: { path: where, ms: Math.round(performance.now() - start) } })
+      .catch(() => undefined)
+  const slow = setTimeout(() => note("page still loading after 3s"), 3000)
+  onCleanup(() => {
+    clearTimeout(slow)
+    if (performance.now() - start > 3000) note("page loaded slowly")
+  })
+  return (
+    <div class="page-loading size-full flex items-center justify-center gap-2 text-13-regular text-text-weak">
+      <Spinner class="size-4" />
+      {language.t("app.loading")}
+    </div>
+  )
+}
 
 if (typeof location === "object" && /\/session(?:\/|$)/.test(location.pathname)) {
   void loadSession()

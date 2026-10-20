@@ -132,6 +132,8 @@ export const AllSessions = (props: {
                   title={language.t("search.related.select")}
                   empty={language.t("search.related.none")}
                   pilot
+                  note={cowork.signedIn() ? undefined : language.t("search.related.pilot")}
+                  exclude={props.projects().map((item) => item.worktree)}
                   skip={[cowork.projectOf(current().worktree) ?? 0, ...cowork.relatedIds(current().worktree)]}
                   onPick={(item) => item.projectId && void cowork.relate(current().worktree, item.projectId)}
                   triggerProps={{

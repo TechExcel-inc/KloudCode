@@ -21,8 +21,14 @@ export function RecentProjectPicker(props: {
   title: string
   /** The open project's folder: always listed, with a check mark. */
   current?: string
-  /** Lists EAD Pilot projects only, for choices that Pilot must save (related projects). */
+  /** Leaves these folders out (the current project and those already related). */
+  exclude?: string[]
+  /**
+   * The choice is saved in EAD Pilot (related projects): only Pilot projects can be picked, and while
+   * Pilot cannot save it, the list still shows the projects with `note` explaining why.
+   */
   pilot?: boolean
+  note?: string
   /** Leaves these Pilot projects out of the list. */
   skip?: number[]
   empty?: string
@@ -49,13 +55,18 @@ export function RecentProjectPicker(props: {
 
   const [items] = createResource(
     () => (open() ? { query: query(), skip: props.skip ?? [] } : undefined),
-    (input) => cowork.recent({ limit: LIMIT, q: input.query, skip: input.skip, current: props.current, pilot: props.pilot }),
+    (input) =>
+      cowork
+        .recent({ limit: LIMIT + (props.exclude?.length ?? 0), q: input.query, skip: input.skip, current: props.current })
+        .then((list) => list.filter((item) => !hidden(item)).slice(0, LIMIT)),
   )
   // Whether to offer search is decided by the unfiltered list, so it stays while typing.
   const [total] = createResource(
     () => (open() ? { skip: props.skip ?? [] } : undefined),
     (input) =>
-      cowork.recent({ limit: SEARCH + 1, skip: input.skip, current: props.current, pilot: props.pilot }).then((list) => list.length),
+      cowork
+        .recent({ limit: SEARCH + 1 + (props.exclude?.length ?? 0), skip: input.skip, current: props.current })
+        .then((list) => list.filter((item) => !hidden(item)).length),
   )
 
   const type = (value: string) => {
@@ -64,7 +75,9 @@ export function RecentProjectPicker(props: {
     timer = setTimeout(() => setQuery(value.trim()), 150)
   }
   const close = () => setOpen(false)
-  const usable = (item: CoworkEntry) => !!item.worktree || !!props.remote
+  const hidden = (item: CoworkEntry) =>
+    !!item.worktree && !!props.exclude?.some((dir) => workspaceKey(dir) === workspaceKey(item.worktree!))
+  const usable = (item: CoworkEntry) => (props.pilot ? !!item.projectId : true) && (!!item.worktree || !!props.remote)
   const pick = (item: CoworkEntry) => {
     if (!usable(item)) return
     close()
@@ -83,6 +96,11 @@ export function RecentProjectPicker(props: {
     >
       <div class="flex flex-col gap-1">
         <div class="px-2 pt-1 text-12-regular text-text-weak">{props.title}</div>
+        <Show when={props.note}>
+          <div data-action="recent-project-note" class="mx-1 px-2 py-1.5 rounded-md bg-surface-base text-12-regular text-text-base">
+            {props.note}
+          </div>
+        </Show>
         <Show when={(total() ?? 0) > SEARCH}>
           <div class="mx-1 flex items-center gap-2 h-8 px-2 rounded-md bg-surface-base border border-border-weak-base focus-within:border-border-interactive-base">
             <Icon name="magnifying-glass" size="small" class="text-icon-weak shrink-0" />
