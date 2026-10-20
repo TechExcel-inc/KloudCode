@@ -7,6 +7,8 @@ import type { AssistantMessage, SnapshotFileDiff, VcsFileDiff } from "@opencode-
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useCowork } from "@/context/cowork"
+import { PLAN } from "@/ead/plan"
 import { githubRepo } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
 import { AgentCommit } from "./agent-commit"
@@ -268,6 +270,7 @@ export function AgentEdits(props: {
   const language = useLanguage()
   const sdk = useSDK()
   const sync = useSync()
+  const cowork = useCowork()
   const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const [shown, setShown] = createSignal<Partial<Record<OutputGroup, boolean>>>({})
@@ -323,6 +326,26 @@ export function AgentEdits(props: {
   const tick = setInterval(() => setMinute(Date.now()), 60_000)
   onCleanup(() => clearInterval(tick))
   const summary = createMemo(() => sessionSummary(messages(), minute()))
+  // EAD plan answers have no price in the app: Pilot's AI gateway knows the real model behind each
+  // one and prices it, so their cost is read from Pilot after each reply.
+  const lastReply = createMemo(() => {
+    const msg = messages().findLast((item) => item.role === "assistant")
+    return msg?.role === "assistant" ? `${msg.id}:${msg.time.completed ?? ""}` : ""
+  })
+  const usesPlan = createMemo(() => messages().some((msg) => msg.role === "assistant" && msg.providerID === PLAN))
+  const [pilotCost] = createResource(
+    () => (usesPlan() && props.session && cowork.api() ? { session: props.session, reply: lastReply() } : undefined),
+    (input) =>
+      cowork
+        .api()
+        ?.gatewayCost(input.session)
+        .catch(() => undefined),
+  )
+  const costText = () => {
+    const pilot = pilotCost.latest
+    if (pilot && pilot.requests > 0) return money(summary().cost + pilot.costMicroUsd / 1_000_000)
+    return summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")
+  }
   // The newest task starts open; people can open or close any of them.
   const [taskOpen, setTaskOpen] = createSignal<Record<string, boolean>>({})
   const taskIsOpen = (task: Task, index: number) => taskOpen()[task.id] ?? index === 0
@@ -386,8 +409,8 @@ export function AgentEdits(props: {
           </Show>
           <Row
             icon={<Icon name="providers" size="small" />}
-            right={summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")}
-            title={language.t("agent.context.cost.hint")}
+            right={costText()}
+            title={language.t(usesPlan() ? "agent.summary.costPilot" : "agent.context.cost.hint")}
           >
             {language.t("agent.summary.cost")}
           </Row>

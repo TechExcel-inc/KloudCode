@@ -86,6 +86,14 @@ export type CoworkSessionBody = {
   models?: CoworkModelUse[]
 }
 
+export type CoworkGatewayCost = {
+  requests: number
+  promptTokens: number
+  completionTokens: number
+  costMicroUsd: number
+  unpricedRequests: number
+}
+
 export type CoworkModelUse = {
   usageDate: string
   providerId: string
@@ -188,6 +196,8 @@ export function cowork(token: string, tenant?: number, http: Http = eadHttp()) {
     move: (uid: string, projectId: number) => send<CoworkSession>("POST", `/sessions/${id(uid)}/move`, { projectId }),
     remove: (uid: string) => send<void>("DELETE", `/sessions/${id(uid)}`),
 
+    /** What a session's EAD plan answers cost at provider prices, as Pilot's AI gateway recorded them. */
+    gatewayCost: (uid: string) => send<CoworkGatewayCost>("GET", `/sessions/${id(uid)}/gateway-cost`),
     settings: () => send<CoworkSettings>("GET", "/settings"),
     saveSettings: (input: Partial<CoworkSettings>) => send<CoworkSettings>("PUT", "/settings", input),
   }

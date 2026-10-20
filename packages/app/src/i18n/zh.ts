@@ -724,6 +724,7 @@ export const dict = {
   "agent.summary.started": "开始于 {{time}}",
   "agent.summary.working": "AI 工作时长",
   "agent.summary.cost": "预估费用",
+  "agent.summary.costPilot": "EAD 套餐的回答由 EAD Pilot 按实际模型的供应商价格计费",
   "agent.summary.notPriced": "未定价",
   "agent.context.title": "上下文",
   "agent.context.loading": "正在计算…",

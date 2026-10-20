@@ -1042,6 +1042,9 @@ export type Plan = {
   suffix: string
   model: string
   slots: PlanSlots
+  /** Token limits of the plan's smallest model, from Pilot; absent from an older Pilot. */
+  context?: number
+  output?: number
 }
 
 /** `EAD DP2.1` and `EAD 2.1` name the same plan; the gateway's stored name is `EAD 2.1`. */
@@ -1059,6 +1062,8 @@ type PlanRow = {
   name?: string
   nameSuffix?: string
   displayOrder?: number
+  contextTokens?: number
+  maxOutputTokens?: number
   slots?: Array<{ slotKey?: string; modelId?: string }>
 }
 
@@ -1085,7 +1090,18 @@ export async function loadPlans(token: string, http: Http = eadHttp()): Promise<
         .replace(/\s+/g, " ")
         .slice(0, 40)
       const slot = slots(row.slots)
-      return [{ name, label: planLabel(name), suffix, model: slot.advanced || slot.reasoning || slot.easy, slots: slot }]
+      const tokens = (value: unknown) => (typeof value === "number" && value > 0 ? Math.floor(value) : undefined)
+      return [
+        {
+          name,
+          label: planLabel(name),
+          suffix,
+          model: slot.advanced || slot.reasoning || slot.easy,
+          slots: slot,
+          context: tokens(row.contextTokens),
+          output: tokens(row.maxOutputTokens),
+        },
+      ]
     })
     .filter((plan, i, list) => list.findIndex((item) => item.name === plan.name) === i)
 }

@@ -1021,6 +1021,15 @@ describe("ead i18n + env + mcp", () => {
     expect(match(spec(two), [two[1], two[0]])).toBe(false)
   })
 
+  test("plan spec carries the plan's token limits, and a change in them rewrites the config", () => {
+    applyEnv("production")
+    const sized = [{ name: "EAD 3.2", label: "EAD DP3.2", context: 200_000, output: 32_768 }]
+    expect(spec(sized).models).toEqual({ "EAD 3.2": { name: "EAD DP3.2", limit: { context: 200_000, output: 32_768 } } })
+    expect(match(spec(sized), sized)).toBe(true)
+    expect(match(spec([{ name: "EAD 3.2", label: "EAD DP3.2" }]), sized)).toBe(false)
+    expect(match(spec(sized), [{ ...sized[0]!, context: 128_000 }])).toBe(false)
+  })
+
   test("apply skips save when the plan is already registered", async () => {
     let key = ""
     const auth = {

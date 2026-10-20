@@ -17,8 +17,14 @@ export function gateway() {
   return `${eadOrigin()}/v1`
 }
 
-/** A plan as a picker model: `name` is what the gateway routes on, `label` what people see. */
-export type PlanModel = { name: string; label: string }
+/**
+ * A plan as a picker model: `name` is what the gateway routes on, `label` what people see.
+ * `context` and `output` are the plan's token limits from Pilot, when it sends them.
+ */
+export type PlanModel = { name: string; label: string; context?: number; output?: number }
+
+const limit = (plan: PlanModel) =>
+  plan.context && plan.output ? { limit: { context: plan.context, output: plan.output } } : {}
 
 /**
  * One model per EAD Dynamic Plan, in the account's order. Config saves merge models, so the
@@ -29,7 +35,7 @@ export function spec(plans: PlanModel[]) {
     npm: NPM,
     name: "EAD",
     options: { baseURL: gateway() },
-    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label }])),
+    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label, ...limit(plan) }])),
     whitelist: plans.map((plan) => plan.name),
   }
 }
@@ -40,7 +46,7 @@ export function match(cfg: unknown, plans: PlanModel[]) {
     npm?: string
     name?: string
     options?: { baseURL?: string }
-    models?: Record<string, { name?: string } | undefined>
+    models?: Record<string, { name?: string; limit?: { context?: number; output?: number } } | undefined>
     whitelist?: string[]
   }
   if (row.npm !== NPM) return false
@@ -48,7 +54,12 @@ export function match(cfg: unknown, plans: PlanModel[]) {
   if (row.options?.baseURL !== gateway()) return false
   const list = row.whitelist ?? []
   if (list.length !== plans.length || plans.some((plan, i) => list[i] !== plan.name)) return false
-  return plans.every((plan) => row.models?.[plan.name]?.name === plan.label)
+  return plans.every((plan) => {
+    const model = row.models?.[plan.name]
+    if (model?.name !== plan.label) return false
+    const want = limit(plan).limit
+    return want ? model.limit?.context === want.context && model.limit?.output === want.output : !model.limit
+  })
 }
 
 export async function apply(opts: {
