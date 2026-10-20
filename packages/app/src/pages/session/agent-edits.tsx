@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -13,6 +13,7 @@ import { estimateSessionContextBreakdown } from "@/components/session/session-co
 import { AgentCommit } from "./agent-commit"
 import { contextView, formatPercent, formatTokens, type ContextRowKey } from "./agent-context"
 import { OUTPUT_GROUPS, sessionOutputs, type Output, type OutputGroup } from "./agent-outputs"
+import { sessionBackground, sessionTasks, type Task } from "./agent-tasks"
 
 export const EDITS_WIDTH = 320
 
@@ -116,6 +117,143 @@ function List(props: { name: string; label: string; items: { name: string; token
   )
 }
 
+const STEP_COLOR: Record<string, string> = {
+  completed: "bg-icon-success-base",
+  in_progress: "bg-text-interactive-base",
+  pending: "bg-icon-weak-base",
+  cancelled: "bg-text-diff-delete-base",
+}
+
+function TaskItem(props: {
+  task: Task
+  open: boolean
+  onToggle: () => void
+  onOpenFile: (path: string) => void
+  onOpenOutput: (path: string) => void
+  money: (value: number) => string
+}) {
+  const language = useLanguage()
+  const status = () => (props.task.finished ? "done" : "open")
+  return (
+    <div data-component="agent-task" data-status={status()} class="flex flex-col">
+      <button
+        type="button"
+        data-action="agent-task-toggle"
+        aria-expanded={props.open}
+        title={props.task.title}
+        class="w-full h-8 flex items-center gap-2 min-w-0 text-left rounded-md hover:bg-surface-base-hover"
+        onClick={props.onToggle}
+      >
+        <Icon name={props.open ? "chevron-down" : "chevron-right"} size="small" class="shrink-0 text-icon-weak" />
+        <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong">
+          {props.task.title || language.t("agent.tasks.untitled")}
+        </span>
+        <Show
+          when={props.task.finished}
+          fallback={
+            <span class="shrink-0 text-12-regular text-text-weak">
+              {props.task.done}/{props.task.steps.length}
+            </span>
+          }
+        >
+          <Icon name="circle-check" size="small" class="shrink-0 text-icon-success-base" />
+        </Show>
+      </button>
+      <Show when={props.open}>
+        <div class="pl-6 pb-2 flex flex-col gap-1">
+          <For each={props.task.steps}>
+            {(step) => (
+              <div class="flex items-start gap-2 min-w-0">
+                <span class={`shrink-0 mt-1.5 size-2 rounded-full ${STEP_COLOR[step.status] ?? "bg-icon-weak-base"}`} />
+                <span
+                  class="text-12-regular min-w-0"
+                  classList={{
+                    "text-text-strong": step.status === "in_progress",
+                    "text-text-base": step.status === "pending",
+                    "text-text-weak": step.status === "completed",
+                    "text-text-weak line-through": step.status === "cancelled",
+                  }}
+                >
+                  {step.content}
+                </span>
+              </div>
+            )}
+          </For>
+          <Show when={props.task.documents.length > 0}>
+            <div class="pt-1 text-11-regular text-text-weak">{language.t("agent.tasks.documents")}</div>
+            <For each={props.task.documents}>
+              {(item) => (
+                <button
+                  type="button"
+                  data-action="agent-task-document"
+                  title={item.path}
+                  class="h-6 flex items-center gap-2 min-w-0 text-left rounded hover:bg-surface-base-hover"
+                  onClick={() => props.onOpenOutput(item.path)}
+                >
+                  <Icon name={GROUP_ICON[item.group]} size="small" class="shrink-0 text-icon-weak" />
+                  <span class="truncate text-12-regular text-text-strong">{getFilename(item.path)}</span>
+                </button>
+              )}
+            </For>
+          </Show>
+          <Show when={props.task.code.length + props.task.elsewhere.length > 0}>
+            <div class="pt-1 flex items-center gap-1.5 text-11-regular text-text-weak">
+              {language.t("agent.tasks.code", { count: props.task.code.length + props.task.elsewhere.length })}
+              <Show when={props.task.added > 0}>
+                <span class="text-12-mono text-text-diff-add-base">+{props.task.added.toLocaleString()}</span>
+              </Show>
+              <Show when={props.task.removed > 0}>
+                <span class="text-12-mono text-text-diff-delete-base">-{props.task.removed.toLocaleString()}</span>
+              </Show>
+            </div>
+            <For each={props.task.code}>
+              {(row) => (
+                <button
+                  type="button"
+                  data-action="agent-task-file"
+                  title={row.file}
+                  class="h-6 flex items-center gap-2 min-w-0 text-left rounded hover:bg-surface-base-hover"
+                  onClick={() => props.onOpenFile(row.file)}
+                >
+                  <FileIcon node={{ path: row.file, type: "file" }} class="size-3.5 shrink-0" />
+                  <span class="flex-1 min-w-0 truncate text-12-regular text-text-strong">{getFilename(row.file)}</span>
+                  <span class="shrink-0 text-11-regular">
+                    <Show when={row.additions}>
+                      <span class="text-text-diff-add-base">+{row.additions}</span>
+                    </Show>{" "}
+                    <Show when={row.deletions}>
+                      <span class="text-text-diff-delete-base">-{row.deletions}</span>
+                    </Show>
+                  </span>
+                </button>
+              )}
+            </For>
+            <For each={props.task.elsewhere}>
+              {(item) => (
+                <button
+                  type="button"
+                  data-action="agent-task-file-elsewhere"
+                  title={item.path}
+                  class="h-6 flex items-center gap-2 min-w-0 text-left rounded hover:bg-surface-base-hover"
+                  onClick={() => props.onOpenOutput(item.path)}
+                >
+                  <Icon name="code" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="truncate text-12-regular text-text-strong">{getFilename(item.path)}</span>
+                </button>
+              )}
+            </For>
+          </Show>
+          <Show when={props.task.cost > 0}>
+            <div class="pt-1 text-11-regular text-text-weak">
+              {language.t("agent.context.cost", { cost: props.money(props.task.cost) })}
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 /**
  * The Agent view's right panel, laid out like Claude Code's: where the session works (Environment),
  * what fills the model's context window (Context), the files the AI made (Outputs), and the code it
@@ -131,7 +269,7 @@ export function AgentEdits(props: {
   const sdk = useSDK()
   const sync = useSync()
   const cowork = useCowork()
-  const [open, setOpen] = createSignal({ environment: true, context: false, outputs: false, changes: true })
+  const [open, setOpen] = createSignal({ environment: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const [shown, setShown] = createSignal<Partial<Record<OutputGroup, boolean>>>({})
 
@@ -176,6 +314,26 @@ export function AgentEdits(props: {
     return OUTPUT_GROUPS.flatMap((group) => (out[group] ? [{ group, items: out[group]! }] : []))
   })
   const time = (value: number) => new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+
+  const tasks = createMemo(() => sessionTasks(messages(), sync.data.part))
+  // The newest task starts open; people can open or close any of them.
+  const [taskOpen, setTaskOpen] = createSignal<Record<string, boolean>>({})
+  const taskIsOpen = (task: Task, index: number) => taskOpen()[task.id] ?? index === 0
+  const background = createMemo(() => sessionBackground(messages().flatMap((msg) => sync.data.part[msg.id] ?? [])))
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (background().running.length === 0) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const elapsed = (start: number) => {
+    const seconds = Math.max(0, Math.round((now() - start) / 1000))
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+  }
+  const stop = (sessionID?: string) => {
+    if (!sessionID) return
+    void sdk.client.session.abort({ sessionID }).catch(() => undefined)
+  }
 
   const added = createMemo(() => props.diffs().reduce((sum, diff) => sum + (diff.additions ?? 0), 0))
   const removed = createMemo(() => props.diffs().reduce((sum, diff) => sum + (diff.deletions ?? 0), 0))
@@ -303,6 +461,73 @@ export function AgentEdits(props: {
           </Show>
         </Box>
 
+        <Show when={tasks().length > 0}>
+          <Box
+            name="tasks"
+            title={language.t("agent.tasks.title")}
+            open={open().tasks}
+            onToggle={() => toggle("tasks")}
+            right={<span>{tasks().length}</span>}
+          >
+            <For each={tasks()}>
+              {(task, index) => (
+                <TaskItem
+                  task={task}
+                  open={taskIsOpen(task, index())}
+                  onToggle={() => setTaskOpen((prev) => ({ ...prev, [task.id]: !taskIsOpen(task, index()) }))}
+                  onOpenFile={props.onOpen}
+                  onOpenOutput={props.onOpenOutput}
+                  money={money}
+                />
+              )}
+            </For>
+          </Box>
+        </Show>
+
+        <Show when={background().running.length + background().finished > 0}>
+          <Box
+            name="background"
+            title={language.t("agent.background.title")}
+            open={open().background}
+            onToggle={() => toggle("background")}
+            right={
+              <Show when={background().running.length > 0}>
+                <span>{background().running.length}</span>
+              </Show>
+            }
+          >
+            <For each={background().running}>
+              {(job) => (
+                <div data-component="agent-background-job" class="h-8 flex items-center gap-2.5 min-w-0">
+                  <Icon name="task" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong" title={job.title}>
+                    {job.title}
+                  </span>
+                  <span class="shrink-0 text-12-regular text-text-weak">{elapsed(job.started)}</span>
+                  <Show when={job.sessionID}>
+                    <button
+                      type="button"
+                      data-action="agent-background-stop"
+                      aria-label={language.t("agent.background.stop")}
+                      title={language.t("agent.background.stop")}
+                      class="shrink-0 size-6 flex items-center justify-center rounded hover:bg-surface-base-hover"
+                      onClick={() => stop(job.sessionID)}
+                    >
+                      <Icon name="stop" size="small" class="text-icon-weak" />
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <Show when={background().finished > 0}>
+              <div class="h-8 flex items-center gap-2.5 text-13-regular text-text-weak">
+                <Icon name="check" size="small" class="shrink-0 text-icon-weak" />
+                {language.t("agent.background.finished", { count: background().finished })}
+              </div>
+            </Show>
+          </Box>
+        </Show>
+
         <Box
           name="outputs"
           title={language.t("agent.outputs.title")}
@@ -363,8 +588,12 @@ export function AgentEdits(props: {
           onToggle={() => toggle("changes")}
           right={
             <Show when={!open().changes && props.diffs().length > 0}>
-              <span class="text-12-mono text-text-diff-add-base">+{count(added())}</span>
-              <span class="text-12-mono text-text-diff-delete-base">-{count(removed())}</span>
+              <Show when={added() > 0}>
+                <span class="text-12-mono text-text-diff-add-base">+{count(added())}</span>
+              </Show>
+              <Show when={removed() > 0}>
+                <span class="text-12-mono text-text-diff-delete-base">-{count(removed())}</span>
+              </Show>
             </Show>
           }
         >
@@ -374,8 +603,12 @@ export function AgentEdits(props: {
           >
             <div class="h-8 flex items-center gap-2 text-12-mono">
               <Icon name="review" size="small" class="text-icon-weak" />
-              <span class="text-text-diff-add-base">+{count(added())}</span>
-              <span class="text-text-diff-delete-base">-{count(removed())}</span>
+              <Show when={added() > 0}>
+                <span class="text-text-diff-add-base">+{count(added())}</span>
+              </Show>
+              <Show when={removed() > 0}>
+                <span class="text-text-diff-delete-base">-{count(removed())}</span>
+              </Show>
               <span class="ml-auto text-12-regular text-text-weak">
                 {language.t("agent.edits.files", { count: props.diffs().length })}
               </span>
