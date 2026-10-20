@@ -811,6 +811,8 @@ export const dict = {
   "agent.summary.working": "AI working time",
   "agent.summary.cost": "Estimated cost",
   "agent.summary.costPilot": "EAD plan answers are priced by EAD Pilot at the real model's provider price",
+  "agent.summary.breakdown": "{{count}} answers · {{input}} in · {{output}} out",
+  "agent.summary.noPilotCost": "EAD Pilot has no priced answers for this session yet. Answers from before the cost tracking started are not included.",
   "agent.summary.notPriced": "Not priced",
   "agent.context.title": "Context",
   "agent.context.loading": "Measuring…",

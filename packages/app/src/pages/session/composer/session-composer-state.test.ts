@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { todoState } from "./session-composer-state"
-import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { sessionPermissionRequest, sessionQuestionRequest, typedAnswers } from "./session-request-tree"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -124,5 +124,23 @@ describe("todoState", () => {
 
   test("clears completed todos when the session is no longer live", () => {
     expect(todoState({ count: 2, done: true, live: false })).toBe("clear")
+  })
+})
+
+describe("typedAnswers", () => {
+  test("a typed message answers every question in the request in the person's words", () => {
+    const request = {
+      id: "q1",
+      sessionID: "s",
+      questions: [
+        { question: "Which fix?", header: "Fix", options: [] },
+        { question: "Which file?", header: "File", options: [] },
+      ],
+    } as unknown as QuestionRequest
+    expect(typedAnswers(request, "  Only the auth skip, please  ")).toEqual([
+      ["Only the auth skip, please"],
+      ["Only the auth skip, please"],
+    ])
+    expect(typedAnswers(request, "   ")).toEqual([[], []])
   })
 })

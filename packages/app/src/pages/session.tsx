@@ -55,6 +55,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
+import { SessionQuestionCard } from "@/pages/session/composer/session-question-card"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -1086,7 +1087,7 @@ export default function Page() {
     }
 
     if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
-      if (composer.blocked() || isChildSession()) return
+      if (composer.permissionRequest() || isChildSession()) return
       inputRef?.focus()
     }
   }
@@ -1974,6 +1975,15 @@ export default function Page() {
               <Match when={params.id}>
                 <Show when={messagesReady()}>
                   <MessageTimeline
+                    footer={
+                      <Show when={composer.questionRequest()} keyed>
+                        {(request) => (
+                          <div class="w-full px-4 md:px-5">
+                            <SessionQuestionCard request={request} onSubmit={resumeScroll} />
+                          </div>
+                        )}
+                      </Show>
+                    }
                     mobileChanges={mobileChanges()}
                     mobileFallback={reviewContent({
                       diffStyle: "unified",

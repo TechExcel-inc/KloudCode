@@ -52,3 +52,24 @@ export function formatDuration(ms: number) {
   if (hours < 24) return `${hours}h ${minutes % 60}m`
   return `${Math.floor(hours / 24)}d ${hours % 24}h`
 }
+
+export type ModelCost = { providerID: string; modelID: string; replies: number; input: number; output: number; cost: number }
+
+/**
+ * The app's own estimate per model, for every model except `skip` (EAD plans, which EAD Pilot prices),
+ * most expensive first.
+ */
+export function modelCosts(messages: Message[], skip: string): ModelCost[] {
+  const out = new Map<string, ModelCost>()
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || msg.providerID === skip) continue
+    const key = `${msg.providerID}/${msg.modelID}`
+    const row = out.get(key) ?? { providerID: msg.providerID, modelID: msg.modelID, replies: 0, input: 0, output: 0, cost: 0 }
+    row.replies += 1
+    row.input += msg.tokens.input + msg.tokens.cache.read + msg.tokens.cache.write
+    row.output += msg.tokens.output + msg.tokens.reasoning
+    row.cost += msg.cost
+    out.set(key, row)
+  }
+  return [...out.values()].sort((a, b) => b.cost - a.cost || b.replies - a.replies)
+}

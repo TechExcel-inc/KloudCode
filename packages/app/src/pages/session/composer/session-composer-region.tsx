@@ -9,9 +9,6 @@ import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
-import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
-import { SessionProjectDock } from "@/pages/session/composer/session-project-dock"
-import { projectSwitch } from "@/pages/session/composer/session-project"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
@@ -57,7 +54,8 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
-  const showComposer = createMemo(() => !props.state.blocked() || child())
+  // A pending question stays usable: it is answered in the conversation or by typing a message.
+  const showComposer = createMemo(() => !props.state.permissionRequest() || child())
 
   const previewPrompt = () =>
     prompt
@@ -149,19 +147,6 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}
       >
-        <Show when={props.state.questionRequest()} keyed>
-          {(request) => (
-            <div>
-              <Show
-                when={projectSwitch(request, sync.data.part)}
-                fallback={<SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />}
-              >
-                {(target) => <SessionProjectDock request={request} target={target()} onSubmit={props.onResponseSubmit} />}
-              </Show>
-            </div>
-          )}
-        </Show>
-
         <Show when={props.state.permissionRequest()} keyed>
           {(request) => (
             <div>
@@ -256,7 +241,7 @@ export function SessionComposerRegion(props: {
               <Show
                 when={child()}
                 fallback={
-                  <Show when={!props.state.blocked()}>
+                  <Show when={!props.state.permissionRequest()}>
                     <PromptInput
                       ref={props.inputRef}
                       newSessionWorktree={props.newSessionWorktree}

@@ -15,7 +15,7 @@ import { AgentCommit } from "./agent-commit"
 import { contextView, formatPercent, formatTokens, type ContextRowKey } from "./agent-context"
 import { OUTPUT_GROUPS, sessionOutputs, type Output, type OutputGroup } from "./agent-outputs"
 import { sessionBackground, sessionTasks, type Task } from "./agent-tasks"
-import { formatDuration, sessionSummary } from "./agent-summary"
+import { formatDuration, modelCosts, sessionSummary } from "./agent-summary"
 
 export const EDITS_WIDTH = 320
 
@@ -128,6 +128,9 @@ const STEP_COLOR: Record<string, string> = {
 
 function TaskItem(props: {
   task: Task
+  /** The task's place in the session, the first task being 1, out of `count` tasks. */
+  number: number
+  count: number
   open: boolean
   onToggle: () => void
   onOpenFile: (path: string) => void
@@ -150,16 +153,9 @@ function TaskItem(props: {
         <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong">
           {props.task.title || language.t("agent.tasks.untitled")}
         </span>
-        <Show
-          when={props.task.finished}
-          fallback={
-            <span class="shrink-0 text-12-regular text-text-weak">
-              {props.task.done}/{props.task.steps.length}
-            </span>
-          }
-        >
-          <Icon name="circle-check" size="small" class="shrink-0 text-icon-success-base" />
-        </Show>
+        <span data-slot="task-number" class="shrink-0 text-12-regular text-text-weak">
+          {props.number}/{props.count}
+        </span>
       </button>
       <Show when={props.open}>
         <div class="pl-6 pb-2 flex flex-col gap-1">
@@ -341,6 +337,8 @@ export function AgentEdits(props: {
         ?.gatewayCost(input.session)
         .catch(() => undefined),
   )
+  const [costOpen, setCostOpen] = createSignal(false)
+  const appCosts = createMemo(() => modelCosts(messages(), PLAN))
   const costText = () => {
     const pilot = pilotCost.latest
     if (pilot && pilot.requests > 0) return money(summary().cost + pilot.costMicroUsd / 1_000_000)
@@ -407,13 +405,68 @@ export function AgentEdits(props: {
               {language.t("agent.summary.working")}
             </Row>
           </Show>
-          <Row
-            icon={<Icon name="providers" size="small" />}
-            right={costText()}
+          <button
+            type="button"
+            data-action="agent-summary-cost"
+            aria-expanded={costOpen()}
             title={language.t(usesPlan() ? "agent.summary.costPilot" : "agent.context.cost.hint")}
+            class="w-full h-8 flex items-center gap-2.5 min-w-0 text-left rounded-md hover:bg-surface-base-hover"
+            onClick={() => setCostOpen(!costOpen())}
           >
-            {language.t("agent.summary.cost")}
-          </Row>
+            <span class="shrink-0 flex items-center text-icon-weak">
+              <Icon name="providers" size="small" />
+            </span>
+            <span class="min-w-0 truncate text-13-regular text-text-strong">{language.t("agent.summary.cost")}</span>
+            <Icon name={costOpen() ? "chevron-down" : "chevron-right"} size="small" class="shrink-0 text-icon-weak" />
+            <span class="ml-auto shrink-0 text-12-regular text-text-weak">{costText()}</span>
+          </button>
+          <Show when={costOpen()}>
+            <div data-component="agent-cost-breakdown" class="pl-7 pb-1 flex flex-col gap-1">
+              <For each={pilotCost.latest?.models ?? []}>
+                {(row) => (
+                  <div class="grid grid-cols-[1fr_auto] gap-x-2 text-12-regular" title={`${row.providerId} / ${row.modelId}`}>
+                    <span class="min-w-0 truncate text-text-strong">
+                      {row.modelId} · {row.slotKey}
+                    </span>
+                    <span class="row-span-2 self-center text-text-strong">
+                      {row.unpricedRequests === row.requests ? language.t("agent.summary.notPriced") : money(row.costMicroUsd / 1_000_000)}
+                    </span>
+                    <span class="text-11-regular text-text-weak">
+                      {language.t("agent.summary.breakdown", {
+                        count: row.requests,
+                        input: formatTokens(row.promptTokens),
+                        output: formatTokens(row.completionTokens),
+                      })}
+                    </span>
+                  </div>
+                )}
+              </For>
+              <For each={appCosts()}>
+                {(row) => (
+                  <div class="grid grid-cols-[1fr_auto] gap-x-2 text-12-regular" title={`${row.providerID} / ${row.modelID}`}>
+                    <span class="min-w-0 truncate text-text-strong">{row.modelID}</span>
+                    <span class="row-span-2 self-center text-text-strong">
+                      {row.cost > 0 ? money(row.cost) : language.t("agent.summary.notPriced")}
+                    </span>
+                    <span class="text-11-regular text-text-weak">
+                      {language.t("agent.summary.breakdown", {
+                        count: row.replies,
+                        input: formatTokens(row.input),
+                        output: formatTokens(row.output),
+                      })}
+                    </span>
+                  </div>
+                )}
+              </For>
+              <Show when={usesPlan()}>
+                <div class="text-11-regular text-text-weak">
+                  {(pilotCost.latest?.models?.length ?? 0) > 0
+                    ? language.t("agent.summary.costPilot")
+                    : language.t("agent.summary.noPilotCost")}
+                </div>
+              </Show>
+            </div>
+          </Show>
         </Box>
 
         <Box
@@ -510,6 +563,8 @@ export function AgentEdits(props: {
               {(task, index) => (
                 <TaskItem
                   task={task}
+                  number={tasks().length - index()}
+                  count={tasks().length}
                   open={taskIsOpen(task, index())}
                   onToggle={() => setTaskOpen((prev) => ({ ...prev, [task.id]: !taskIsOpen(task, index()) }))}
                   onOpenFile={props.onOpen}

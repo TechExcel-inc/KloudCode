@@ -19,6 +19,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
+import { sessionQuestionRequest, typedAnswers } from "@/pages/session/composer/session-request-tree"
 import { formatSystemPrompt } from "@/ead/api"
 
 type PendingPrompt = {
@@ -308,6 +309,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
       if (input.working()) abort()
+      return
+    }
+
+    // While the AI waits on a question, a typed message is the answer in the person's own words.
+    const asked = params.id ? sessionQuestionRequest(sync.data.session, sync.data.question, params.id) : undefined
+    if (asked && text.trim().length > 0) {
+      input.addToHistory(currentPrompt, mode)
+      input.resetHistoryNavigation()
+      prompt.reset()
+      await sdk.client.question
+        .reply({ requestID: asked.id, answers: typedAnswers(asked, text) })
+        .catch((err) => {
+          prompt.set(currentPrompt, input.promptLength(currentPrompt))
+          showToast({ title: language.t("common.requestFailed"), description: errorMessage(err) })
+        })
       return
     }
 

@@ -208,6 +208,8 @@ function createTimelineStaging(input: TimelineStageInput) {
 }
 
 export function MessageTimeline(props: {
+  /** Shown after the last turn, such as a question the AI is waiting on. */
+  footer?: JSX.Element
   mobileChanges: boolean
   mobileFallback: JSX.Element
   actions?: UserActions
@@ -1109,6 +1111,7 @@ export function MessageTimeline(props: {
                   )
                 }}
               </For>
+              {props.footer}
             </div>
           </div>
         </ScrollView>

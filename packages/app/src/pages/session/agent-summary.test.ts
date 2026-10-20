@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2/client"
-import { formatDuration, sessionSummary } from "./agent-summary"
+import { formatDuration, modelCosts, sessionSummary } from "./agent-summary"
 
 const MIN = 60_000
 
@@ -46,4 +46,24 @@ describe("sessionSummary", () => {
 
 test("formatDuration", () => {
   expect([30_000, 42 * MIN, 200 * MIN, 52 * 60 * MIN].map(formatDuration)).toEqual(["<1m", "42m", "3h 20m", "2d 4h"])
+})
+
+test("modelCosts groups the app's estimates by model and leaves EAD plans to Pilot", () => {
+  const msg = (providerID: string, modelID: string, cost: number) =>
+    ({
+      role: "assistant",
+      providerID,
+      modelID,
+      cost,
+      time: { created: 1 },
+      tokens: { input: 100, output: 10, reasoning: 5, cache: { read: 50, write: 0 } },
+    }) as unknown as Message
+  const rows = modelCosts(
+    [msg("deepseek", "v4-pro", 0.01), msg("ead", "EAD 3.2", 0), msg("anthropic", "opus", 0.2), msg("deepseek", "v4-pro", 0.02)],
+    "ead",
+  )
+  expect(rows.map((row) => [row.modelID, row.replies, row.input, row.output, Math.round(row.cost * 100) / 100])).toEqual([
+    ["opus", 1, 150, 15, 0.2],
+    ["v4-pro", 2, 300, 30, 0.03],
+  ])
 })

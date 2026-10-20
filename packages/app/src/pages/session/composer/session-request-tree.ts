@@ -50,3 +50,12 @@ export function sessionQuestionRequest(
 ) {
   return sessionTreeRequest(session, request, sessionID, include)
 }
+
+/**
+ * A message typed in the input box while the AI waits on a question is the person's answer in their
+ * own words: it becomes the custom answer to every question in the request.
+ */
+export function typedAnswers(request: QuestionRequest, text: string): string[][] {
+  const answer = text.trim()
+  return request.questions.map(() => (answer ? [answer] : []))
+}

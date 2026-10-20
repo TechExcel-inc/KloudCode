@@ -713,6 +713,8 @@ export const dict = {
   "agent.summary.working": "AI 工作時長",
   "agent.summary.cost": "預估費用",
   "agent.summary.costPilot": "EAD 方案的回答由 EAD Pilot 按實際模型的供應商價格計費",
+  "agent.summary.breakdown": "{{count}} 次回答 · 輸入 {{input}} · 輸出 {{output}}",
+  "agent.summary.noPilotCost": "EAD Pilot 還沒有本次工作階段的計費記錄。開始計費之前的回答不計入。",
   "agent.summary.notPriced": "未定價",
   "agent.context.title": "上下文",
   "agent.context.loading": "正在計算…",

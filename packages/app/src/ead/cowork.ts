@@ -92,6 +92,17 @@ export type CoworkGatewayCost = {
   completionTokens: number
   costMicroUsd: number
   unpricedRequests: number
+  /** Split by the real model and plan slot that answered, most expensive first. */
+  models?: {
+    providerId: string
+    modelId: string
+    slotKey: string
+    requests: number
+    promptTokens: number
+    completionTokens: number
+    costMicroUsd: number
+    unpricedRequests: number
+  }[]
 }
 
 export type CoworkModelUse = {
