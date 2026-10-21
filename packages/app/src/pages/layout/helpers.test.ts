@@ -9,6 +9,7 @@ import {
 import { type Session } from "@opencode-ai/sdk/v2/client"
 import {
   startupProject,
+  currentProjectRoot,
   childSessionOnPath,
   displayName,
   scoped,
@@ -263,6 +264,19 @@ describe("startupProject", () => {
     expect(startupProject(undefined, [undefined, "/work/kloudmeet"], ["/work/a"])).toBe("/work/kloudmeet")
     expect(startupProject(undefined, [], ["/work/a"])).toBe("/work/a")
     expect(startupProject(undefined, [], [])).toBeUndefined()
+  })
+})
+
+describe("currentProjectRoot", () => {
+  const open = ["/work/kloudcode", "/work/kloudmeet"]
+  test("keeps the chosen project while a related project's session is on screen", () => {
+    expect(currentProjectRoot("/work/kloudcode", "/work/kloudmeet", open)).toBe("/work/kloudcode")
+    expect(currentProjectRoot("/work/kloudcode/", "/work/kloudcode", open)).toBe("/work/kloudcode")
+  })
+  test("falls back to the project on screen when nothing is chosen or the chosen one was closed", () => {
+    expect(currentProjectRoot(undefined, "/work/kloudmeet", open)).toBe("/work/kloudmeet")
+    expect(currentProjectRoot("/work/closed", "/work/kloudmeet", open)).toBe("/work/kloudmeet")
+    expect(currentProjectRoot("/work/closed", undefined, open)).toBeUndefined()
   })
 })
 

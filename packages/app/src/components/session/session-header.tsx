@@ -21,7 +21,7 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover } from "../status-popover"
-import { displayName } from "@/pages/layout/helpers"
+import { displayName, workspaceKey } from "@/pages/layout/helpers"
 import { projectActions } from "@/pages/layout/project-actions"
 import { RecentProjectPicker } from "@/components/recent-project-picker"
 
@@ -143,10 +143,26 @@ export function SessionHeader() {
     if (!directory) return
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
+  // The project the session on screen belongs to.
   const name = createMemo(() => {
     const current = project()
     if (current) return displayName(current)
     return displayName({ worktree: projectDirectory() })
+  })
+  // The current project (toolbar button). It stays put while a related project's session is open.
+  const home = createMemo(() => {
+    const root = projectActions()?.current()
+    if (!root) return
+    return layout.projects.list().find((p) => workspaceKey(p.worktree) === workspaceKey(root))
+  })
+  const homeName = createMemo(() => {
+    const current = home()
+    return current ? displayName(current) : name()
+  })
+  const foreign = createMemo(() => {
+    const current = home()
+    const own = project()?.worktree ?? projectDirectory()
+    return !!current && !!own && workspaceKey(current.worktree) !== workspaceKey(own)
   })
   const hotkey = createMemo(() => command.keybind("file.open"))
   const os = createMemo(() => detectOS(platform))
@@ -262,18 +278,18 @@ export function SessionHeader() {
             <div class="flex items-center gap-1 min-w-0">
               <RecentProjectPicker
                 title={language.t("rail.project")}
-                current={project()?.worktree ?? (projectDirectory() || undefined)}
+                current={home()?.worktree ?? project()?.worktree ?? (projectDirectory() || undefined)}
                 onPick={(item) => item.worktree && projectActions()?.go(item.worktree)}
                 triggerProps={{
                   class:
                     "hidden md:flex max-w-[200px] min-w-0 h-7 px-2 items-center gap-1.5 rounded-md hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-base-active",
                   "data-action": "header-current-project",
-                  "aria-label": language.t("rail.project.current", { project: name() }),
-                  title: language.t("rail.project.current", { project: name() }),
+                  "aria-label": language.t("rail.project.current", { project: homeName() }),
+                  title: language.t("rail.project.current", { project: homeName() }),
                 }}
                 trigger={
                   <>
-                    <span class="min-w-0 truncate text-12-medium text-text-strong">{name()}</span>
+                    <span class="min-w-0 truncate text-12-medium text-text-strong">{homeName()}</span>
                     <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
                   </>
                 }
@@ -293,6 +309,17 @@ export function SessionHeader() {
                   </div>
                 )}
               />
+              {/* The session on screen belongs to a related project, not the current one. */}
+              <Show when={foreign()}>
+                <span
+                  data-component="session-project-chip"
+                  class="hidden md:inline-flex shrink-0 max-w-[160px] h-5 px-1.5 items-center gap-1 rounded-md border border-border-weak-base bg-surface-raised-base text-11-medium text-text-weak"
+                  title={name()}
+                >
+                  <Icon name="folder" size="small" class="shrink-0 text-icon-weak" />
+                  <span class="min-w-0 truncate">{name()}</span>
+                </span>
+              </Show>
               <Button
                 type="button"
                 variant="ghost"

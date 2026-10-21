@@ -122,6 +122,7 @@ export const AllSessions = (props: {
               onFold={() => setState("folded", project.worktree, (value) => !value)}
               onMore={() => setState("shown", project.worktree, (value) => (value ?? PAGE) + PAGE)}
               onNew={() => props.onNew(project)}
+              onSwitch={() => props.onSwitch(project)}
               onHide={() => {
                 const root = props.current()?.worktree
                 if (root) void cowork.unrelate(root, project.worktree)
@@ -177,6 +178,8 @@ const Group = (props: {
   onFold: () => void
   onMore: () => void
   onNew: () => void
+  /** Make this related project the current project, like picking it in the toolbar project picker. */
+  onSwitch: () => void
   /** Stop showing this related project's sessions. Not offered for the current project. */
   onHide: () => void
 }): JSX.Element => {
@@ -290,14 +293,21 @@ const Group = (props: {
               />
               <DropdownMenu.Portal>
                 <DropdownMenu.Content class="mt-1 min-w-48">
+                  <DropdownMenu.Item data-action="session-group-switch" onSelect={props.onSwitch}>
+                    <DropdownMenu.ItemLabel>
+                      {language.t("agent.sessions.switchTo", { name: displayName(props.project) })}
+                    </DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
                   <DropdownMenu.Item
                     data-action="session-group-search"
                     onSelect={() => dialog.show(() => <DialogSearch project={props.project.worktree} />)}
                   >
-                    <DropdownMenu.ItemLabel>{language.t("session.header.search.short")}</DropdownMenu.ItemLabel>
+                    <DropdownMenu.ItemLabel>{language.t("agent.sessions.searchSessions")}</DropdownMenu.ItemLabel>
                   </DropdownMenu.Item>
+                  <DropdownMenu.Separator />
+                  {/* Only removes the link in EAD Pilot; no files or sessions are deleted. */}
                   <DropdownMenu.Item data-action="session-group-hide" onSelect={props.onHide}>
-                    <DropdownMenu.ItemLabel>{language.t("agent.sessions.hide")}</DropdownMenu.ItemLabel>
+                    <DropdownMenu.ItemLabel>{language.t("agent.sessions.removeRelated")}</DropdownMenu.ItemLabel>
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>

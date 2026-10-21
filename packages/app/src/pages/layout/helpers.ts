@@ -153,3 +153,17 @@ export function ago(time: number, now: number, locale: string) {
 export function startupProject(last: string | undefined, recent: (string | undefined)[], known: string[]) {
   return last ?? recent.find((dir) => !!dir) ?? known[0]
 }
+
+/**
+ * The current project (the toolbar project button and the top of the sidebar): the project last
+ * chosen as current, while it is still open; otherwise the project of the session on screen.
+ * Opening a related project's session does not change it; only an explicit switch does.
+ */
+export function currentProjectRoot(chosen: string | undefined, onScreen: string | undefined, open: string[]) {
+  if (chosen) {
+    const key = workspaceKey(chosen)
+    const hit = open.find((dir) => workspaceKey(dir) === key)
+    if (hit) return hit
+  }
+  return onScreen
+}

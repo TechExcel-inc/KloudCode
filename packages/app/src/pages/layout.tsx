@@ -75,6 +75,7 @@ import {
   sortedRootSessions,
   workspaceKey,
   startupProject,
+  currentProjectRoot,
 } from "./layout/helpers"
 import {
   collectNewSessionDeepLinks,
@@ -570,7 +571,8 @@ export default function Layout(props: ParentProps) {
     element.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }
 
-  const currentProject = createMemo(() => {
+  /** The project of the session (or folder) on screen. */
+  const routeProject = createMemo(() => {
     const directory = currentDir()
     if (!directory) return
     const key = workspaceKey(directory)
@@ -592,6 +594,23 @@ export default function Layout(props: ParentProps) {
     if (!root) return
 
     return projects.find((p) => p.worktree === root)
+  })
+
+  /**
+   * The current project: the one last chosen (server.projects.last), kept while a related project's
+   * session is on screen. Only an explicit switch (navigateToProject) changes it.
+   */
+  const currentProject = createMemo(() => {
+    const projects = layout.projects.list()
+    const onScreen = routeProject()
+    const root = currentProjectRoot(
+      server.projects.last(),
+      onScreen?.worktree,
+      projects.map((p) => p.worktree),
+    )
+    if (!root) return
+    if (onScreen && workspaceKey(onScreen.worktree) === workspaceKey(root)) return onScreen
+    return projects.find((p) => workspaceKey(p.worktree) === workspaceKey(root))
   })
 
   const [autoselecting] = createResource(async () => {
@@ -1262,7 +1281,7 @@ export default function Layout(props: ParentProps) {
   }
 
   function activeProjectRoot(directory: string) {
-    return currentProject()?.worktree ?? projectRoot(directory)
+    return routeProject()?.worktree ?? projectRoot(directory)
   }
 
   function rememberSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
@@ -1434,7 +1453,10 @@ export default function Layout(props: ParentProps) {
     const next = list[index + 1]
 
     if (!active) {
+      const viewing = workspaceKey(routeProject()?.worktree ?? "") === key
+      const home = currentProject()?.worktree
       layout.projects.close(directory)
+      if (viewing && home) void navigateToProject(home)
       return
     }
 
@@ -1780,7 +1802,7 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), route().slug, params.id, currentProject()?.worktree, currentDir()] as const
+        return [pageReady() && server.loaded(), route().slug, params.id, routeProject()?.worktree, currentDir()] as const
       },
       ([ready, slug, id, root, dir]) => {
         if (!ready || !slug || !dir) {
@@ -1806,7 +1828,11 @@ export default function Layout(props: ParentProps) {
           return
         }
 
-        if (server.projects.last() !== root) server.projects.touch(root)
+        // Viewing a related project's session keeps the current project; it is remembered only
+        // when there is no open current project yet (first run, or the chosen one was closed).
+        const open = layout.projects.list().map((p) => p.worktree)
+        if (currentProjectRoot(server.projects.last(), root, open) === root && server.projects.last() !== root)
+          server.projects.touch(root)
 
         const changed = session !== activeRoute.session || dir !== activeRoute.directory
         if (changed) {
@@ -1884,7 +1910,7 @@ export default function Layout(props: ParentProps) {
     if (!project) return []
     const local = project.worktree
     const dirs = [local, ...(project.sandboxes ?? [])]
-    const active = currentProject()
+    const active = routeProject()
     const directory = workspaceKey(active?.worktree ?? "") === workspaceKey(project.worktree) ? currentDir() : undefined
     const extra =
       directory &&
@@ -2342,7 +2368,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(() => {
     const dir = currentDir()
-    if (!dir || currentProject()) return
+    if (!dir || routeProject()) return
     if (!globalSync.ready) return
     layout.projects.open(dir)
   })
@@ -2393,7 +2419,11 @@ export default function Layout(props: ParentProps) {
     }))
   })
 
-  setProjectActions({ go: (directory) => void navigateToProject(directory), choose: () => void chooseProject() })
+  setProjectActions({
+    go: (directory) => void navigateToProject(directory),
+    choose: () => void chooseProject(),
+    current: () => currentProject()?.worktree,
+  })
 
   const railFooter = (mobile?: boolean) => (
     <>
