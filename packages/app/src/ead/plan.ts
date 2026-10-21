@@ -23,7 +23,10 @@ export function gateway() {
  */
 export type PlanModel = { name: string; label: string; context?: number; output?: number }
 
-const IMAGES = { attachment: true, modalities: { input: ["text", "image"] as ("text" | "image")[], output: ["text"] as "text"[] } }
+const IMAGES = {
+  attachment: true,
+  modalities: { input: ["text", "image"] as ("text" | "image")[], output: ["text"] as "text"[] },
+}
 
 const limit = (plan: PlanModel) =>
   plan.context && plan.output ? { limit: { context: plan.context, output: plan.output } } : {}
@@ -75,6 +78,11 @@ export function match(cfg: unknown, plans: PlanModel[]) {
   })
 }
 
+/**
+ * Stores the sign-in for EAD plans and the plan models. Each part is written only when it differs from
+ * what is already stored: `stored` is the sign-in last written in this run, so reloading the plan list
+ * writes nothing, while a new sign-in or a renewed one is always written.
+ */
 export async function apply(opts: {
   token: string
   plans: PlanModel[]
@@ -82,13 +90,16 @@ export async function apply(opts: {
   save: Save
   cfg?: unknown
   disabled?: string[]
+  stored?: string
 }) {
   const token = opts.token.trim()
   if (!token || opts.plans.length === 0) return
-  await opts.auth.set({
-    providerID: PLAN,
-    auth: { type: "api", key: token },
-  })
+  if (opts.stored !== token) {
+    await opts.auth.set({
+      providerID: PLAN,
+      auth: { type: "api", key: token },
+    })
+  }
   const off = opts.disabled ?? []
   if (match(opts.cfg, opts.plans) && !off.includes(PLAN)) return
   await opts.save({

@@ -1040,6 +1040,30 @@ describe("ead i18n + env + mcp", () => {
     expect(match(spec(sized), [{ ...sized[0]!, context: 128_000 }])).toBe(false)
   })
 
+  test("apply writes the sign-in only when it differs from the one stored", async () => {
+    applyEnv("production")
+    const keys: string[] = []
+    const auth = {
+      set: async (input: { providerID: string; auth: { type: "api"; key: string } }) => {
+        keys.push(input.auth.key)
+      },
+      remove: async () => undefined,
+    }
+    const saves: unknown[] = []
+    const save = async (config: unknown) => {
+      saves.push(config)
+    }
+    const plans = [{ name: "EAD 3.2", label: "EAD DP3.2" }]
+    // First start: nothing stored yet, so both the sign-in and the plan models are written.
+    await apply({ token: "tok1", plans, auth, save })
+    // Plan list reloaded with the same sign-in and models: nothing is written.
+    await apply({ token: "tok1", plans, auth, save, cfg: spec(plans), stored: "tok1" })
+    // A new or renewed sign-in is always written, even when the plan models are unchanged.
+    await apply({ token: "tok2", plans, auth, save, cfg: spec(plans), stored: "tok1" })
+    expect(keys).toEqual(["tok1", "tok2"])
+    expect(saves).toHaveLength(1)
+  })
+
   test("plan models take images, and a saved config without them is rewritten", () => {
     applyEnv("production")
     const plans = [{ name: "EAD 3.2", label: "EAD DP3.2" }]

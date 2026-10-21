@@ -213,6 +213,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
     let linked = ""
     let inflight = ""
     const [planTick, setPlanTick] = createSignal(0)
+    // The sign-in last written for EAD plans in this run; a plan-list reload with the same one writes nothing.
+    let stored: string | undefined
     createEffect(() => {
       if (!ready() || !sync.ready) return
       const key = `${(store.token ?? "").trim()}#${planTick()}`
@@ -225,6 +227,7 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         if (!linked) return
         linked = ""
         const off = untrack(() => sync.data.config.disabled_providers)
+        stored = undefined
         void dropPlan({ auth, save, disabled: off })
         return
       }
@@ -237,7 +240,8 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         if (plans.length === 0) return
         const cfg = untrack(() => sync.data.config.provider?.[PLAN])
         const off = untrack(() => sync.data.config.disabled_providers)
-        await applyPlan({ token, plans, auth, save, cfg, disabled: off })
+        await applyPlan({ token, plans, auth, save, cfg, disabled: off, stored })
+        stored = token
         if ((store.token ?? "").trim() !== token) return
         if (untrack(() => store.coding) === false) return
         linked = key
