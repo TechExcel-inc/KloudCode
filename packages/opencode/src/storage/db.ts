@@ -113,8 +113,40 @@ export namespace Database {
       migrate(db, entries)
     }
 
+    closeInterrupted(db.$client)
+
     return db
   })
+
+  /**
+   * Replies and tool calls left running when the engine stopped (the app was closed or restarted
+   * mid-reply) never get an end time, so the app shows them as working forever. When the database
+   * opens, no reply of this engine is running yet: each one left open is ended as interrupted, at the
+   * time of its last saved progress.
+   */
+  export function closeInterrupted(client: Pick<import("bun:sqlite").Database, "run">, now = Date.now()) {
+    const reason = "Interrupted: EAD SiCode was closed while this was running"
+    client.run(
+      `UPDATE part SET data = json_set(data,
+         '$.state.status', 'error',
+         '$.state.error', ?,
+         '$.state.time.start', coalesce(json_extract(data, '$.state.time.start'), time_updated),
+         '$.state.time.end', time_updated)
+       WHERE json_extract(data, '$.type') = 'tool'
+         AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
+      [reason],
+    )
+    client.run(
+      `UPDATE message SET data = json_set(data,
+         '$.time.completed', coalesce(
+           (SELECT max(p.time_updated) FROM part p WHERE p.message_id = message.id),
+           json_extract(data, '$.time.created'), ?),
+         '$.error', json(?))
+       WHERE json_extract(data, '$.role') = 'assistant'
+         AND json_extract(data, '$.time.completed') IS NULL`,
+      [now, JSON.stringify({ name: "MessageAbortedError", data: { message: reason } })],
+    )
+  }
 
   export function close() {
     Client().$client.close()
