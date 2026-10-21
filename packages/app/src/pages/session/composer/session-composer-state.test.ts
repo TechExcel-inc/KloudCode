@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { todoState } from "./session-composer-state"
+import { continueRequest, todoState } from "./session-composer-state"
 import { sessionPermissionRequest, sessionQuestionRequest, typedAnswers } from "./session-request-tree"
 
 const session = (input: { id: string; parentID?: string }) =>
@@ -124,6 +124,32 @@ describe("todoState", () => {
 
   test("clears completed todos when the session is no longer live", () => {
     expect(todoState({ count: 2, done: true, live: false })).toBe("clear")
+  })
+})
+
+describe("continueRequest", () => {
+  const user = (id: string, modelID: string, variant?: string) =>
+    ({ id, role: "user", agent: "build", model: { providerID: "ead", modelID, variant } }) as never
+  const assistant = (id: string) => ({ id, role: "assistant" }) as never
+
+  test("asks the session to continue its steps with the agent and model of the person's last message", () => {
+    expect(continueRequest("ses_1", [user("m1", "EAD 2.1"), assistant("m2"), user("m3", "EAD 3.2", "high"), assistant("m4")])).toEqual({
+      sessionID: "ses_1",
+      agent: "build",
+      model: { providerID: "ead", modelID: "EAD 3.2" },
+      variant: "high",
+      parts: [{ type: "text", text: "Continue with the remaining steps." }],
+    })
+  })
+
+  test("leaves agent and model to the session's defaults when it has no message from the person", () => {
+    expect(continueRequest("ses_1", [])).toEqual({
+      sessionID: "ses_1",
+      agent: undefined,
+      model: undefined,
+      variant: undefined,
+      parts: [{ type: "text", text: "Continue with the remaining steps." }],
+    })
   })
 })
 

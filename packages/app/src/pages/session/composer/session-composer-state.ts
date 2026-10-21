@@ -1,7 +1,7 @@
 import { createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+import type { PermissionRequest, QuestionRequest, Todo, UserMessage } from "@opencode-ai/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useGlobalSync } from "@/context/global-sync"
@@ -25,6 +25,23 @@ export const todoState = (input: {
   if (!input.done) return "open"
   if (!input.live) return "clear"
   return "close"
+}
+
+const CONTINUE_TEXT = "Continue with the remaining steps."
+
+/**
+ * The message the Continue button next to "Waiting for you" sends: the session goes on with its open
+ * steps, with the agent and model of the person's last message.
+ */
+export function continueRequest(sessionID: string, messages: readonly { role: string }[]) {
+  const last = messages.findLast((message) => message.role === "user") as UserMessage | undefined
+  return {
+    sessionID,
+    agent: last?.agent,
+    model: last ? { providerID: last.model.providerID, modelID: last.model.modelID } : undefined,
+    variant: last?.model.variant,
+    parts: [{ type: "text" as const, text: CONTINUE_TEXT }],
+  }
 }
 
 const idle = { type: "idle" as const }
@@ -237,6 +254,18 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     cancelAnimationFrame(raf)
   })
 
+  // The Continue button next to "Waiting for you": the session goes on with its open steps.
+  const continueSteps = () => {
+    const id = params.id
+    if (!id) return
+    sdk.client.session.promptAsync(continueRequest(id, sync.data.message[id] ?? [])).catch((err: unknown) => {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
   return {
     blocked,
     questionRequest,
@@ -247,6 +276,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     live,
     /** Drops steps the turn left undone, which ends the session's wait on the person. */
     dismissTodos: clear,
+    continueSteps,
     dock: () => store.dock,
     closing: () => store.closing,
     opening: () => store.opening,

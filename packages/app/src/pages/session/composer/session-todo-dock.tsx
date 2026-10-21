@@ -1,4 +1,5 @@
 import type { Todo } from "@opencode-ai/sdk/v2"
+import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TurnChecklist } from "@opencode-ai/ui/session-turn"
 import { createEffect, createMemo, onCleanup, Show } from "solid-js"
@@ -10,7 +11,7 @@ import { stepDockMount } from "./step-dock-mount"
 /**
  * The task step box above the composer: the session's steps, drawn like the step box in a reply. While
  * the AI works the step in progress turns; once the turn ends with steps left undone the box stays and
- * says the session waits on the person, who can continue it or dismiss the steps.
+ * says the session waits on the person, who can continue it with one click or dismiss the steps.
  */
 export function SessionTodoDock(props: {
   sessionID?: string
@@ -20,6 +21,8 @@ export function SessionTodoDock(props: {
   expandLabel: string
   dismissLabel: string
   onDismiss: () => void
+  continueLabel: string
+  onContinue: () => void
   dockProgress: number
 }) {
   const language = useLanguage()
@@ -62,6 +65,11 @@ export function SessionTodoDock(props: {
         note={props.live ? undefined : language.t("agent.status.waiting")}
         actions={
           <>
+            <Show when={!props.live}>
+              <Button data-action="session-todo-continue" size="small" variant="secondary" onClick={() => props.onContinue()}>
+                {props.continueLabel}
+              </Button>
+            </Show>
             <IconButton
               data-action="session-todo-toggle-button"
               data-collapsed={store.collapsed ? "true" : "false"}

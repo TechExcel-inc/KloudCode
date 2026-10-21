@@ -533,6 +533,7 @@ export const dict = {
   "session.todo.collapse": "折叠",
   "session.todo.expand": "展开",
   "session.todo.dismiss": "放弃剩余步骤",
+  "session.todo.continue": "继续",
   "session.followupDock.summary.one": "{{count}} 条排队消息",
   "session.followupDock.summary.other": "{{count}} 条排队消息",
   "session.followupDock.sendNow": "立即发送",
