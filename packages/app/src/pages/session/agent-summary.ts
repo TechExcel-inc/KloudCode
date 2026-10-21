@@ -6,8 +6,9 @@ export type SessionSummary = {
   /** From the first message to the latest activity. */
   sessionMs: number
   /**
-   * Time spent working with the AI: messages and replies joined into periods, where a gap of more
-   * than five minutes between them is idle time and left out.
+   * The person's time and effort: the AI's working time, plus the time they spent reading, thinking
+   * and typing before each message or answer, up to `effortMs` per pause (longer means they were away).
+   * Never less than the AI working time, never more than the session time.
    */
   activeMs: number
   /** Time the AI was answering: replies' start to finish, overlaps counted once, without its waits for answers. */
@@ -31,7 +32,15 @@ export function waitsFor(parts: Part[], now = Date.now()) {
   })
 }
 
-export function sessionSummary(messages: Message[], now = Date.now(), waits: [number, number][] = []): SessionSummary {
+/** How much of a pause before a message counts as the person's effort; a setting later. */
+export const EFFORT_MS = 10 * 60_000
+
+export function sessionSummary(
+  messages: Message[],
+  now = Date.now(),
+  waits: [number, number][] = [],
+  effortMs = EFFORT_MS,
+): SessionSummary {
   if (messages.length === 0) return { sessionMs: 0, activeMs: 0, workingMs: 0, cost: 0, priced: true }
   const started = Math.min(...messages.map((msg) => msg.time.created))
   let last = started
@@ -51,17 +60,19 @@ export function sessionSummary(messages: Message[], now = Date.now(), waits: [nu
   // While the AI waits for an answer it is not working; the wait counts as a gap like any other.
   const working = without(spans, waits)
   const workingMs = joined(working, 0)
-  // People's messages and answers are moments: they join periods but add no time of their own.
+  // Each message or answer took the person effort since the last activity: reading, thinking, typing.
   const moments = [
-    ...messages.flatMap((msg): [number, number][] => (msg.role === "user" ? [[msg.time.created, msg.time.created]] : [])),
-    ...waits.filter((wait) => wait[1] < now).map((wait): [number, number] => [wait[1], wait[1]]),
-  ]
-  const activeMs = Math.min(sessionMs, joined([...working, ...moments], IDLE_MS))
+    ...messages.flatMap((msg) => (msg.role === "user" ? [msg.time.created] : [])),
+    ...waits.filter((wait) => wait[1] < now).map((wait) => wait[1]),
+  ].sort((a, b) => a - b)
+  const effort = moments.map((moment): [number, number] => {
+    const before = Math.max(started, ...working.filter((span) => span[0] < moment).map((span) => Math.min(span[1], moment)))
+    const previous = Math.max(before, ...moments.filter((other) => other < moment))
+    return [Math.max(previous, moment - effortMs), moment]
+  })
+  const activeMs = Math.min(sessionMs, Math.max(workingMs, joined([...working, ...effort], 0)))
   return { started, sessionMs, activeMs, workingMs, cost, priced: cost > 0 || tokens === 0 }
 }
-
-/** A gap longer than this between messages and replies is idle time. */
-const IDLE_MS = 5 * 60_000
 
 /** The spans with the given periods cut out of them. */
 function without(spans: [number, number][], cuts: [number, number][]) {

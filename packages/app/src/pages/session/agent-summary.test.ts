@@ -45,37 +45,38 @@ describe("sessionSummary", () => {
 })
 
 describe("active time", () => {
-  test("gaps of up to five minutes count, longer gaps are idle", () => {
+  test("adds the person's time before each message, up to ten minutes a pause", () => {
     const summary = sessionSummary([
       user(0),
-      reply(1 * MIN, 5 * MIN, 0.1),
-      user(8 * MIN),
-      reply(9 * MIN, 12 * MIN, 0.1),
-      user(60 * MIN),
-      reply(61 * MIN, 65 * MIN, 0.1),
+      reply(1 * MIN, 5 * MIN, 0.1), // AI works 4 minutes
+      user(8 * MIN), // 3 minutes reading and typing
+      reply(8 * MIN, 12 * MIN, 0.1), // AI works 4 minutes
+      user(60 * MIN), // 48 minutes later: at most 10 count
+      reply(60 * MIN, 65 * MIN, 0.1), // AI works 5 minutes
     ])
-    // 0 to 12 minutes is one period (gaps of 1, 3 and 1 minutes), then 48 idle minutes, then 60 to 65.
-    expect(summary.activeMs).toBe(12 * MIN + 5 * MIN)
+    expect(summary.workingMs).toBe(13 * MIN)
+    expect(summary.activeMs).toBe(13 * MIN + 3 * MIN + 10 * MIN)
     expect(summary.sessionMs).toBe(65 * MIN)
-    expect(summary.workingMs).toBe(11 * MIN)
   })
 
-  test("a message bridges a gap but adds no time of its own", () => {
-    const summary = sessionSummary([reply(0, 2 * MIN, 0.1), user(6 * MIN), reply(10 * MIN, 11 * MIN, 0.1)])
-    expect(summary.activeMs).toBe(11 * MIN)
-    const alone = sessionSummary([user(0), user(20 * MIN)])
-    expect(alone.activeMs).toBe(0)
+  test("is never less than AI working time and never more than the session time", () => {
+    const rows = [
+      [user(0), reply(0, 30 * MIN, 0.1)],
+      [user(0), reply(0, 2 * MIN, 0.1), user(3 * MIN), reply(3 * MIN, 4 * MIN, 0.1)],
+      [user(0), user(20 * MIN)],
+    ]
+    for (const messages of rows) {
+      const summary = sessionSummary(messages, 40 * MIN)
+      expect(summary.activeMs).toBeGreaterThanOrEqual(summary.workingMs)
+      expect(summary.activeMs).toBeLessThanOrEqual(summary.sessionMs)
+    }
+    expect(sessionSummary([user(0), reply(0, 2 * MIN, 0.1), user(3 * MIN), reply(3 * MIN, 4 * MIN, 0.1)]).activeMs).toBe(4 * MIN)
   })
 
-  test("a gap of exactly five minutes still counts, and a long reply counts in full", () => {
-    expect(sessionSummary([user(0), reply(5 * MIN, 25 * MIN, 0.1)]).activeMs).toBe(25 * MIN)
-    expect(sessionSummary([user(0), reply(5 * MIN + 1, 25 * MIN, 0.1)]).activeMs).toBe(20 * MIN - 1)
-  })
-
-  test("active time never exceeds the session time", () => {
-    const summary = sessionSummary([user(0), reply(MIN, undefined, 0.1)], 10 * MIN)
-    expect(summary.activeMs).toBeLessThanOrEqual(summary.sessionMs)
-    expect(summary.activeMs).toBe(10 * MIN)
+  test("the effort allowance is a setting", () => {
+    const messages = [user(0), reply(0, MIN, 0.1), user(30 * MIN), reply(30 * MIN, 31 * MIN, 0.1)]
+    expect(sessionSummary(messages, 40 * MIN).activeMs).toBe(2 * MIN + 10 * MIN)
+    expect(sessionSummary(messages, 40 * MIN, [], 20 * MIN).activeMs).toBe(2 * MIN + 20 * MIN)
   })
 })
 
@@ -87,23 +88,19 @@ describe("waiting for answers", () => {
       state: end === undefined ? { status: "running", time: { start } } : { status: "completed", time: { start, end } },
     }) as unknown as Part
 
-  test("time the AI waits on a question is not AI working time", () => {
-    // One long reply from 1 to 31 minutes, of which 29 minutes (2 to 31) waited on a question.
-    const messages = [user(0), reply(1 * MIN, 31 * MIN, 0.1)]
-    const waits = waitsFor([question(2 * MIN, 31 * MIN)])
-    const summary = sessionSummary(messages, 40 * MIN, waits)
+  test("time the AI waits on a question is not AI working time, but answering is the person's effort", () => {
+    // One reply from 1 to 31 minutes, of which 29 minutes (2 to 31) waited on a question.
+    const summary = sessionSummary([user(0), reply(1 * MIN, 31 * MIN, 0.1)], 40 * MIN, waitsFor([question(2 * MIN, 31 * MIN)]))
     expect(summary.workingMs).toBe(1 * MIN)
-    // Answering after 29 minutes is idle; the last minute of AI work after the answer is active again.
-    expect(summary.activeMs).toBe(2 * MIN)
+    // AI work (1 minute) plus at most 10 minutes of the person's time before answering.
+    expect(summary.activeMs).toBe(11 * MIN)
   })
 
-  test("a quick answer keeps the time active, and an open question counts up to now", () => {
-    const messages = [user(0), reply(0, 10 * MIN, 0.1)]
-    const quick = sessionSummary(messages, 20 * MIN, waitsFor([question(2 * MIN, 4 * MIN)]))
+  test("a quick answer counts fully, and an open question is not yet anyone's effort", () => {
+    const quick = sessionSummary([user(0), reply(0, 10 * MIN, 0.1)], 20 * MIN, waitsFor([question(2 * MIN, 4 * MIN)]))
     expect([quick.workingMs, quick.activeMs]).toEqual([8 * MIN, 10 * MIN])
     const open = sessionSummary([user(0), reply(0, undefined, 0.1)], 30 * MIN, waitsFor([question(5 * MIN)], 30 * MIN))
     expect([open.workingMs, open.activeMs]).toEqual([5 * MIN, 5 * MIN])
-    expect(open.workingMs).toBeLessThanOrEqual(open.activeMs)
   })
 })
 
