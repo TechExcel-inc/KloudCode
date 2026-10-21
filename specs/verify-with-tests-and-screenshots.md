@@ -1,60 +1,81 @@
 # Verify with tests and screenshots
 
-Status: approved design, to build next (2026-10-21).
+Status: approved direction, to build next. Revised 2026-10-21: EAD Pilot is both the executor and the vision reader.
 
 ## Goal
 
-SiCode's AI checks its own work before it says a change is done, the way Claude Code does: it changes the code, runs the relevant tests, looks at the result on screen when the change is visible, and reports what it verified and what it did not. The user sees that evidence in the conversation as a short line with screenshot thumbnails.
+SiCode's AI checks its own work before it says a change is done, the way Claude Code does: change the code, run the relevant tests, run the app and look at the result when the change is visible, then report what was verified and what was not. The user sees that evidence in the conversation as a short line with screenshot thumbnails.
+
+This is an **Enterprise feature**. Each user turns it on; it is off by default.
 
 ## What the user sees
 
-- After a change, the reply says plainly what was checked: "Tests: 459 passed", "Checked on screen: the card shows three buttons", or "Not checked on screen: needs a signed-in session".
-- Each reply's folded actions line describes the work instead of counting it: "Ran 3 commands, used 6 tools", with up to three screenshot thumbnails at its right. Clicking a thumbnail opens the screenshot full size.
-- The AI never says "fixed" or "done" without a test result or a screenshot behind it.
+- After a change, the reply states what was checked: "Tests: 459 passed", "Checked on screen by EAD Pilot: the card shows three buttons (screenshot)", or "Not checked on screen: the feature is off" / "needs a sign-in".
+- The folded actions line describes the work: "Ran 3 commands, used 6 tools", with up to three screenshot thumbnails; clicking one opens it full size.
+- The AI never says "fixed" or "done" without a test result or a screen check behind it.
+- In Settings, an "AI verifies changes on screen (Enterprise)" switch. When the user's company has no Enterprise edition, the switch is shown disabled with one line saying it needs Enterprise.
 
-## Parts
+## Who does what
 
-### 1. Verification habit (AI instructions)
+| Part | Done by | Exists today |
+|---|---|---|
+| Unit tests and builds | SiCode's AI, with the project's own test command | Yes (shell) |
+| Start the app, click, type, navigate | EAD Pilot executor (Playwright service on the user's machine, port 8082, driven through the Pilot server `/api/ead-test`) | Yes |
+| Choose each action from the screen, and judge "expected result visible?" | EAD Pilot vision (VisionRunner: next action; `verifyExpectedResultOnScreen` returns ok + evidence) | Yes, inside the executor |
+| Read any image for a text-only model | EAD Pilot vision slot (LlmChatRouter readImages / messagesForBlindModel) | Yes, for images in the user's message |
+| Store runs, step results, screenshots | Pilot tables `ead_test_execution` (progress_json with per-step status, actual result, before/after screenshot file names) | Yes |
 
-Added to the build agent's instructions:
+## What to build
 
-- After changing code, run the tests that cover it (the project's own test command; find it in package.json, the README or the project's agent instructions). Report the result in one line, with the failure if any.
-- When the change is visible (a page, a dialog, a layout), open it and take a screenshot before reporting. Describe what the screenshot shows.
-- If something cannot be checked (needs a sign-in, a device, a production server), say so instead of claiming it works.
-- Keep checks proportionate: one targeted test file for a small change, the full suite only before a commit.
+### 1. Verification habit (SiCode AI instructions)
 
-### 2. A browser the AI can drive
+- After changing code, run the tests that cover it; report the result in one line, with the failure if any.
+- When the change is visible and the feature is on: ask EAD Pilot to check it on screen (below), then report Pilot's verdict and evidence.
+- If something cannot be checked, say so instead of claiming it works.
+- Keep checks proportionate: one targeted test file for a small change, the full suite before a commit.
 
-- A browser tool built into SiCode that drives the user's installed Google Chrome (no separate browser download). Candidate: Chrome DevTools MCP, registered by default for the build agent, with its own Chrome profile so the user's browsing, sign-ins and cookies are never touched.
-- Actions: open a URL (usually a local dev server the AI started), click, type, read the page text, take a screenshot.
-- Local addresses (localhost, 127.0.0.1) work without asking; any other site asks the user first.
-- Screenshots are saved with the session, so they stay visible after a restart.
+### 2. Pilot tools SiCode can call (mcp-eadpfm)
 
-### 3. Seeing the screenshot (EAD Pilot vision)
+Today SiCode can only read run results (`eadpfm_get_test_run_context`). New MCP tools, wrapping existing Pilot endpoints:
 
-EAD plans already have a vision model slot. Pilot reads an image with that model and passes the reading to text-only models (DeepSeek, GLM), so every EAD plan can "see" a screenshot.
+- `eadpfm_check_on_screen`: start a check run. Input: app URL (usually the local dev server the AI started), target page, and steps written as "do / expect" pairs. Wraps `POST /api/ead-test/run` in vision mode. Returns a run id.
+- `eadpfm_get_check_result`: wait for or read the run: overall pass/fail, each step's verdict and evidence, screenshot links. Wraps `GET /api/ead-test/execution/{id}/progress`.
+- `eadpfm_get_screenshot`: one screenshot, for the conversation thumbnails. Wraps `GET /api/ead-test/execution/{id}/screenshot`.
+- Optional `eadpfm_judge_screen`: a single "is this expected result visible?" check on one screenshot. Needs a small new Pilot endpoint around `verifyExpectedResultOnScreen`.
 
-To check and likely change:
+The tools refuse with a clear message when the feature is off or the executor is not running.
 
-- Today Pilot reads images only from the latest user message (`prepareCursorCodingTurn` / `latestUserMessage` in LlmChatRouter). A screenshot from a tool arrives during the AI's own turn, not in a user message. Pilot must also read new images in tool results (or wherever the engine places tool-result images for OpenAI-compatible providers), reusing its existing cache so each screenshot is read once.
-- The reading should describe layout and visible text in detail, because the AI uses it to judge whether the change looks right.
-- Each reading is a gateway request, so it appears in the LLM Cost Report like any other request.
+### 3. Enterprise gating and the user's switch (Pilot)
 
-### 4. Showing it in the conversation
+Nothing in Pilot marks editions today. Add:
 
-- Folded line label: "Ran N commands, used M tools" (counts by kind) instead of "N actions"; while running: "Running a command", "Taking a screenshot".
-- Up to three screenshot thumbnails at the right of the folded line, then "+N". Click opens a full-size view.
-- The checklist box, the live line above it and the status line below it stay as they are.
+- An edition on the company (tenant): Standard or Enterprise, in a real table column, set by the system admin. Exposed in `/auth/me` so SiCode knows.
+- The user's opt-in as a Pilot per-user setting (`personal_rt_settings`, key `sicode.verifyOnScreen`), read and written through `/api/settings`. Global for the user, not per device.
+- Pilot enforces both on the new endpoints and tools, not only in the SiCode interface.
+
+### 4. Showing it in SiCode
+
+- Folded line label: "Ran N commands, used M tools"; while running: "Running a command", "Checking on screen with EAD Pilot".
+- Up to three screenshot thumbnails from Pilot runs, then "+N"; click opens full size.
+- The checklist box and the live lines stay as they are.
+- The Settings switch described above.
+
+## Gaps found in Pilot (fix as part of this work)
+
+- Run results are not written back to the test steps (`ai_test_step.status` stays as generated).
+- Screenshots live only on the executor's disk; the database stores file names. SiCode needs them by URL through Pilot, and they must survive restarts.
+- Image readings are cached only in memory.
+- The executor must be running on the user's machine; SiCode should detect that and explain how to start it.
 
 ## Cost and time
 
-Tests and screenshots add requests: each verified change costs somewhat more and takes longer. The saving is fewer wrong "done" claims and fewer repeat rounds, which outweighs it.
+Each screen check uses the vision model per action and per verdict; these are gateway requests and appear in the LLM Cost Report. Verified changes cost somewhat more and take longer; fewer wrong "done" claims and repeat rounds outweigh it.
 
 ## Order of work
 
-1. Verification habit (instructions) and the folded line label.
-2. Pilot: read images in tool results with the vision slot; test with a DeepSeek plan.
-3. Browser tool with screenshots, saved with the session.
-4. Thumbnails on the folded line.
+1. Verification habit and the folded line label (SiCode).
+2. Enterprise edition and the user's switch (Pilot + SiCode Settings).
+3. Pilot MCP tools for check-on-screen, result and screenshot; store screenshots retrievably.
+4. Thumbnails in the conversation.
 
 Each step is built, tested, and installed separately.
