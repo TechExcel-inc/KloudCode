@@ -1,3 +1,4 @@
+import { useParams } from "@solidjs/router"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -27,6 +28,7 @@ export const ActiveSessions = (props: {
   const permission = usePermission()
   const language = useLanguage()
   const dialog = useDialog()
+  const params = useParams()
 
   const source = (directory: string): ActiveSource => {
     const [store] = globalSync.child(directory, { bootstrap: false })
@@ -39,6 +41,7 @@ export const ActiveSessions = (props: {
         sources: [project.worktree, ...(project.sandboxes ?? [])].map(source),
       })),
       (item, directory) => !permission.autoResponds(item, directory),
+      params.id,
     ),
   )
 

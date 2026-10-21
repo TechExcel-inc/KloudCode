@@ -358,3 +358,25 @@ describe("active sessions", () => {
     await expect(runStopSteps([{ type: "abort", sessionID: "ses_a" }], failing)).rejects.toThrow("offline")
   })
 })
+
+describe("activeSessions on screen", () => {
+  test("leaves out the session on screen, which shows its own state", () => {
+    const groups = [
+      {
+        project: "P",
+        sources: [
+          {
+            directory: "/w",
+            session: [
+              { id: "ses_a", directory: "/w", time: { created: 1, updated: 1 } },
+              { id: "ses_b", directory: "/w", time: { created: 2, updated: 2 } },
+            ],
+            session_status: { ses_a: { type: "busy" }, ses_b: { type: "busy" } },
+          },
+        ],
+      },
+    ] as unknown as Parameters<typeof activeSessions>[0]
+    expect(activeSessions(groups, () => true, "ses_a").map((item) => item.session.id)).toEqual(["ses_b"])
+    expect(activeSessions(groups).map((item) => item.session.id)).toEqual(["ses_b", "ses_a"])
+  })
+})

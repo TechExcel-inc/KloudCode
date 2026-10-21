@@ -56,16 +56,20 @@ export function activeState(
   if (ids.some((id) => sessionBusy(source, id))) return "working"
 }
 
-/** Every visible root session across the projects' directories that is working or waiting on the user. */
+/**
+ * Every root session across the projects' directories that is working or waiting on the user, except
+ * the one on screen: that one already shows its own working or waiting state.
+ */
 export function activeSessions<P>(
   groups: { project: P; sources: ActiveSource[] }[],
   include: (item: PermissionRequest, directory: string) => boolean = () => true,
+  onScreen?: string,
 ): ActiveSession<P>[] {
   const result: ActiveSession<P>[] = []
   for (const group of groups) {
     for (const source of group.sources) {
       for (const session of source.session ?? []) {
-        if (session.parentID || session.time?.archived) continue
+        if (session.parentID || session.time?.archived || session.id === onScreen) continue
         if (workspaceKey(session.directory) !== workspaceKey(source.directory)) continue
         const state = activeState(source, session.id, (item) => include(item, source.directory))
         if (state) result.push({ session, project: group.project, state })
