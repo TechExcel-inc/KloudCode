@@ -347,3 +347,33 @@
     padding-top: 4px;
   }
 }
+
+/* The current action above the checklist: a slow, soft sweep, calmer than the default shimmer. */
+[data-component="session-turn-live-action"] [data-component="text-shimmer"] {
+  --text-shimmer-duration: 2600ms;
+  --text-shimmer-spread: 9ch;
+  --text-shimmer-step: 30ms;
+}
+
+[data-slot="session-turn-step-icon"] {
+  display: block;
+  overflow: visible;
+}
+
+/* The step in progress: a ring of dots turning slowly while the turn runs. */
+[data-slot="session-turn-step-ring"][data-turning] {
+  transform-origin: 8px 8px;
+  animation: session-turn-step-turn 2.4s linear infinite;
+}
+
+@keyframes session-turn-step-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="session-turn-step-ring"][data-turning] {
+    animation: none;
+  }
+}

@@ -25,7 +25,6 @@ import { TextReveal } from "./text-reveal"
 import { createAutoScroll } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { normalize } from "./session-diff"
-import { Spinner } from "./spinner"
 import {
   checklistProgress,
   currentAction,
@@ -576,20 +575,7 @@ function TurnChecklist(props: { steps: TurnStep[]; working: boolean }) {
           {(step) => (
             <li data-slot="session-turn-checklist-step" data-status={step.status}>
               <span data-slot="session-turn-checklist-marker" aria-hidden="true">
-                <Show
-                  when={step.status === "in_progress" && props.working}
-                  fallback={
-                    step.status === "completed"
-                      ? "\u2713"
-                      : step.status === "in_progress"
-                        ? "\u25D0"
-                        : step.status === "cancelled"
-                          ? "\u2715"
-                          : "\u25CB"
-                  }
-                >
-                  <Spinner />
-                </Show>
+                <StepIcon status={step.status} working={props.working} />
               </span>
               <span data-slot="session-turn-checklist-content">{step.content}</span>
             </li>
@@ -597,5 +583,44 @@ function TurnChecklist(props: { steps: TurnStep[]; working: boolean }) {
         </For>
       </ul>
     </div>
+  )
+}
+
+/**
+ * A checklist step's state, drawn so the four states read apart at a glance: a dashed circle for a
+ * step not started, a ring of dots turning slowly for the step in progress (still once the turn
+ * stops), a check for a finished step and a cross for a cancelled one.
+ */
+function StepIcon(props: { status: string; working: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" data-slot="session-turn-step-icon" data-status={props.status}>
+      <Show when={props.status === "completed"}>
+        <circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.25" />
+        <path d="M5.2 8.2l1.9 1.9 3.7-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </Show>
+      <Show when={props.status === "cancelled"}>
+        <circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.25" />
+        <path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
+      </Show>
+      <Show when={props.status === "in_progress"}>
+        <g data-slot="session-turn-step-ring" data-turning={props.working || undefined}>
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+            const angle = (i / 8) * Math.PI * 2
+            return (
+              <circle
+                cx={8 + 6 * Math.cos(angle)}
+                cy={8 + 6 * Math.sin(angle)}
+                r="1.05"
+                fill="currentColor"
+                opacity={0.35 + (i / 7) * 0.65}
+              />
+            )
+          })}
+        </g>
+      </Show>
+      <Show when={props.status !== "completed" && props.status !== "cancelled" && props.status !== "in_progress"}>
+        <circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.25" stroke-dasharray="2.2 2.2" />
+      </Show>
+    </svg>
   )
 }
