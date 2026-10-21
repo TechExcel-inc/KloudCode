@@ -236,6 +236,41 @@ describe("Vcs diff", () => {
     })
   })
 
+  test("diff('git') lists untracked folders file by file, marks binaries and sizes, and skips ignored files", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await fs.writeFile(path.join(tmp.path, ".gitignore"), "ignored/\n", "utf-8")
+    await fs.writeFile(path.join(tmp.path, "kept.bin"), new Uint8Array([0, 1, 2]))
+    await $`git add .`.cwd(tmp.path).quiet()
+    await $`git commit --no-gpg-sign -m "base"`.cwd(tmp.path).quiet()
+    await fs.mkdir(path.join(tmp.path, ".cursor"), { recursive: true })
+    await fs.writeFile(path.join(tmp.path, ".cursor", "mcp.json"), "{\n}\n", "utf-8")
+    await fs.writeFile(path.join(tmp.path, ".cursor", ".env"), "TOKEN=x\n", "utf-8")
+    await fs.mkdir(path.join(tmp.path, "ignored"), { recursive: true })
+    await fs.writeFile(path.join(tmp.path, "ignored", "a.txt"), "a\n", "utf-8")
+    await fs.writeFile(path.join(tmp.path, "kept.bin"), new Uint8Array([0, 9, 9, 9]))
+
+    await withVcsOnly(tmp.path, async () => {
+      const diff = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const vcs = yield* Vcs.Service
+          return yield* vcs.diff("git")
+        }),
+      )
+      const brief = diff.map((item) => ({
+        file: item.file,
+        untracked: item.untracked,
+        binary: item.binary,
+        additions: item.additions,
+        size: item.size,
+      }))
+      expect(brief).toEqual([
+        { file: ".cursor/.env", untracked: true, binary: undefined, additions: 1, size: 8 },
+        { file: ".cursor/mcp.json", untracked: true, binary: undefined, additions: 2, size: 4 },
+        { file: "kept.bin", untracked: undefined, binary: true, additions: 0, size: 4 },
+      ])
+    })
+  })
+
   test("diff('git') handles special filenames", async () => {
     await using tmp = await tmpdir({ git: true })
     await fs.writeFile(path.join(tmp.path, weird), "hello\n", "utf-8")

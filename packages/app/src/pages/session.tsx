@@ -2160,7 +2160,6 @@ export default function Page() {
         />
         <Show when={editsOpen()}>
           <AgentEdits
-            diffs={diffs}
             session={params.id}
             focusChanges={changesFocus()}
             onChangesFocused={() => setChangesFocus(0)}

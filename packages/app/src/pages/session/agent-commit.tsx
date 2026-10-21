@@ -4,12 +4,12 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { Part, SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import type { Part, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
-import { commitAndPush, pushOnly, readOutcome } from "./agent-git"
-
-const LIMIT = 24000
+import { pushOnly, readOutcome, type GitOutcome } from "./agent-git"
+import { DialogCommitReview } from "./agent-commit-review"
 
 const text = (parts: Part[]) =>
   parts
@@ -31,16 +31,22 @@ const output = (parts: Part[]) =>
 
 export function AgentCommit(props: {
   session?: string
-  diffs: () => (SnapshotFileDiff | VcsFileDiff)[]
+  /** The uncommitted git changes in this folder. */
+  diffs: () => VcsFileDiff[]
+  /** Files this session's replies changed. */
+  sessionFiles?: () => string[]
+  /** Called after a commit so the Changes list is re-read. */
+  onCommitted?: () => void
   /** Sits inside another box (the Changes box), without its own border. */
   inline?: boolean
 }) {
   const sdk = useSDK()
   const language = useLanguage()
+  const dialog = useDialog()
   const [state, setState] = createStore({
     mode: "smart" as "smart" | "manual",
     message: "",
-    busy: undefined as "draft" | "commit" | "push" | undefined,
+    busy: undefined as "push" | undefined,
     done: "",
   })
   const files = createMemo(() => props.diffs().map((diff) => diff.file))
@@ -70,31 +76,21 @@ export function AgentCommit(props: {
       description: err instanceof Error ? err.message : String(err),
     })
 
-  const draft = () => {
-    if (state.busy || files().length === 0) return
-    setState({ busy: "draft", done: "" })
-    const diff = props
-      .diffs()
-      .map((item) => `--- ${item.file} (+${item.additions} -${item.deletions})\n${item.patch ?? ""}`)
-      .join("\n")
-      .slice(0, LIMIT)
-    void scratch((id) =>
+  /** Asks the AI in a hidden session; used by the review dialog for its summary, grouping and message. */
+  const ask = (prompt: string) =>
+    scratch((id) =>
       sdk.client.session.prompt({
         sessionID: id,
         agent: "plan",
         system:
-          "You write git commit messages. Reply with the commit message only: a concise imperative subject line under 72 characters, optionally followed by a blank line and a short bullet list. No code fences, no commentary, no tools.",
-        parts: [{ type: "text", text: `Write a commit message for these changes:\n\n${diff}` }],
+          "You review uncommitted git changes before a commit. Reply with one JSON object only, exactly in the shape the user asks for. No code fences, no commentary, no tools.",
+        parts: [{ type: "text", text: prompt }],
       }),
-    )
-      .then((res) => {
-        const message = text(res.data?.parts ?? [])
-        if (!message) throw new Error(language.t("agent.commit.empty"))
-        setState("message", message)
-      })
-      .catch(fail)
-      .finally(() => setState("busy", undefined))
-  }
+    ).then((res) => {
+      const reply = text(res.data?.parts ?? [])
+      if (!reply) throw new Error(language.t("agent.commit.empty"))
+      return reply
+    })
 
   /** Runs a git command in a hidden session and reports how far it got. */
   const run = (command: string) =>
@@ -102,29 +98,46 @@ export function AgentCommit(props: {
       readOutcome(output(res.data?.parts ?? [])),
     )
 
-  const finish = (outcome: { committed: boolean; pushed: boolean; log: string }, subject?: string) => {
-    if (subject !== undefined && outcome.committed) setState({ message: "", done: subject })
+  const finish = (outcome: GitOutcome) => {
     void refetch()
     if (outcome.pushed) {
-      showToast({
-        variant: "success",
-        icon: "circle-check",
-        title: language.t(subject === undefined ? "agent.commit.pushedOnly" : "agent.commit.pushed"),
-      })
+      showToast({ variant: "success", icon: "circle-check", title: language.t("agent.commit.pushedOnly") })
       return
     }
-    if (outcome.committed) throw new Error(`${language.t("agent.commit.notPushed")}\n${outcome.log}`)
     throw new Error(outcome.log || language.t("agent.commit.failed"))
   }
 
-  const commit = () => {
-    const message = state.message.trim()
-    if (state.busy || !message || files().length === 0) return
-    setState("busy", "commit")
-    void run(commitAndPush(files(), message))
-      .then((outcome) => finish(outcome, message.split("\n")[0] ?? ""))
-      .catch(fail)
-      .finally(() => setState("busy", undefined))
+  /** After the review dialog committed: clear the message, re-read, and say how far it got. */
+  const done = (outcome: GitOutcome, subject: string, pushWanted: boolean) => {
+    setState({ message: "", done: subject })
+    void refetch()
+    props.onCommitted?.()
+    if (!pushWanted) {
+      showToast({ variant: "success", icon: "circle-check", title: language.t("agent.commit.committed") })
+      return
+    }
+    if (outcome.pushed) {
+      showToast({ variant: "success", icon: "circle-check", title: language.t("agent.commit.pushed") })
+      return
+    }
+    fail(new Error(`${language.t("agent.commit.notPushed")}\n${outcome.log}`))
+  }
+
+  /** Commit never happens in one click: it opens "Review before commit" first, in both modes. */
+  const review = () => {
+    if (state.busy || files().length === 0) return
+    const list = props.diffs()
+    dialog.show(() => (
+      <DialogCommitReview
+        files={list}
+        sessionFiles={props.sessionFiles?.() ?? []}
+        message={state.mode === "manual" ? state.message : ""}
+        remote={!!vcs.latest?.remote_url}
+        ask={ask}
+        run={run}
+        onDone={done}
+      />
+    ))
   }
 
   const push = () => {
@@ -137,15 +150,22 @@ export function AgentCommit(props: {
   }
 
   return (
-    <Show when={files().length > 0 || unpushed() > 0 || !!state.busy}>
-      <div
-        data-component="agent-commit"
-        class="shrink-0 flex flex-col gap-2"
-        classList={{ "px-4 py-3 border-t border-border-weaker-base": !props.inline, "pt-3": props.inline }}
-      >
-        <Show
-          when={files().length > 0}
-          fallback={
+    <div
+      data-component="agent-commit"
+      class="shrink-0 flex flex-col gap-2"
+      classList={{ "px-4 py-3 border-t border-border-weaker-base": !props.inline, "pt-3": props.inline }}
+    >
+      <Show
+        when={files().length > 0}
+        fallback={
+          <Show
+            when={unpushed() > 0 || !!state.busy}
+            fallback={
+              <Button variant="secondary" size="large" class="w-full" data-action="commit-nothing" disabled>
+                {language.t("agent.commit.none")}
+              </Button>
+            }
+          >
             <div class="flex items-center gap-2 min-w-0">
               <Icon name="cloud-upload" size="small" class="shrink-0 text-icon-weak" />
               <span class="flex-1 min-w-0 text-12-regular text-text-base">
@@ -158,97 +178,85 @@ export function AgentCommit(props: {
                 {language.t("agent.commit.push")}
               </Button>
             </div>
-          }
-        >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 text-14-medium text-text-strong">
-              <Icon name="branch" size="small" />
-              {language.t("agent.commit.title")}
-            </div>
-            <div class="flex items-center p-0.5 rounded-md bg-surface-base border border-border-weak-base text-12-medium">
-              <button
-                type="button"
-                data-action="commit-mode-manual"
-                class="px-2 py-0.5 rounded"
-                classList={{
-                  "bg-surface-raised-base text-text-strong": state.mode === "manual",
-                  "text-text-weak": state.mode !== "manual",
-                }}
-                onClick={() => setState("mode", "manual")}
-              >
-                {language.t("agent.commit.manual")}
-              </button>
-              <button
-                type="button"
-                data-action="commit-mode-smart"
-                class="px-2 py-0.5 rounded"
-                classList={{
-                  "bg-surface-raised-base text-text-strong": state.mode === "smart",
-                  "text-text-weak": state.mode !== "smart",
-                }}
-                onClick={() => setState("mode", "smart")}
-              >
-                {language.t("agent.commit.smart")}
-              </button>
-            </div>
+          </Show>
+        }
+      >
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-14-medium text-text-strong">
+            <Icon name="branch" size="small" />
+            {language.t("agent.commit.title")}
           </div>
-
-          <Show when={state.done}>
-            <div class="flex items-center gap-1.5 text-12-regular text-text-weak min-w-0">
-              <Icon name="circle-check" size="small" class="text-icon-success-base shrink-0" />
-              <span class="truncate">{language.t("agent.commit.last", { subject: state.done })}</span>
-            </div>
-          </Show>
-
-          <Show when={state.mode === "smart" && !state.message}>
-            <div class="text-12-regular text-text-weak">{language.t("agent.commit.hint")}</div>
-            <Button
-              variant="primary"
-              size="large"
-              class="w-full"
-              data-action="commit-draft"
-              disabled={!!state.busy}
-              onClick={draft}
+          <div class="flex items-center p-0.5 rounded-md bg-surface-base border border-border-weak-base text-12-medium">
+            <button
+              type="button"
+              data-action="commit-mode-manual"
+              class="px-2 py-0.5 rounded"
+              classList={{
+                "bg-surface-raised-base text-text-strong": state.mode === "manual",
+                "text-text-weak": state.mode !== "manual",
+              }}
+              onClick={() => setState("mode", "manual")}
             >
-              <Show when={state.busy === "draft"} fallback={<Icon name="brain" size="small" />}>
-                <Spinner class="size-4" />
-              </Show>
-              {language.t(state.busy === "draft" ? "agent.commit.drafting" : "agent.commit.draft")}
-            </Button>
-          </Show>
+              {language.t("agent.commit.manual")}
+            </button>
+            <button
+              type="button"
+              data-action="commit-mode-smart"
+              class="px-2 py-0.5 rounded"
+              classList={{
+                "bg-surface-raised-base text-text-strong": state.mode === "smart",
+                "text-text-weak": state.mode !== "smart",
+              }}
+              onClick={() => setState("mode", "smart")}
+            >
+              {language.t("agent.commit.smart")}
+            </button>
+          </div>
+        </div>
 
-          <Show when={state.mode === "manual" || state.message}>
-            <textarea
-              data-action="commit-message"
-              rows={4}
-              value={state.message}
-              onInput={(event) => setState("message", event.currentTarget.value)}
-              placeholder={language.t("agent.commit.placeholder")}
-              class="w-full resize-none rounded-md bg-surface-base border border-border-weak-base px-2 py-1.5 text-12-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
-            />
-            <div class="flex items-center gap-2">
-              <Show when={state.mode === "smart"}>
-                <Button variant="ghost" size="large" disabled={!!state.busy} onClick={draft}>
-                  {language.t("agent.commit.redraft")}
-                </Button>
-              </Show>
-              <Button
-                variant="primary"
-                size="large"
-                class="flex-1"
-                data-action="commit-run"
-                disabled={!!state.busy || !state.message.trim()}
-                onClick={commit}
-              >
-                <Show when={state.busy === "commit"}>
-                  <Spinner class="size-4" />
-                </Show>
-                {language.t("agent.commit.run", { count: files().length })}
-              </Button>
-            </div>
-          </Show>
+        <Show when={state.done}>
+          <div class="flex items-center gap-1.5 text-12-regular text-text-weak min-w-0">
+            <Icon name="circle-check" size="small" class="text-icon-success-base shrink-0" />
+            <span class="truncate">{language.t("agent.commit.last", { subject: state.done })}</span>
+          </div>
         </Show>
-      </div>
-    </Show>
+
+        <Show when={state.mode === "smart"}>
+          <div class="text-12-regular text-text-weak">{language.t("agent.commit.hint")}</div>
+          <Button
+            variant="primary"
+            size="large"
+            class="w-full"
+            data-action="commit-draft"
+            disabled={!!state.busy}
+            onClick={review}
+          >
+            <Icon name="brain" size="small" />
+            {language.t("agent.commit.draft")}
+          </Button>
+        </Show>
+
+        <Show when={state.mode === "manual"}>
+          <textarea
+            data-action="commit-message"
+            rows={4}
+            value={state.message}
+            onInput={(event) => setState("message", event.currentTarget.value)}
+            placeholder={language.t("agent.commit.placeholder")}
+            class="w-full resize-none rounded-md bg-surface-base border border-border-weak-base px-2 py-1.5 text-12-regular text-text-strong placeholder:text-text-weak outline-none focus:border-border-interactive-base"
+          />
+          <Button
+            variant="primary"
+            size="large"
+            class="w-full"
+            data-action="commit-run"
+            disabled={!!state.busy}
+            onClick={review}
+          >
+            {language.t("agent.commit.review", { count: files().length })}
+          </Button>
+        </Show>
+      </Show>
+    </div>
   )
 }

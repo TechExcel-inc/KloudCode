@@ -12933,6 +12933,17 @@
           "status": {
             "type": "string",
             "enum": ["added", "deleted", "modified"]
+          },
+          "untracked": {
+            "description": "Not known to git yet (listed file by file, .gitignore respected).",
+            "type": "boolean"
+          },
+          "binary": {
+            "type": "boolean"
+          },
+          "size": {
+            "description": "Size of the working copy in bytes; absent for deleted files.",
+            "type": "number"
           }
         },
         "required": ["file", "patch", "additions", "deletions"]

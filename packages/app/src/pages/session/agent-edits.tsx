@@ -1,9 +1,9 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/util/path"
-import type { AssistantMessage, SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -259,11 +259,10 @@ function TaskItem(props: {
 
 /**
  * The Agent view's right panel, laid out like Claude Code's: where the session works (Environment),
- * what fills the model's context window (Context), the files the AI made (Outputs), and the code it
- * changed in this folder (Changes, with Commit with AI).
+ * what fills the model's context window (Context), the files the AI made (Outputs), and what git has
+ * not committed yet in this folder (Changes, with a reviewed commit).
  */
 export function AgentEdits(props: {
-  diffs: () => (SnapshotFileDiff | VcsFileDiff)[]
   session?: string
   onOpen: (path: string) => void
   onOpenOutput: (path: string) => void
@@ -421,8 +420,53 @@ export function AgentEdits(props: {
     void sdk.client.session.abort({ sessionID }).catch(() => undefined)
   }
 
-  const added = createMemo(() => props.diffs().reduce((sum, diff) => sum + (diff.additions ?? 0), 0))
-  const removed = createMemo(() => props.diffs().reduce((sum, diff) => sum + (diff.deletions ?? 0), 0))
+  // Changes are what git would commit now in this folder (staged, unstaged and untracked files), not
+  // everything the session's snapshots saw; re-read when files change, when a reply ends, and after a commit.
+  const [git, { refetch: refetchChanges }] = createResource(
+    () => (sync.project?.vcs === "git" ? sdk.directory : undefined),
+    () =>
+      sdk.client.vcs
+        .diff({ mode: "git" })
+        .then((res) => res.data ?? [])
+        .catch(() => [] as VcsFileDiff[]),
+  )
+  const changes = createMemo(() => (sync.project?.vcs === "git" ? (git.latest ?? []) : []))
+  let changesTimer: ReturnType<typeof setTimeout> | undefined
+  const refreshChanges = () => {
+    if (changesTimer) clearTimeout(changesTimer)
+    changesTimer = setTimeout(() => {
+      changesTimer = undefined
+      void refetchChanges()
+    }, 300)
+  }
+  const stopChanges = sdk.event.listen((evt) => {
+    if (evt.details.type !== "file.watcher.updated") return
+    const file = (evt.details.properties as { file?: unknown } | undefined)?.file
+    if (typeof file !== "string") return
+    // Inside .git only the index and HEAD matter (a commit or `git add` from a terminal).
+    if (/(^|[\\/])\.git[\\/]/.test(file) && !/[\\/](index|HEAD)$/.test(file)) return
+    refreshChanges()
+  })
+  onCleanup(() => {
+    stopChanges()
+    if (changesTimer) clearTimeout(changesTimer)
+  })
+  createEffect(
+    on(
+      () => (props.session ? sync.data.session_status[props.session]?.type : undefined),
+      (next, prev) => {
+        if (next === "idle" && prev && prev !== "idle") refreshChanges()
+      },
+      { defer: true },
+    ),
+  )
+  // Files this session's replies changed (each reply's own change list), to flag the others at commit time.
+  const sessionFiles = createMemo(() => [
+    ...new Set(messages().flatMap((msg) => (msg.role === "user" ? (msg.summary?.diffs ?? []).map((d) => d.file) : []))),
+  ])
+
+  const added = createMemo(() => changes().reduce((sum, diff) => sum + (diff.additions ?? 0), 0))
+  const removed = createMemo(() => changes().reduce((sum, diff) => sum + (diff.deletions ?? 0), 0))
   const count = (value: number) => value.toLocaleString()
 
   const directory = () => sdk.directory
@@ -743,7 +787,7 @@ export function AgentEdits(props: {
           open={open().changes}
           onToggle={() => toggle("changes")}
           right={
-            <Show when={!open().changes && props.diffs().length > 0}>
+            <Show when={!open().changes && changes().length > 0}>
               <Show when={added() > 0}>
                 <span class="text-12-mono text-text-diff-add-base">+{count(added())}</span>
               </Show>
@@ -754,8 +798,8 @@ export function AgentEdits(props: {
           }
         >
           <Show
-            when={props.diffs().length > 0}
-            fallback={<div class="py-1 text-12-regular text-text-weak">{language.t("agent.edits.empty")}</div>}
+            when={changes().length > 0}
+            fallback={<div class="py-1 text-12-regular text-text-weak">{language.t("agent.changes.none")}</div>}
           >
             <div class="h-8 flex items-center gap-2 text-12-mono">
               <Icon name="review" size="small" class="text-icon-weak" />
@@ -766,11 +810,11 @@ export function AgentEdits(props: {
                 <span class="text-text-diff-delete-base">-{count(removed())}</span>
               </Show>
               <span class="ml-auto text-12-regular text-text-weak">
-                {language.t("agent.edits.files", { count: props.diffs().length })}
+                {language.t("agent.edits.files", { count: changes().length })}
               </span>
             </div>
             <div class="max-h-64 overflow-y-auto no-scrollbar flex flex-col">
-              <For each={props.diffs()}>
+              <For each={changes()}>
                 {(diff) => (
                   <button
                     type="button"
@@ -782,6 +826,9 @@ export function AgentEdits(props: {
                     <FileIcon node={{ path: diff.file, type: "file" }} class="size-4 shrink-0" />
                     <span class="flex-1 min-w-0 truncate text-13-regular text-text-strong">{getFilename(diff.file)}</span>
                     <span class="shrink-0 flex items-center gap-1 text-12-mono">
+                      <Show when={diff.binary}>
+                        <span class="text-12-regular text-text-weak">{language.t("agent.review.binary")}</span>
+                      </Show>
                       <Show when={diff.additions}>
                         <span class="text-text-diff-add-base">+{diff.additions}</span>
                       </Show>
@@ -794,7 +841,13 @@ export function AgentEdits(props: {
               </For>
             </div>
           </Show>
-          <AgentCommit session={props.session} diffs={props.diffs} inline />
+          <AgentCommit
+            session={props.session}
+            diffs={changes}
+            sessionFiles={sessionFiles}
+            onCommitted={() => void refetchChanges()}
+            inline
+          />
         </Box>
 
         <Show when={background().running.length + background().finished > 0}>

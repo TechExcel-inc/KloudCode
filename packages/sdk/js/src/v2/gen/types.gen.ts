@@ -2134,6 +2134,15 @@ export type VcsFileDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
+  /**
+   * Not known to git yet (listed file by file, .gitignore respected).
+   */
+  untracked?: boolean
+  binary?: boolean
+  /**
+   * Size of the working copy in bytes; absent for deleted files.
+   */
+  size?: number
 }
 
 export type Command = {

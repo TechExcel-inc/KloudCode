@@ -3,7 +3,7 @@ import { $ } from "bun"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { commitAndPush, pushOnly, readOutcome } from "./agent-git"
+import { commitAndPush, commitOnly, pushOnly, readOutcome } from "./agent-git"
 
 const sh = (cwd: string, command: string) => $`sh -c ${command}`.cwd(cwd).nothrow().quiet().text()
 
@@ -54,6 +54,30 @@ describe("commitAndPush", () => {
 
     await $`git -C ${work} remote set-url origin ${path.join(root, "remote.git")}`.quiet()
     expect(readOutcome(await sh(work, pushOnly())).pushed).toBe(true)
+    await fs.rm(root, { recursive: true, force: true })
+  })
+})
+
+describe("commitOnly", () => {
+  test("commits only the checked files, including a deletion, and leaves the rest uncommitted", async () => {
+    const { root, remote, work } = await repo()
+    await $`git -C ${work} push -q -u origin main`.quiet()
+    await fs.rm(path.join(work, "README.md"))
+    await fs.mkdir(path.join(work, "src"))
+    await fs.writeFile(path.join(work, "src", "a*.ts"), "a\n")
+    await fs.writeFile(path.join(work, "src", "ab.ts"), "b\n")
+    await fs.writeFile(path.join(work, ".env"), "TOKEN=x\n")
+    await $`git -C ${work} add .env`.quiet()
+    // Run from a subfolder: the paths are relative to the repository root, as git status lists them.
+    const outcome = readOutcome(await sh(path.join(work, "src"), commitOnly(["README.md", "src/a*.ts"], "Pick two")))
+    expect([outcome.committed, outcome.pushed]).toEqual([true, false])
+    expect((await $`git -C ${work} show --name-status --format= HEAD`.text()).trim().split("\n")).toEqual([
+      "D\tREADME.md",
+      "A\tsrc/a*.ts",
+    ])
+    const left = (await $`git -C ${work} status --porcelain=v1 --untracked-files=all`.text()).trim().split("\n")
+    expect(left).toEqual(["A  .env", "?? src/ab.ts"])
+    expect((await $`git -C ${remote} log --format=%s -1 main`.text()).trim()).toBe("init")
     await fs.rm(root, { recursive: true, force: true })
   })
 })

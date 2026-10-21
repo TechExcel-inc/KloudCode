@@ -44,6 +44,8 @@ export namespace Git {
     readonly file: string
     readonly additions: number
     readonly deletions: number
+    /** git reports "-" for both counts of a binary file. */
+    readonly binary?: boolean
   }
 
   export interface Result {
@@ -256,6 +258,7 @@ export namespace Git {
               file,
               additions: Number.isFinite(additions) ? additions : 0,
               deletions: Number.isFinite(deletions) ? deletions : 0,
+              binary: adds === "-" && dels === "-",
             } satisfies Stat,
           ]
         })

@@ -20,16 +20,21 @@ export namespace Vcs {
     return text.slice(0, -1).split("\n").length
   }
 
+  /** The working copy's text ("" when missing or binary), whether it is binary, and its size in bytes. */
   const work = Effect.fnUntraced(function* (fs: AppFileSystem.Interface, cwd: string, file: string) {
     const full = path.join(cwd, file)
-    if (!(yield* fs.exists(full).pipe(Effect.orDie))) return ""
-    const buf = yield* fs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
-    if (Buffer.from(buf).includes(0)) return ""
-    return Buffer.from(buf).toString("utf8")
+    if (!(yield* fs.exists(full).pipe(Effect.orDie))) return { text: "", binary: false, size: undefined }
+    const buf = Buffer.from(yield* fs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array()))))
+    if (buf.includes(0)) return { text: "", binary: true, size: buf.length }
+    return { text: buf.toString("utf8"), binary: false, size: buf.length }
   })
 
   const nums = (list: Git.Stat[]) =>
-    new Map(list.map((item) => [item.file, { additions: item.additions, deletions: item.deletions }] as const))
+    new Map(
+      list.map(
+        (item) => [item.file, { additions: item.additions, deletions: item.deletions, binary: item.binary }] as const,
+      ),
+    )
 
   const merge = (...lists: Git.Item[][]) => {
     const out = new Map<string, Git.Item>()
@@ -45,7 +50,7 @@ export namespace Vcs {
     cwd: string,
     ref: string | undefined,
     list: Git.Item[],
-    map: Map<string, { additions: number; deletions: number }>,
+    map: Map<string, { additions: number; deletions: number; binary?: boolean }>,
   ) {
     const base = ref ? yield* git.prefix(cwd) : ""
     const patch = (file: string, before: string, after: string) =>
@@ -55,7 +60,9 @@ export namespace Vcs {
       (item) =>
         Effect.gen(function* () {
           const before = item.status === "added" || !ref ? "" : yield* git.show(cwd, ref, item.file, base)
-          const after = item.status === "deleted" ? "" : yield* work(fs, cwd, item.file)
+          const current =
+            item.status === "deleted" ? { text: "", binary: false, size: undefined } : yield* work(fs, cwd, item.file)
+          const after = current.text
           const stat = map.get(item.file)
           return {
             file: item.file,
@@ -63,6 +70,9 @@ export namespace Vcs {
             additions: stat?.additions ?? (item.status === "added" ? count(after) : 0),
             deletions: stat?.deletions ?? (item.status === "deleted" ? count(before) : 0),
             status: item.status,
+            untracked: item.code === "??" ? true : undefined,
+            binary: stat?.binary || current.binary ? true : undefined,
+            size: current.size,
           } satisfies FileDiff
         }),
       { concurrency: 8 },
@@ -135,6 +145,11 @@ export namespace Vcs {
       additions: z.number(),
       deletions: z.number(),
       status: z.enum(["added", "deleted", "modified"]).optional(),
+      /** Not known to git yet (listed file by file, .gitignore respected). */
+      untracked: z.boolean().optional(),
+      binary: z.boolean().optional(),
+      /** Size of the working copy in bytes; absent for deleted files. */
+      size: z.number().optional(),
     })
     .meta({
       ref: "VcsFileDiff",
