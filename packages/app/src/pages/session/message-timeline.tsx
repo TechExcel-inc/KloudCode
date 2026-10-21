@@ -1011,8 +1011,11 @@ export function MessageTimeline(props: {
             <div
               role="log"
               data-slot="session-turn-list"
-              class="flex flex-col items-start justify-start pb-16 transition-[margin]"
+              class="flex flex-col items-start justify-start transition-[margin]"
               classList={{
+                // The task step box above the composer already separates the last reply from it.
+                "pb-16": !dockedMessageID(),
+                "pb-3": !!dockedMessageID(),
                 "w-full": true,
                 "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
                 "mt-0.5": props.centered,

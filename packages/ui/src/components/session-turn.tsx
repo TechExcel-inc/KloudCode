@@ -149,11 +149,8 @@ export function SessionTurn(
     status?: SessionStatus
     /** The steps show in the task step box above the composer instead of inside this reply. */
     checklistDocked?: boolean
-    /**
-     * While docked, the live lines go next to the box above the composer: the current action above it,
-     * the helpers, elapsed time and retry notice below it.
-     */
-    liveMount?: { above?: HTMLElement; below?: HTMLElement }
+    /** While docked, the live line (current action, elapsed time, helpers, retries) goes below the box. */
+    liveMount?: { below?: HTMLElement }
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -356,7 +353,7 @@ export function SessionTurn(
     return reason
   })
   const checklist = createMemo(() => latestChecklist(turnParts()))
-  const docked = createMemo(() => !!props.checklistDocked && !!props.liveMount?.above && !!props.liveMount?.below)
+  const docked = createMemo(() => !!props.checklistDocked && !!props.liveMount?.below)
   const live = createMemo(() => {
     if (!working() || !!error()) return false
     return status().type !== "retry"
@@ -462,9 +459,9 @@ export function SessionTurn(
                   </>
                 }
               >
-                {/* Docked: one line above the box says what the AI is doing, with the elapsed time and
-                    helpers at the right; below the box only a retry notice, when there is one. */}
-                <Docked to={props.liveMount?.above}>
+                {/* Docked: one live line below the box, next to the composer, says what the AI is doing now
+                    with the elapsed time and helpers; a retry notice shows there too. */}
+                <Docked to={props.liveMount?.below}>
                   <Show when={live()}>
                     <div data-component="session-turn-live-action" data-docked>
                       <Spinner class="session-turn-live-spinner" />
@@ -476,8 +473,6 @@ export function SessionTurn(
                       </Show>
                     </div>
                   </Show>
-                </Docked>
-                <Docked to={props.liveMount?.below}>
                   <SessionRetry status={status()} show={active()} />
                 </Docked>
               </Show>

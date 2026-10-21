@@ -43,7 +43,6 @@ export function SessionTodoDock(props: {
   })
 
   onCleanup(() => {
-    stepDockMount.setAbove(undefined)
     stepDockMount.setBelow(undefined)
   })
 
@@ -56,7 +55,6 @@ export function SessionTodoDock(props: {
     // The composer below is pulled up 36px over the dock (see the region's `lift`), so the bottom padding
     // keeps the box clear of it, with a small gap.
     <div data-component="session-todo-dock" style={{ opacity: `${1 - shut()}`, "padding-bottom": "44px" }}>
-      <div data-slot="session-step-dock-above" ref={stepDockMount.setAbove} />
       <TurnChecklist
         steps={steps()}
         working={props.live}

@@ -392,30 +392,24 @@
 }
 
 /*
- * The live lines around the task step box when it sits above the composer: what the AI is doing now
- * above the box, and the helpers, elapsed time and retry notice below it. They are drawn out of the
- * reply, so they carry their own type rather than the reply's.
+ * The live line below the task step box when it sits above the composer: spinner, what the AI is doing
+ * (its tool action, or the topic it is thinking about), then the elapsed time and helpers, and any retry
+ * notice. It is drawn out of the reply, so it carries its own type rather than the reply's.
  */
-[data-slot="session-step-dock-above"],
 [data-slot="session-step-dock-below"] {
   padding: 0 4px;
-}
 
-/* One line: spinner, what the AI is doing (its tool action, or the topic it is thinking about), and the
-   elapsed time and helpers at the right. */
-[data-slot="session-step-dock-above"] {
   [data-component="session-turn-live-action"] {
-    margin-bottom: 6px;
+    margin-top: 6px;
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
     color: var(--text-strong);
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
-    line-height: 20px;
-    min-height: 20px;
+    line-height: 18px;
   }
   .session-turn-live-spinner {
     flex-shrink: 0;
@@ -424,7 +418,7 @@
     color: var(--icon-interactive-base);
   }
   [data-slot="session-turn-live-text"] {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -433,13 +427,9 @@
   [data-slot="session-turn-live-meta"] {
     flex-shrink: 0;
     color: var(--text-weak);
-    font-size: var(--font-size-small);
     font-weight: var(--font-weight-regular);
     font-variant-numeric: tabular-nums;
   }
-}
-
-[data-slot="session-step-dock-below"] {
   [data-slot="session-turn-retry"] {
     margin-top: 6px;
   }

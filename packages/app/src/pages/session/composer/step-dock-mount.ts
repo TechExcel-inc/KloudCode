@@ -1,14 +1,12 @@
 import { createSignal } from "solid-js"
 
 /**
- * The slots next to the task step box above the composer. The reply that owns the steps draws its live
- * lines into them: the current action above the box, helpers, elapsed time and retries below it.
+ * The slot below the task step box above the composer. The reply that owns the steps draws its live line
+ * into it: the current action, elapsed time and helpers, and any retry notice.
  */
-const [above, setAbove] = createSignal<HTMLElement>()
 const [below, setBelow] = createSignal<HTMLElement>()
 
 export const stepDockMount = {
-  get: () => ({ above: above(), below: below() }),
-  setAbove,
+  get: () => ({ below: below() }),
   setBelow,
 }
