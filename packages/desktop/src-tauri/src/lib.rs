@@ -10,6 +10,7 @@ mod logging;
 mod markdown;
 mod os;
 mod server;
+mod settings_backup;
 mod window_customizer;
 mod windows;
 
@@ -341,6 +342,11 @@ pub fn run() {
             // Hold the guard in managed state so it lives for the app's lifetime,
             // ensuring all buffered logs are flushed on shutdown.
             handle.manage(logging::init(&log_dir));
+
+            // Before any settings store loads: restore a settings file that a cut-short save left unreadable.
+            if let Ok(dir) = app.path().app_data_dir() {
+                settings_backup::protect(&dir);
+            }
 
             if let Some(port) = asset::boot(&handle) {
                 handle.manage(port);
