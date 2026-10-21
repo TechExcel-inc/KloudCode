@@ -30,6 +30,11 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
+// Reads a file inside the project, path relative to the project directory. Never reaches outside it.
+export type ReadProjectFileFn = (
+  path: string,
+) => Promise<{ content?: string; mimeType?: string; encoding?: string } | undefined>
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -37,6 +42,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     directory: string
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
+    onReadFile?: ReadProjectFileFn
   }) => {
     return {
       get store() {
@@ -47,6 +53,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
+      readFile: props.onReadFile,
     }
   },
 })

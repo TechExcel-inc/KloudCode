@@ -166,6 +166,7 @@ export const dict = {
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
   "ui.message.copied": "已复制！",
+  "ui.markdown.svgCode": "SVG 代码",
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",
   "ui.message.attachment.alt": "附件",

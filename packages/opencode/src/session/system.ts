@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect"
 
 import { Instance } from "../project/instance"
 import { Foreign } from "../project/foreign"
+import { Flag } from "../flag/flag"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
 import PROMPT_DEFAULT from "./prompt/default.txt"
@@ -27,6 +28,21 @@ function others() {
       `This session works in the project ${Foreign.here()}. Other projects on this machine:`,
       ...list.map((item) => `  - ${Foreign.name(item)}: ${item.worktree}`),
       `When the user's request is for one of these projects rather than ${Foreign.here()}, call the project_switch tool before doing the work.`,
+    ].join("\n"),
+  ]
+}
+
+/** The desktop app shows images in replies as thumbnails that open large; terminals cannot. */
+export function visuals(client: string) {
+  if (client !== "desktop") return []
+  return [
+    [
+      `The user reads your replies in the EAD SiCode desktop app, which shows images inside the conversation as thumbnails that open large on click.`,
+      `When you show something visual (icon or logo options, diagrams, mockups, generated images), show it in your reply instead of opening a browser or writing an HTML preview page to /tmp:`,
+      `  - For SVG, put each complete <svg>...</svg> in its own \`\`\`svg code block. Each block appears as a picture, with its code one click away.`,
+      `  - For image files, save them inside the project (for example under a designs/ folder) and reference them with markdown image syntax, such as ![Option A](designs/option-a.png). Images outside the project folder are not shown.`,
+      `  - Images from http(s) URLs can be shown with the same syntax.`,
+      `Give each option a short label so the user can pick one.`,
     ].join("\n"),
   ]
 }
@@ -76,6 +92,7 @@ export namespace SystemPrompt {
               `</env>`,
             ].join("\n"),
             ...others(),
+            ...visuals(Flag.OPENCODE_CLIENT),
           ]
         },
 

@@ -47,6 +47,7 @@ import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
+import { writtenImageUrl } from "./markdown-image"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/util/path"
 import { base64Encode, checksum } from "@opencode-ai/util/encode"
 import { Tooltip } from "./tooltip"
@@ -2048,6 +2049,8 @@ ToolRegistry.register({
     const path = createMemo(() => props.input.filePath || "")
     const filename = () => getFilename(props.input.filePath ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
+    const dialog = useDialog()
+    const writtenImage = createMemo(() => writtenImageUrl(props.input.filePath ?? "", props.input.content))
     return (
       <div data-component="write-tool">
         <BasicTool
@@ -2093,6 +2096,18 @@ ToolRegistry.register({
           </Show>
           <DiagnosticsDisplay diagnostics={diagnostics()} />
         </BasicTool>
+        <Show when={!pending() && writtenImage()}>
+          {(url) => (
+            <button
+              type="button"
+              data-slot="write-image-preview"
+              aria-label={filename()}
+              onClick={() => dialog.show(() => <ImagePreview src={url()} alt={filename()} />)}
+            >
+              <img src={url()} alt={filename()} draggable={false} />
+            </button>
+          )}
+        </Show>
       </div>
     )
   },

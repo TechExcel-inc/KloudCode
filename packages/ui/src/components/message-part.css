@@ -1269,3 +1269,23 @@
     color: var(--icon-weak);
   }
 }
+
+[data-component="write-tool"] [data-slot="write-image-preview"] {
+  display: inline-flex;
+  margin: 6px 0 2px;
+  padding: 8px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  cursor: zoom-in;
+
+  &:hover {
+    border-color: var(--border-strong-base);
+  }
+
+  img {
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+  }
+}

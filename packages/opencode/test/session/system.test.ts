@@ -3,7 +3,7 @@ import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
-import { SystemPrompt } from "../../src/session/system"
+import { SystemPrompt, visuals } from "../../src/session/system"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
 function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
@@ -11,6 +11,13 @@ function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
 }
 
 describe("session.system", () => {
+  test("tells the desktop app's agent to show visuals inline, not in a browser", () => {
+    const [text] = visuals("desktop")
+    expect(text).toContain("```svg")
+    expect(text).toContain("instead of opening a browser")
+    expect(visuals("cli")).toEqual([])
+  })
+
   test("skills output is sorted by name and stable across calls", async () => {
     await using tmp = await tmpdir({
       git: true,

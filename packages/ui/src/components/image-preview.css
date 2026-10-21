@@ -58,6 +58,12 @@
         object-fit: contain;
         border-radius: var(--radius-md);
       }
+
+      /* SVGs have no fixed pixel size, so give them room to scale up. */
+      [data-slot="image-preview-image"][src^="data:image/svg+xml"] {
+        width: min(100%, calc(90vh - 100px));
+        height: auto;
+      }
     }
   }
 }

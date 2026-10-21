@@ -51,3 +51,22 @@ export default {
 }
 
 export const Basic = story.Basic
+
+const svg = (fill: string, shape: string) =>
+  "```svg\n" + `<svg viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${fill}"/>${shape}</svg>` + "\n```"
+
+export const Images = {
+  args: {
+    text: [
+      "Here are three EAD icon options:",
+      "",
+      "**Option A**, **Option B**, **Option C**",
+      "",
+      svg("#1f6feb", '<text x="32" y="41" font-size="22" text-anchor="middle" fill="#fff" font-family="sans-serif">EAD</text>'),
+      svg("#0e7c66", '<circle cx="32" cy="32" r="16" fill="none" stroke="#fff" stroke-width="5"/>'),
+      svg("#b5482a", '<path d="M18 46 32 16 46 46Z" fill="#fff"/>'),
+      "",
+      "A file outside the project is not shown: ![icon](/tmp/icons/a.svg)",
+    ].join("\n"),
+  },
+}
