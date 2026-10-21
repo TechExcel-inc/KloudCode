@@ -7,6 +7,20 @@ import { Database, eq, asc } from "../storage/db"
 import { TodoTable } from "./session.sql"
 
 export namespace Todo {
+  /** The checklist step the AI is working on in a session, if any. */
+  export function current(sessionID: SessionID): string | undefined {
+    const row = Database.use((db) =>
+      db
+        .select()
+        .from(TodoTable)
+        .where(eq(TodoTable.session_id, sessionID))
+        .orderBy(asc(TodoTable.position))
+        .all()
+        .find((item) => item.status === "in_progress"),
+    )
+    return row?.content
+  }
+
   export const Info = z
     .object({
       content: z.string().describe("Brief description of the task"),

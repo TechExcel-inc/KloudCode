@@ -116,10 +116,22 @@ export type CoworkGatewayCost = {
     providerId: string
     modelId: string
     slotKey: string
+    /** The session that sent it: this session, or a helper agent's session. */
+    sessionUid?: string | null
+    /** The user message (request) it served and the checklist step in progress; empty for older answers. */
+    messageUid?: string | null
+    stepText?: string | null
     promptTokens: number
     cachedTokens: number
     completionTokens: number
     costMicroUsd: number | null
+    /** Prices used, in dollars per 1M tokens, and the cost of each part in millionths of a dollar. */
+    inputPerMillion?: number | null
+    cachedInputPerMillion?: number | null
+    outputPerMillion?: number | null
+    inputCostMicroUsd?: number | null
+    cachedCostMicroUsd?: number | null
+    outputCostMicroUsd?: number | null
     startedAt: string | null
     endedAt: string | null
   }[]

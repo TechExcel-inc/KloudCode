@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { sameChecklist, sessionBackground, sessionTasks } from "./agent-tasks"
+import { costReport, type CostEntry } from "./agent-cost"
 
 const user = (id: string, title?: string, diffs: { file: string; additions: number; deletions: number }[] = []) =>
   ({ id, sessionID: "s", role: "user", time: { created: 1 }, summary: { title, diffs }, agent: "build", model: {} }) as unknown as Message
@@ -93,5 +94,61 @@ describe("sessionBackground", () => {
     const result = sessionBackground(parts)
     expect(result.finished).toBe(2)
     expect(result.running).toEqual([{ id: result.running[0]!.id, title: "Map the engine", started: 50, sessionID: "ses_child" }])
+  })
+})
+
+describe("costReport", () => {
+  const entry = (at: number, cost: number | null, extra: Partial<CostEntry> = {}): CostEntry => ({
+    usageId: at,
+    providerId: "zai",
+    modelId: "glm-5",
+    slotKey: "advanced",
+    sessionUid: "s",
+    promptTokens: 100,
+    cachedTokens: 0,
+    completionTokens: 10,
+    costMicroUsd: cost,
+    startedAt: new Date(at).toISOString(),
+    endedAt: new Date(at + 1000).toISOString(),
+    ...extra,
+  })
+  const asked = (id: string, created: number) => ({ ...user(id), time: { created } }) as unknown as Message
+
+  test("requests group into numbered tasks by step, then Other work, then helpers", () => {
+    const messages = [asked("u1", 1000), reply("a1", "u1"), asked("u2", 5000), reply("a2", "u2"), asked("u3", 9000), reply("a3", "u3")]
+    const parts: Record<string, Part[]> = {
+      u1: [text("u1", "Build the report")],
+      a1: [
+        tool("a1", "todowrite", todos(["Add table", "completed"], ["Add page", "completed"])),
+        tool("a1", "task", { description: "Search the code" }, "completed", { metadata: { sessionId: "child" } }),
+      ],
+      u2: [text("u2", "what is 2+2?")],
+      u3: [text("u3", "Deploy")],
+      a3: [tool("a3", "todowrite", todos(["Back up", "in_progress"]))],
+    }
+    const tasks = sessionTasks(messages, parts)
+    const items = costReport("s", messages, Object.values(parts).flat(), tasks, [
+      entry(1100, 200_000, { messageUid: "u1", stepText: "Add table" }),
+      entry(1200, 300_000, { messageUid: "u1", stepText: "Add page" }),
+      entry(1300, 100_000, { messageUid: "u1", stepText: "Add table" }),
+      entry(1400, 50_000, { sessionUid: "child", messageUid: "c1" }),
+      entry(5100, 400_000, { messageUid: "u2" }),
+      // An older request that does not name its message belongs to the request sent before it.
+      entry(9100, 70_000),
+      entry(9200, null, { messageUid: "u3", stepText: "Back up" }),
+    ])
+    expect(items.map((row) => [row.number, row.kind, row.title, Math.round(row.cost * 100) / 100])).toEqual([
+      [1, "task", "Build the report", 0.6],
+      [2, "task", "Deploy", 0.07],
+      [3, "other", "", 0.4],
+      [4, "helper", "Search the code", 0.05],
+    ])
+    const [build, deploy] = items
+    expect(build!.steps.map((step) => [step.title, step.entries.length, Math.round(step.cost * 10) / 10])).toEqual([
+      ["Add table", 2, 0.3],
+      ["Add page", 1, 0.3],
+    ])
+    expect(deploy!.steps.map((step) => step.title)).toEqual([undefined, "Back up"])
+    expect(deploy!.unpriced).toBe(1)
   })
 })

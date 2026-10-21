@@ -12,6 +12,9 @@ import { PLAN } from "@/ead/plan"
 import { githubRepo } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
 import { AgentCommit } from "./agent-commit"
+import { costReport } from "./agent-cost"
+import { AgentCostReport, costItemTitle } from "./agent-cost-report"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { contextView, formatPercent, formatTokens, type ContextRowKey } from "./agent-context"
 import { OUTPUT_GROUPS, sessionOutputs, type Output, type OutputGroup } from "./agent-outputs"
 import { sessionBackground, sessionTasks, type Task } from "./agent-tasks"
@@ -267,6 +270,7 @@ export function AgentEdits(props: {
   const sdk = useSDK()
   const sync = useSync()
   const cowork = useCowork()
+  const dialog = useDialog()
   const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const [shown, setShown] = createSignal<Partial<Record<OutputGroup, boolean>>>({})
@@ -350,12 +354,19 @@ export function AgentEdits(props: {
     const parts = messages().flatMap((msg) => sync.data.part[msg.id] ?? [])
     return sessionSummary(messages(), now, waitsFor(parts, now), undefined, recorded())
   })
-  const [entriesOpen, setEntriesOpen] = createSignal(false)
-  const clock = (iso?: string | null) =>
-    iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "—"
-  const seconds = (from?: string | null, to?: string | null) =>
-    from && to ? `${Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000))}s` : "—"
   const [costOpen, setCostOpen] = createSignal(false)
+  // Each EAD plan request, by the task, Other work or helper agent it served.
+  const costItems = createMemo(() =>
+    props.session
+      ? costReport(
+          props.session,
+          messages(),
+          messages().flatMap((msg) => sync.data.part[msg.id] ?? []),
+          tasks(),
+          pilotCost.latest?.entries ?? [],
+        )
+      : [],
+  )
   const appCosts = createMemo(() => modelCosts(messages(), PLAN))
   const costText = () => {
     const pilot = pilotCost.latest
@@ -483,48 +494,37 @@ export function AgentEdits(props: {
                   </div>
                 )}
               </For>
-              <Show when={(pilotCost.latest?.entries?.length ?? 0) > 0}>
+              <Show when={costItems().length > 0}>
+                <div data-component="agent-cost-items" class="flex flex-col pt-1">
+                  <For each={costItems()}>
+                    {(item) => (
+                      <div class="h-6 flex items-center gap-2 text-12-regular">
+                        <span class="shrink-0 text-text-weak">#{item.number}</span>
+                        <span class="min-w-0 truncate text-text-strong" title={costItemTitle(item, language.t)}>
+                          {costItemTitle(item, language.t)}
+                        </span>
+                        <span class="ml-auto shrink-0 text-text-strong">{money(item.cost)}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
                 <button
                   type="button"
-                  data-action="agent-cost-entries"
-                  aria-expanded={entriesOpen()}
+                  data-action="agent-cost-report"
                   class="h-6 flex items-center gap-1 text-left text-12-regular text-text-interactive-base"
-                  onClick={() => setEntriesOpen(!entriesOpen())}
+                  onClick={() =>
+                    dialog.show(() => (
+                      <AgentCostReport
+                        items={costItems()}
+                        total={(pilotCost.latest?.costMicroUsd ?? 0) / 1_000_000}
+                        untimed={pilotCost.latest?.untimedRequests ?? 0}
+                        money={money}
+                      />
+                    ))
+                  }
                 >
-                  <Icon name={entriesOpen() ? "chevron-down" : "chevron-right"} size="small" />
-                  {language.t("agent.summary.entries", { count: pilotCost.latest?.entries?.length ?? 0 })}
+                  {language.t("agent.cost.view")}
                 </button>
-                <Show when={entriesOpen()}>
-                  <div data-component="agent-cost-entries" class="max-h-72 overflow-y-auto flex flex-col">
-                    <For each={pilotCost.latest?.entries ?? []}>
-                      {(entry, index) => (
-                        <div class="py-1 border-b border-border-weaker-base text-11-regular">
-                          <div class="flex gap-2 text-text-strong">
-                            <span class="text-text-weak">{index() + 1}.</span>
-                            <span>{clock(entry.startedAt ?? entry.endedAt)}</span>
-                            <span class="text-text-weak">{seconds(entry.startedAt, entry.endedAt)}</span>
-                            <span class="ml-auto">
-                              {entry.costMicroUsd == null ? language.t("agent.summary.notPriced") : money(entry.costMicroUsd / 1_000_000)}
-                            </span>
-                          </div>
-                          <div class="text-text-weak truncate" title={`${entry.providerId} / ${entry.modelId}`}>
-                            {language.t("agent.summary.entry", {
-                              model: `${entry.modelId} · ${entry.slotKey}`,
-                              input: formatTokens(entry.promptTokens),
-                              cached: formatTokens(entry.cachedTokens),
-                              output: formatTokens(entry.completionTokens),
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={(pilotCost.latest?.untimedRequests ?? 0) > 0}>
-                  <div class="text-11-regular text-text-weak">
-                    {language.t("agent.summary.untimed", { count: pilotCost.latest?.untimedRequests ?? 0 })}
-                  </div>
-                </Show>
               </Show>
               <Show when={usesPlan()}>
                 <div class="text-11-regular text-text-weak">

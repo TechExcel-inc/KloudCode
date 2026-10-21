@@ -12,6 +12,8 @@ export type TaskCode = { file: string; additions: number; deletions: number }
 export type Task = {
   id: string
   title: string
+  /** The user messages (requests) this task covers. */
+  requests: string[]
   steps: TaskStep[]
   done: number
   finished: boolean
@@ -117,6 +119,7 @@ export function sessionTasks(messages: Message[], parts: Record<string, Part[] |
       return {
         id: draft.id,
         title: draft.title,
+        requests: draft.requests.map((request) => request.id),
         steps: draft.steps,
         done: draft.steps.filter((step) => step.status === "completed").length,
         finished: draft.steps.every((step) => CLOSED.has(step.status)),

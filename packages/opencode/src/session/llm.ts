@@ -21,11 +21,22 @@ import { SessionID } from "@/session/schema"
 import { Auth } from "@/auth"
 import { Installation } from "@/installation"
 import { makeRuntime } from "@/effect/run-service"
+import { Todo } from "./todo"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
   const perms = makeRuntime(Permission.Service, Permission.defaultLayer)
   export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+
+  /** The checklist step in progress, as a header (URL-encoded, since headers must be ASCII). */
+  function step(sessionID: SessionID): Record<string, string> {
+    try {
+      const text = Todo.current(sessionID)
+      return text ? { "x-sicode-step": encodeURIComponent(text.slice(0, 300)) } : {}
+    } catch {
+      return {}
+    }
+  }
   type Result = Awaited<ReturnType<typeof streamText>>
 
   export type StreamInput = {
@@ -355,6 +366,9 @@ export namespace LLM {
                 : {
                     "x-session-affinity": input.sessionID,
                     ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
+                    // For EAD Pilot's cost records: the request (message) this belongs to and the checklist step in progress.
+                    "x-sicode-message": input.user.id,
+                    ...step(SessionID.make(input.sessionID)),
                     "User-Agent": `opencode/${Installation.VERSION}`,
                   }),
               ...input.model.headers,
