@@ -5,8 +5,6 @@ import { createMemo } from "solid-js"
 
 export const popularProviders = [
   "ead",
-  "opencode",
-  "opencode-go",
   "anthropic",
   "github-copilot",
   "openai",
@@ -15,6 +13,9 @@ export const popularProviders = [
   "vercel",
 ]
 const popularProviderSet = new Set(popularProviders)
+
+/** OpenCode's own model services: they are OpenCode products, and their free tier works only in OpenCode. */
+const HIDDEN = new Set(["opencode", "opencode-go"])
 
 export function providerRank(id: string) {
   const i = popularProviders.indexOf(id)
@@ -26,12 +27,20 @@ export function useProviders() {
   const globalSync = useGlobalSync()
   const params = useParams()
   const dir = createMemo(() => decode64(params.dir) ?? "")
-  const providers = () => {
+  const source = () => {
     if (dir()) {
       const [projectStore] = globalSync.child(dir())
       if (projectStore.provider_ready) return projectStore.provider
     }
     return globalSync.data.provider
+  }
+  const providers = () => {
+    const value = source()
+    return {
+      ...value,
+      all: value.all.filter((p) => !HIDDEN.has(p.id)),
+      connected: value.connected.filter((id) => !HIDDEN.has(id)),
+    }
   }
   return {
     all: () => providers().all,

@@ -3,8 +3,10 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { type as ostype } from "@tauri-apps/plugin-os"
 import { relaunch } from "@tauri-apps/plugin-process"
 import { commands } from "./bindings"
-import { installCli } from "./cli"
 import { initI18n, t } from "./i18n"
+
+/** EAD SiCode's online help on eadfm.com. */
+const HELP_URL = "https://eadfm.com/sicode/"
 import { runUpdater, UPDATER_ENABLED } from "./updater"
 
 export async function createMenu(trigger: (id: string) => void) {
@@ -24,10 +26,6 @@ export async function createMenu(trigger: (id: string) => void) {
             enabled: UPDATER_ENABLED,
             action: () => runUpdater({ alertOnFail: true }),
             text: t("desktop.menu.checkForUpdates"),
-          }),
-          await MenuItem.new({
-            action: () => installCli(),
-            text: t("desktop.menu.installCli"),
           }),
           await MenuItem.new({
             action: async () => window.location.reload(),
@@ -156,31 +154,10 @@ export async function createMenu(trigger: (id: string) => void) {
       await Submenu.new({
         text: t("desktop.menu.help"),
         items: [
-          // missing native macos search
+          // EAD SiCode's help lives on its page at eadfm.com; there is no public forum or issue tracker.
           await MenuItem.new({
-            action: () => openUrl("https://opencode.ai/docs"),
+            action: () => openUrl(HELP_URL),
             text: t("desktop.menu.help.documentation"),
-          }),
-          await MenuItem.new({
-            action: () => openUrl("https://discord.com/invite/opencode"),
-            text: t("desktop.menu.help.supportForum"),
-          }),
-          await PredefinedMenuItem.new({
-            item: "Separator",
-          }),
-          // await MenuItem.new({
-          //   text: "Release Notes",
-          // }),
-          await PredefinedMenuItem.new({
-            item: "Separator",
-          }),
-          await MenuItem.new({
-            action: () => openUrl("https://github.com/anomalyco/opencode/issues/new?template=feature_request.yml"),
-            text: t("desktop.menu.help.shareFeedback"),
-          }),
-          await MenuItem.new({
-            action: () => openUrl("https://github.com/anomalyco/opencode/issues/new?template=bug_report.yml"),
-            text: t("desktop.menu.help.reportBug"),
           }),
         ],
       }),

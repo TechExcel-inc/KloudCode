@@ -38,7 +38,7 @@ export const dict = {
   "desktop.menu.view.forward": "下一步",
   "desktop.menu.view.previousSession": "上一個工作階段",
   "desktop.menu.view.nextSession": "下一個工作階段",
-  "desktop.menu.help.documentation": "EAD SiCode 文件",
+  "desktop.menu.help.documentation": "EAD SiCode 線上說明",
   "desktop.menu.help.supportForum": "支援論壇",
   "desktop.menu.help.shareFeedback": "分享意見回饋",
   "desktop.menu.help.reportBug": "回報錯誤",

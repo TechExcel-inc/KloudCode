@@ -8,6 +8,8 @@ import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
 
 const CHANGELOG_URL = "https://opencode.ai/changelog.json"
+/** Off until EAD SiCode publishes its own release notes. */
+const RELEASE_NOTES = false
 
 type Store = {
   version?: string
@@ -165,7 +167,8 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
     }
 
     const start = (previous: string) => {
-      if (!settings.general.releaseNotes()) {
+      // EAD SiCode has no release-notes feed yet, and OpenCode's notes describe a different product.
+      if (!RELEASE_NOTES || !settings.general.releaseNotes()) {
         markSeen()
         return
       }

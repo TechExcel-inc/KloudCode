@@ -94,6 +94,7 @@ import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
 import { setProjectActions } from "./layout/project-actions"
 import { AllSessions } from "./layout/sidebar-sessions"
 import { type Nav } from "@/context/layout"
+import { HELP_URL } from "@/components/about-popover"
 import { EAD_MAP_ID, EAD_MAP_WIDTH, EAD_PILOT_ID, EAD_PILOT_WIDTH } from "@/ead/urls"
 
 export default function Layout(props: ParentProps) {
@@ -2412,8 +2413,8 @@ export default function Layout(props: ParentProps) {
             <DropdownMenu.Item onSelect={openSettings}>
               <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => platform.openLink("https://opencode.ai/desktop-feedback")}>
-              <DropdownMenu.ItemLabel>{language.t("rail.feedback")}</DropdownMenu.ItemLabel>
+            <DropdownMenu.Item onSelect={() => platform.openLink(HELP_URL)}>
+              <DropdownMenu.ItemLabel>{language.t("about.help")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

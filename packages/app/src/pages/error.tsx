@@ -6,6 +6,7 @@ import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { Icon } from "@opencode-ai/ui/icon"
+import { HELP_URL } from "@/components/about-popover"
 import type { E2EWindow } from "@/testing/terminal"
 
 export type InitError = {
@@ -309,10 +310,9 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
             <button
               type="button"
               class="flex items-center text-text-interactive-base gap-1"
-              onClick={() => platform.openLink("https://opencode.ai/desktop-feedback")}
+              onClick={() => platform.openLink(HELP_URL)}
             >
               <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
             </button>
           </div>
           <Show when={platform.version}>

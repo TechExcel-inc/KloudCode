@@ -17,7 +17,7 @@ export const dict = {
   "desktop.menu.view.forward": "Forward",
   "desktop.menu.view.previousSession": "Previous Session",
   "desktop.menu.view.nextSession": "Next Session",
-  "desktop.menu.help.documentation": "EAD SiCode Documentation",
+  "desktop.menu.help.documentation": "EAD SiCode Online Help",
   "desktop.menu.help.supportForum": "Support Forum",
   "desktop.menu.help.shareFeedback": "Share Feedback",
   "desktop.menu.help.reportBug": "Report a Bug",
