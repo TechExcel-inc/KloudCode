@@ -734,6 +734,7 @@ export const dict = {
   "agent.summary.breakdownPilot": "{{count}} 次回答 · {{time}} · 输入 {{input}}（缓存 {{cached}}）· 输出 {{output}}",
   "agent.summary.entries": "显示全部 {{count}} 条记录",
   "agent.cost.view": "查看费用报告",
+  "agent.cost.grandTotal": "合计",
   "agent.cost.col.entries": "LLM 请求记录",
   "agent.cost.session": "所选会话：",
   "agent.cost.finished": "完成于 {{time}}",

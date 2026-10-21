@@ -169,6 +169,15 @@ export function AgentCostReport(props: {
                 </section>
               )}
             </For>
+            <div
+              data-slot="agent-cost-report-total"
+              class={`${GRID} items-center px-3 py-2 border-t-2 border-border-weak-base text-11-regular text-text-strong`}
+            >
+              <span class="text-13-medium">
+                {language.t("agent.cost.grandTotal")} · {language.t("agent.cost.requests", { count: requests })}
+              </span>
+              {totals(props.items.flatMap((item) => item.entries))}
+            </div>
             <Show when={props.untimed > 0}>
               <p class="text-text-weak">{language.t("agent.summary.untimed", { count: props.untimed })}</p>
             </Show>

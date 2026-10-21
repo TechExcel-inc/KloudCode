@@ -820,6 +820,7 @@ export const dict = {
   "agent.summary.breakdownPilot": "{{count}} answers · {{time}} · {{input}} in ({{cached}} cached) · {{output}} out",
   "agent.summary.entries": "Show all {{count}} entries",
   "agent.cost.view": "View Cost Report",
+  "agent.cost.grandTotal": "Total",
   "agent.cost.col.entries": "LLM request entries",
   "agent.cost.session": "Selected session:",
   "agent.cost.finished": "finished {{time}}",

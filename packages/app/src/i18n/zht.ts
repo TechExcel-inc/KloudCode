@@ -722,6 +722,7 @@ export const dict = {
   "agent.summary.breakdownPilot": "{{count}} 次回答 · {{time}} · 輸入 {{input}}（快取 {{cached}}）· 輸出 {{output}}",
   "agent.summary.entries": "顯示全部 {{count}} 筆記錄",
   "agent.cost.view": "查看費用報告",
+  "agent.cost.grandTotal": "合計",
   "agent.cost.col.entries": "LLM 請求記錄",
   "agent.cost.session": "所選工作階段：",
   "agent.cost.finished": "完成於 {{time}}",
