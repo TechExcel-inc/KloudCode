@@ -64,7 +64,7 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
           <span class="text-text-strong">{language.t("agent.cost.total", { cost: props.money(props.total) })}</span>
           <span class="text-text-weak">{language.t("agent.cost.requests", { count: requests })}</span>
         </div>
-        <p class="text-text-weak">{language.t("agent.cost.explain")}</p>
+        <p class="truncate text-text-weak" title={language.t("agent.cost.explain")}>{language.t("agent.cost.explain")}</p>
         <div data-slot="agent-cost-report-list" class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1">
         <For each={props.items}>
           {(item) => (
