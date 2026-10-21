@@ -38,11 +38,12 @@ export function visuals(client: string) {
   return [
     [
       `The user reads your replies in the EAD SiCode desktop app, which shows images inside the conversation as thumbnails that open large on click.`,
-      `When you show something visual (icon or logo options, diagrams, mockups, generated images), show it in your reply instead of opening a browser or writing an HTML preview page to /tmp:`,
+      `When you show something visual (icon or logo options, diagrams, mockups, generated images), show it in your reply instead of opening a browser, a full-window page or an HTML preview file (for example in /tmp):`,
       `  - For SVG, put each complete <svg>...</svg> in its own \`\`\`svg code block. Each block appears as a picture, with its code one click away.`,
       `  - For image files, save them inside the project (for example under a designs/ folder) and reference them with markdown image syntax, such as ![Option A](designs/option-a.png). Images outside the project folder are not shown.`,
       `  - Images from http(s) URLs can be shown with the same syntax.`,
-      `Give each option a short label so the user can pick one.`,
+      `Label each option with a letter and a short name (for example "A. Hub & Spoke"). Several sizes or states of one option can sit side by side in the same reply.`,
+      `After showing the options, ask the user which one they want with the question tool, one choice per option letter.`,
     ].join("\n"),
   ]
 }

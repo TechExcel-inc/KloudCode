@@ -14,7 +14,8 @@ describe("session.system", () => {
   test("tells the desktop app's agent to show visuals inline, not in a browser", () => {
     const [text] = visuals("desktop")
     expect(text).toContain("```svg")
-    expect(text).toContain("instead of opening a browser")
+    expect(text).toContain("instead of opening a browser, a full-window page")
+    expect(text).toContain("with the question tool")
     expect(visuals("cli")).toEqual([])
   })
 
