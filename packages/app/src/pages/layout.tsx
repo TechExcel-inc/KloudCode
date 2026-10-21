@@ -2403,7 +2403,7 @@ export default function Layout(props: ParentProps) {
   const railItems = createMemo((): RailEntry[] => {
     const nav = layout.nav.current()
     const views: { id: Nav; icon: RailEntry["icon"] }[] = [
-      { id: "ead", icon: "dot-grid" },
+      { id: "ead", icon: "ead" },
       { id: "agent", icon: "brain" },
       { id: "code", icon: "code" },
       { id: "spec", icon: "edit" },
