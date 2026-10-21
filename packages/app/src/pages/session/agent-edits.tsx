@@ -8,9 +8,8 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useCowork } from "@/context/cowork"
-import { useLayout } from "@/context/layout"
 import { useEad } from "@/ead/settings"
-import { EAD_MAP_ID, EAD_MAP_WIDTH } from "@/ead/urls"
+import { useEadSignIn } from "@/components/ead-sign-in"
 import { PLAN } from "@/ead/plan"
 import { githubRepo } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
@@ -274,7 +273,7 @@ export function AgentEdits(props: {
   const sync = useSync()
   const cowork = useCowork()
   const ead = useEad()
-  const layout = useLayout()
+  const openSignIn = useEadSignIn()
   const dialog = useDialog()
   const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -382,10 +381,7 @@ export function AgentEdits(props: {
   const appCosts = createMemo(() => modelCosts(messages(), PLAN))
   // EAD plan costs are kept by EAD Pilot; signed out, the app cannot read them, so it asks to sign in.
   const signedOut = createMemo(() => usesPlan() && !ead.token().trim())
-  const signIn = () => {
-    layout.nav.set("ead")
-    layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH)
-  }
+  const signIn = () => openSignIn()
   const costText = () => {
     if (signedOut()) return language.t("agent.summary.signIn")
     const pilot = pilotCost.latest

@@ -92,6 +92,7 @@ import {
 import { type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent, type RailEntry } from "./layout/sidebar-shell"
 import { RailAccount, RailItem, RailUsage } from "./layout/sidebar-rail"
+import { useEadSignIn } from "@/components/ead-sign-in"
 import { setProjectActions } from "./layout/project-actions"
 import { AllSessions } from "./layout/sidebar-sessions"
 import { type Nav } from "@/context/layout"
@@ -134,6 +135,7 @@ export default function Layout(props: ParentProps) {
   setNavigate(navigate)
   const providers = useProviders()
   const dialog = useDialog()
+  const openEadSignIn = useEadSignIn()
   const command = useCommand()
   const theme = useTheme()
   const language = useLanguage()
@@ -2424,7 +2426,7 @@ export default function Layout(props: ParentProps) {
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu>
-      <RailAccount mobile={mobile} onSignIn={() => go("ead")} />
+      <RailAccount mobile={mobile} onSignIn={() => openEadSignIn()} />
     </>
   )
 

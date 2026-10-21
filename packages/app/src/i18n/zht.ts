@@ -611,6 +611,7 @@ export const dict = {
   "rail.project.current": "目前專案：{{project}}",
   "rail.project.search": "搜尋專案",
   "rail.project.none": "沒有最近使用的專案",
+  "ead.signIn.title": "登入 EAD Pilot",
   "cowork.github.title": "連接 GitHub",
   "cowork.github.intro": "EAD SiCode 依 GitHub 儲存庫開啟專案。請登入一次 GitHub，讓 EAD Pilot 確認您可存取的儲存庫。",
   "cowork.github.code": "請在 GitHub 上輸入此代碼：",

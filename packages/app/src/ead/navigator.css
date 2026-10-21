@@ -3239,3 +3239,18 @@
 [data-ead-map] .bg-surface-base-active {
   background: rgba(148, 163, 184, 0.15) !important;
 }
+
+/* The sign-in card carries its own data-ead-map root; inside the EAD Map panel it stays see-through. */
+[data-ead-map] [data-ead-map].ead-sign-in {
+  background: transparent;
+}
+
+/* The sign-in popup: the dark EAD surface behind the card, inside the app dialog. */
+.dialog-ead-sign-in [data-ead-map].ead-sign-in {
+  border-radius: 12px;
+  padding: 4px 12px;
+}
+
+.dialog-ead-sign-in [data-ead-map] .auth-card {
+  margin: 12px auto;
+}

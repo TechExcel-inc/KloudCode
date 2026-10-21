@@ -623,6 +623,7 @@ export const dict = {
   "rail.project.current": "当前项目：{{project}}",
   "rail.project.search": "搜索项目",
   "rail.project.none": "没有最近使用的项目",
+  "ead.signIn.title": "登录 EAD Pilot",
   "cowork.github.title": "连接 GitHub",
   "cowork.github.intro": "EAD SiCode 按 GitHub 仓库打开项目。请登录一次 GitHub，以便 EAD Pilot 确认您可以访问的仓库。",
   "cowork.github.code": "请在 GitHub 上输入此代码：",

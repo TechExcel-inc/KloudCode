@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -28,17 +28,12 @@ import {
   loadSourceSchema,
   loadSubtreePaths,
   loadTeamMembers,
-  login,
   me,
   productRole,
-  resetPassword,
   saveRunPrefs,
   saveSourceExpanded,
   selectSourcePath,
-  sendCode,
-  signup,
   suggestProduct,
-  verifyCode,
   type Group,
   type PfmNode,
   type Product,
@@ -77,17 +72,10 @@ import {
   rollupCounts,
   type SourceNode,
 } from "@/ead/source-tree"
-import { looksLikeProviderApiKey, tokenExpired } from "@/ead/auth"
+import { tokenExpired } from "@/ead/auth"
+import { EadSignInCard } from "@/components/ead-sign-in"
 import { EAD_MAP_ID, EAD_MAP_MAX, EAD_MAP_MIN, EAD_MAP_WIDTH, EAD_PILOT_ID, eadApi } from "@/ead/urls"
 
-type AuthTab =
-  | "signin"
-  | "signup-start"
-  | "signup-verify"
-  | "signup-create"
-  | "forgot"
-  | "forgot-reset"
-  | "forgot-success"
 type Hint = { productId: number; name: string }
 type Banner = { kind: "loading" | "ok" | "error"; text: string }
 type Menu =
@@ -104,69 +92,8 @@ type Menu =
   | "scope"
   | "owner"
 
-const field = "ead-field"
 const SOFT_GAP = 120_000
 
-function AuthPass(props: {
-  value: string
-  show: boolean
-  placeholder: string
-  onInput: (v: string) => void
-  onToggle: () => void
-  onEnter?: () => void
-  name?: string
-  complete?: string
-}) {
-  let el: HTMLInputElement | undefined
-  const sync = () => {
-    if (!el) return
-    const next = el.value
-    if (looksLikeProviderApiKey(next)) {
-      el.value = props.value && !looksLikeProviderApiKey(props.value) ? props.value : ""
-      return
-    }
-    if (next !== props.value) props.onInput(next)
-  }
-  onMount(() => {
-    if (el && !el.value && props.value) el.value = props.value
-    queueMicrotask(sync)
-    requestAnimationFrame(sync)
-  })
-  return (
-    <div class="auth-input-wrap">
-      <input
-        ref={el}
-        type={props.show ? "text" : "password"}
-        class={field}
-        name={props.name}
-        autocomplete={props.complete}
-        placeholder={props.placeholder}
-        onInput={sync}
-        onChange={sync}
-        onFocus={sync}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || !props.onEnter) return
-          e.preventDefault()
-          sync()
-          props.onEnter()
-        }}
-      />
-      <button
-        type="button"
-        class="auth-eye"
-        onClick={() => {
-          const keep = el?.value ?? ""
-          props.onToggle()
-          queueMicrotask(() => {
-            if (el && keep && el.value !== keep) el.value = keep
-          })
-        }}
-      >
-        {props.show ? "◌" : "◎"}
-      </button>
-    </div>
-  )
-}
 const drop = "ead-drop"
 
 const IconSpark = () => (
@@ -774,17 +701,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [email, setEmail] = createSignal("")
   const [plans, setPlans] = createSignal<Plan[]>([])
   const [planOn, setPlanOn] = createSignal(true)
-  const [tab, setTab] = createSignal<AuthTab>("signin")
-  const [id, setId] = createSignal("")
-  const [pass, setPass] = createSignal("")
-  const [showPass, setShowPass] = createSignal(false)
-  const [showConfirm, setShowConfirm] = createSignal(false)
-  const [target, setTarget] = createSignal("")
-  const [code, setCode] = createSignal("")
-  const [username, setUsername] = createSignal("")
-  const [signupToken, setSignupToken] = createSignal("")
-  const [newPass, setNewPass] = createSignal("")
-  const [confirmPass, setConfirmPass] = createSignal("")
   const [userId, setUserId] = createSignal(0)
   const [tenantId, setTenantId] = createSignal(0)
   const [pipelineTick, setPipelineTick] = createSignal(0)
@@ -802,7 +718,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const [pulse, setPulse] = createSignal(0)
   const [overlay, setOverlay] = createSignal(false)
   const [editOpen, setEditOpen] = createSignal(false)
-  const [via, setVia] = createSignal<"email" | "phone">("email")
 
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let pulseTimer: ReturnType<typeof setTimeout> | undefined
@@ -1026,12 +941,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
             : tx("badgeNone")
     const scope = ead.jobsOnly() ? tx("scopeFiltered") : tx("scopeAll")
     return `${tx("jobFilterPrefix")}${badge} · ${scope}`
-  }
-
-  const soon = (name: string) => {
-    const msg = tx("comingSoon", { name })
-    setErr(msg)
-    showToast({ title: "EAD", description: msg })
   }
 
   const fillPaths = async (ids: number[], pid: number) => {
@@ -1407,7 +1316,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
         if (!live()) return
         ead.clearToken()
         setOverlay(true)
-        setTab("signin")
         setUser("")
         setEmail("")
         setPlans([])
@@ -1740,11 +1648,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
   const afterAuth = async (token: string) => {
     ead.setToken(token)
     setOverlay(false)
-    setPass("")
-    setNewPass("")
-    setConfirmPass("")
-    setCode("")
-    setSignupToken("")
     await refresh()
     const entry = await ensureEadMcp({
       client: sdk.client,
@@ -1775,115 +1678,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     await loadOwnerMembers()
   }
 
-  const onLogin = async (user = id(), secret = pass()) => {
-    const name = user.trim()
-    if (looksLikeProviderApiKey(secret)) {
-      setPass("")
-      setErr(tx("notPassword"))
-      return
-    }
-    setId(name)
-    setPass(secret)
-    setBusy(true)
-    setErr("")
-    try {
-      await afterAuth(await login(name, secret, http()))
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const submitLogin = (e: Event) => {
-    e.preventDefault()
-    const form = e.currentTarget
-    if (!(form instanceof HTMLFormElement)) return
-    const data = new FormData(form)
-    void onLogin(String(data.get("username") ?? ""), String(data.get("password") ?? ""))
-  }
-
-  const onSendCode = async (intent: "signup" | "reset") => {
-    setBusy(true)
-    setErr("")
-    try {
-      const result = await sendCode(target(), intent, http())
-      showToast({ title: "EAD", description: result.message, variant: "success" })
-      if (result.code) setCode(result.code)
-      setTab(intent === "signup" ? "signup-verify" : "forgot-reset")
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onVerify = async () => {
-    setBusy(true)
-    setErr("")
-    try {
-      setSignupToken(await verifyCode(target(), code(), http()))
-      showToast({ title: "EAD", description: "Code verified.", variant: "success" })
-      setTab("signup-create")
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onSignup = async () => {
-    if (pass() !== confirmPass()) {
-      setErr(tx("mismatch"))
-      return
-    }
-    setBusy(true)
-    setErr("")
-    try {
-      await afterAuth(
-        await signup(
-          {
-            target: target(),
-            username: username(),
-            password: pass(),
-            signupToken: signupToken(),
-          },
-          http(),
-        ),
-      )
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onReset = async () => {
-    if (newPass() !== confirmPass()) {
-      setErr(tx("mismatch"))
-      return
-    }
-    setBusy(true)
-    setErr("")
-    try {
-      const message = await resetPassword(
-        {
-          target: target(),
-          code: code(),
-          password: newPass(),
-        },
-        http(),
-      )
-      showToast({ title: "EAD", description: message, variant: "success" })
-      setTab("forgot-success")
-      setId(target())
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const onSignOut = () => {
     void clearEadMcp({
       client: sdk.client,
@@ -1909,7 +1703,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setBanner(null)
     setQuery("")
     setErr("")
-    setTab("signin")
     closeMenus()
   }
 
@@ -1998,7 +1791,6 @@ export function EadMapPanel(props: { sizing: Sizing }) {
     setPendingOwner(true)
     closeMenus()
     setOverlay(true)
-    setTab("signin")
   }
 
   const writeOwnerChoice = (next: Parameters<typeof writeOwner>[1]) => {
@@ -2117,241 +1909,7 @@ export function EadMapPanel(props: { sizing: Sizing }) {
             </Show>
             <Show when={!ead.token()}>
               <div class="login-panel" classList={{ "login-panel--overlay": overlay() }}>
-                <div class="auth-card">
-                  <div class="auth-brand">
-                    <span aria-hidden="true">▣</span>
-                    <span>EAD-PFM</span>
-                    <span class="auth-top-actions">
-                      <span class="auth-chip">?</span>
-                      <span class="auth-chip">{lang().toUpperCase()}</span>
-                      <span class="auth-chip">◐</span>
-                    </span>
-                  </div>
-                  <Show when={tab() === "signin"}>
-                    <form class="auth-form" autocomplete="on" onSubmit={submitLogin}>
-                      <p class="auth-title">{tx("signIn")}</p>
-                      <div class="auth-label-row">
-                        <label class="auth-label">{tx("idPlaceholder")}</label>
-                      </div>
-                      <input
-                        class={field}
-                        name="username"
-                        autocomplete="username"
-                        placeholder={tx("idPlaceholder")}
-                        ref={(node) => {
-                          if (!node.value && id()) node.value = id()
-                        }}
-                        onInput={(e) => setId(e.currentTarget.value)}
-                        onChange={(e) => setId(e.currentTarget.value)}
-                      />
-                      <div class="auth-label-row">
-                        <label class="auth-label">{tx("password")}</label>
-                        <button type="button" class="auth-link" onClick={() => setTab("forgot")}>
-                          {tx("forgot")}
-                        </button>
-                      </div>
-                      <AuthPass
-                        value={pass()}
-                        show={showPass()}
-                        placeholder={tx("password")}
-                        name="password"
-                        complete="current-password"
-                        onInput={setPass}
-                        onToggle={() => setShowPass((v) => !v)}
-                      />
-                      <button type="submit" class="auth-primary" disabled={busy()}>
-                        {tx("signIn")}
-                      </button>
-                    </form>
-                    <div class="auth-divider">{tx("orContinue")}</div>
-                    <div class="auth-oauth">
-                      <button type="button" onClick={() => soon("Google")}>
-                        {tx("google")}
-                      </button>
-                      <button type="button" onClick={() => soon("GitHub")}>
-                        {tx("github")}
-                      </button>
-                    </div>
-                    <p class="auth-muted" style={{ "margin-top": "16px", "margin-bottom": 0 }}>
-                      {tx("noAccount")}{" "}
-                      <button type="button" class="auth-link" onClick={() => setTab("signup-start")}>
-                        {tx("signUp")}
-                      </button>
-                    </p>
-                  </Show>
-
-                  <Show when={tab() === "signup-start"}>
-                    <p class="auth-title">{tx("signUp")}</p>
-                    <p class="auth-hint">{tx("signUpHint")}</p>
-                    <div class="auth-actions-row" style={{ "margin-bottom": "12px" }}>
-                      <button
-                        type="button"
-                        class="auth-secondary"
-                        classList={{ "is-active": via() === "email" }}
-                        onClick={() => setVia("email")}
-                      >
-                        {tx("viaEmail")}
-                      </button>
-                      <button
-                        type="button"
-                        class="auth-secondary"
-                        classList={{ "is-active": via() === "phone" }}
-                        onClick={() => setVia("phone")}
-                      >
-                        {tx("viaPhone")}
-                      </button>
-                    </div>
-                    <input
-                      class={field}
-                      type={via() === "phone" ? "tel" : "email"}
-                      placeholder={tx("targetPlaceholder")}
-                      value={target()}
-                      onInput={(e) => setTarget(e.currentTarget.value)}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onSendCode("signup")}>
-                      {tx("sendCode")}
-                    </button>
-                    <div class="auth-oauth">
-                      <button type="button" onClick={() => soon("Google")}>
-                        {tx("google")}
-                      </button>
-                      <button type="button" onClick={() => soon("GitHub")}>
-                        {tx("github")}
-                      </button>
-                    </div>
-                    <button type="button" class="auth-link self-start" onClick={() => setTab("signin")}>
-                      {tx("backSignIn")}
-                    </button>
-                  </Show>
-
-                  <Show when={tab() === "signup-verify"}>
-                    <p class="auth-title">{tx("verify")}</p>
-                    <p class="auth-hint">{tx("verifyHint", { target: target() })}</p>
-                    <p class="auth-code-hint">{tx("codePlaceholder")}</p>
-                    <input
-                      class={field}
-                      placeholder={tx("codePlaceholder")}
-                      value={code()}
-                      onInput={(e) => setCode(e.currentTarget.value)}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onVerify()}>
-                      {tx("verify")}
-                    </button>
-                    <button
-                      type="button"
-                      class="auth-link self-start"
-                      onClick={() => setTab("signup-start")}
-                    >
-                      {tx("back")}
-                    </button>
-                  </Show>
-
-                  <Show when={tab() === "signup-create"}>
-                    <p class="auth-title">{tx("createAccount")}</p>
-                    <input
-                      class={field}
-                      placeholder={tx("username")}
-                      value={username()}
-                      onInput={(e) => setUsername(e.currentTarget.value)}
-                    />
-                    <AuthPass
-                      value={pass()}
-                      show={showPass()}
-                      placeholder={tx("password")}
-                      onInput={setPass}
-                      onToggle={() => setShowPass((v) => !v)}
-                      onEnter={() => void onSignup()}
-                    />
-                    <AuthPass
-                      value={confirmPass()}
-                      show={showConfirm()}
-                      placeholder={tx("confirmPassword")}
-                      onInput={setConfirmPass}
-                      onToggle={() => setShowConfirm((v) => !v)}
-                      onEnter={() => void onSignup()}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy() || !signupToken()} onClick={() => void onSignup()}>
-                      {tx("create")}
-                    </button>
-                  </Show>
-
-                  <Show when={tab() === "forgot"}>
-                    <p class="auth-title">{tx("forgotTitle")}</p>
-                    <div class="auth-actions-row" style={{ "margin-bottom": "12px" }}>
-                      <button
-                        type="button"
-                        class="auth-secondary"
-                        classList={{ "is-active": via() === "email" }}
-                        onClick={() => setVia("email")}
-                      >
-                        {tx("viaEmail")}
-                      </button>
-                      <button
-                        type="button"
-                        class="auth-secondary"
-                        classList={{ "is-active": via() === "phone" }}
-                        onClick={() => setVia("phone")}
-                      >
-                        {tx("viaPhone")}
-                      </button>
-                    </div>
-                    <input
-                      class={field}
-                      type={via() === "phone" ? "tel" : "email"}
-                      placeholder={tx("targetPlaceholder")}
-                      value={target()}
-                      onInput={(e) => setTarget(e.currentTarget.value)}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onSendCode("reset")}>
-                      {tx("sendCode")}
-                    </button>
-                    <button type="button" class="auth-link self-start" onClick={() => setTab("signin")}>
-                      {tx("backSignIn")}
-                    </button>
-                  </Show>
-
-                  <Show when={tab() === "forgot-reset"}>
-                    <p class="auth-title">{tx("resetTitle")}</p>
-                    <p class="auth-code-hint">{tx("verifyHint", { target: target() })}</p>
-                    <input
-                      class={field}
-                      placeholder={tx("codePlaceholder")}
-                      value={code()}
-                      onInput={(e) => setCode(e.currentTarget.value)}
-                    />
-                    <AuthPass
-                      value={newPass()}
-                      show={showPass()}
-                      placeholder={tx("newPassword")}
-                      onInput={setNewPass}
-                      onToggle={() => setShowPass((v) => !v)}
-                      onEnter={() => void onReset()}
-                    />
-                    <AuthPass
-                      value={confirmPass()}
-                      show={showConfirm()}
-                      placeholder={tx("confirmPassword")}
-                      onInput={setConfirmPass}
-                      onToggle={() => setShowConfirm((v) => !v)}
-                      onEnter={() => void onReset()}
-                    />
-                    <button type="button" class="auth-primary" disabled={busy()} onClick={() => void onReset()}>
-                      {tx("resetPassword")}
-                    </button>
-                  </Show>
-
-                  <Show when={tab() === "forgot-success"}>
-                    <p class="auth-title">{tx("passwordUpdated")}</p>
-                    <p class="auth-success">{tx("passwordUpdatedHint")}</p>
-                    <button type="button" class="auth-primary" onClick={() => setTab("signin")}>
-                      {tx("backSignIn")}
-                    </button>
-                  </Show>
-
-                  <Show when={err()}>
-                    <p class="auth-error">{err()}</p>
-                  </Show>
-                </div>
+                <EadSignInCard onSignedIn={afterAuth} message={err()} />
               </div>
             </Show>
             <Show when={ead.token() || overlay()}>

@@ -709,6 +709,7 @@ export const dict = {
   "rail.project.current": "Current project: {{project}}",
   "rail.project.search": "Search projects",
   "rail.project.none": "No recent projects",
+  "ead.signIn.title": "Sign in to EAD Pilot",
   "cowork.github.title": "Connect GitHub",
   "cowork.github.intro": "EAD SiCode opens projects by their GitHub repository. Sign in to GitHub once so EAD Pilot can confirm the repositories you can access.",
   "cowork.github.code": "Enter this code on GitHub:",
