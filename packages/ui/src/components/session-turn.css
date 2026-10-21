@@ -228,3 +228,122 @@
 [data-slot="session-turn-list"] {
   gap: 48px;
 }
+
+[data-component="session-turn-checklist"] {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: 20px;
+
+  [data-slot="session-turn-checklist-header"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-strong);
+    font-weight: var(--font-weight-medium);
+  }
+
+  [data-slot="session-turn-checklist-progress"] {
+    margin-left: auto;
+    color: var(--text-weak);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="session-turn-checklist-steps"] {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  [data-slot="session-turn-checklist-step"] {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    color: var(--text-base);
+    user-select: text;
+  }
+
+  [data-slot="session-turn-checklist-marker"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-weak);
+  }
+
+  [data-slot="session-turn-checklist-content"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  [data-status="in_progress"] {
+    color: var(--text-strong);
+    [data-slot="session-turn-checklist-marker"] {
+      color: var(--icon-interactive-base);
+    }
+  }
+
+  [data-status="completed"] [data-slot="session-turn-checklist-marker"] {
+    color: var(--icon-success-base);
+  }
+
+  [data-status="completed"] [data-slot="session-turn-checklist-content"] {
+    color: var(--text-weak);
+  }
+
+  [data-status="cancelled"] [data-slot="session-turn-checklist-content"] {
+    color: var(--text-weaker);
+    text-decoration: line-through;
+  }
+}
+
+[data-component="session-turn-live-status"] {
+  color: var(--text-weaker);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-component="turn-actions-fold"] {
+  width: 100%;
+  min-width: 0;
+
+  [data-slot="turn-actions-fold-trigger"] {
+    min-height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-weak);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+  }
+
+  /* The fold always shows its arrow, so a folded line reads as something to open. */
+  [data-slot="collapsible-arrow"] {
+    opacity: 1;
+  }
+
+  [data-slot="turn-actions-fold-trigger"] {
+    cursor: pointer;
+  }
+
+  [data-slot="turn-actions-fold-list"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 4px;
+  }
+}

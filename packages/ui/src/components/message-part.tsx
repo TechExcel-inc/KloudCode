@@ -11,6 +11,7 @@ import {
   onCleanup,
   Index,
   type JSX,
+  type ParentProps,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
@@ -55,6 +56,7 @@ import { TextShimmer } from "./text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
+import { foldActions, isFoldedAction } from "./session-turn-activity"
 import { animate } from "motion"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
@@ -498,12 +500,17 @@ type PartGroup =
       type: "context"
       refs: PartRef[]
     }
+  | {
+      key: string
+      type: "actions"
+      groups: PartGroup[]
+    }
 
 function sameRef(a: PartRef, b: PartRef) {
   return a.messageID === b.messageID && a.partID === b.partID
 }
 
-function sameGroup(a: PartGroup, b: PartGroup) {
+function sameGroup(a: PartGroup, b: PartGroup): boolean {
   if (a === b) return true
   if (a.key !== b.key) return false
   if (a.type !== b.type) return false
@@ -511,12 +518,16 @@ function sameGroup(a: PartGroup, b: PartGroup) {
     if (b.type !== "part") return false
     return sameRef(a.ref, b.ref)
   }
+  if (a.type === "actions") {
+    if (b.type !== "actions") return false
+    return sameGroups(a.groups, b.groups)
+  }
   if (b.type !== "context") return false
   if (a.refs.length !== b.refs.length) return false
   return a.refs.every((ref, i) => sameRef(ref, b.refs[i]!))
 }
 
-function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined) {
+function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined): boolean {
   if (a === b) return true
   if (!a || !b) return false
   if (a.length !== b.length) return false
@@ -567,6 +578,21 @@ function groupParts(parts: { messageID: string; part: PartType }[]) {
   return result
 }
 
+/** Groups a turn's parts with every folded tool call collected into one "actions" group. */
+function foldParts(parts: { messageID: string; part: PartType }[]) {
+  return foldActions(parts, (item) => isFoldedAction(item.part)).flatMap((entry): PartGroup[] => {
+    if (entry.type === "item") return groupParts([entry.item])
+    const first = entry.items[0]!
+    return [{ key: `actions:${first.messageID}:${first.part.id}`, type: "actions", groups: groupParts(entry.items) }]
+  })
+}
+
+function groupSize(group: PartGroup): number {
+  if (group.type === "part") return 1
+  if (group.type === "context") return group.refs.length
+  return group.groups.reduce((sum, item) => sum + groupSize(item), 0)
+}
+
 function index<T extends { id: string }>(items: readonly T[]) {
   return new Map(items.map((item) => [item.id, item] as const))
 }
@@ -600,10 +626,13 @@ export function AssistantParts(props: {
   showReasoningSummaries?: boolean
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
+  /** Collect the turn's tool calls (other than edits and answered questions) into one "N actions" line. */
+  foldActions?: boolean
 }) {
   const data = useData()
   const emptyParts: PartType[] = []
   const emptyTools: ToolPart[] = []
+  const emptyGroups: PartGroup[] = []
   const msgs = createMemo(() => index(props.messages))
   const part = createMemo(
     () =>
@@ -613,84 +642,138 @@ export function AssistantParts(props: {
   )
 
   const grouped = createMemo(
-    () =>
-      groupParts(
-        props.messages.flatMap((message) =>
-          list(data.store.part?.[message.id], emptyParts)
-            .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
-            .map((part) => ({
-              messageID: message.id,
-              part,
-            })),
-        ),
-      ),
+    () => {
+      const items = props.messages.flatMap((message) =>
+        list(data.store.part?.[message.id], emptyParts)
+          .filter((part) => renderable(part, props.showReasoningSummaries ?? true))
+          .map((part) => ({
+            messageID: message.id,
+            part,
+          })),
+      )
+      return props.foldActions ? foldParts(items) : groupParts(items)
+    },
     [] as PartGroup[],
     { equals: sameGroups },
   )
 
   const last = createMemo(() => grouped().at(-1)?.key)
 
+  const renderEntry = (entryAccessor: () => PartGroup, lastKey: () => string | undefined): JSX.Element => {
+    const entryType = createMemo(() => entryAccessor().type)
+
+    return (
+      <Switch>
+        <Match when={entryType() === "actions"}>
+          {(() => {
+            const groups = createMemo(
+              () => {
+                const entry = entryAccessor()
+                return entry.type === "actions" ? entry.groups : emptyGroups
+              },
+              emptyGroups,
+              { equals: sameGroups },
+            )
+            const nestedLast = createMemo(() => (lastKey() === entryAccessor().key ? groups().at(-1)?.key : undefined))
+            const busy = createMemo(() =>
+              groups().some((group) =>
+                (group.type === "part" ? [group.ref] : group.type === "context" ? group.refs : []).some((ref) => {
+                  const item = part().get(ref.messageID)?.get(ref.partID)
+                  return item?.type === "tool" && (item.state.status === "pending" || item.state.status === "running")
+                }),
+              ),
+            )
+
+            return (
+              <ActionsFold count={groups().reduce((sum, group) => sum + groupSize(group), 0)} busy={busy()}>
+                <Index each={groups()}>{(group) => renderEntry(group, nestedLast)}</Index>
+              </ActionsFold>
+            )
+          })()}
+        </Match>
+        <Match when={entryType() === "context"}>
+          {(() => {
+            const parts = createMemo(
+              () => {
+                const entry = entryAccessor()
+                if (entry.type !== "context") return emptyTools
+                return entry.refs
+                  .map((ref) => part().get(ref.messageID)?.get(ref.partID))
+                  .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
+              },
+              emptyTools,
+              { equals: same },
+            )
+            const busy = createMemo(() => props.working && lastKey() === entryAccessor().key)
+
+            return (
+              <Show when={parts().length > 0}>
+                <ContextToolGroup parts={parts()} busy={busy()} />
+              </Show>
+            )
+          })()}
+        </Match>
+        <Match when={entryType() === "part"}>
+          {(() => {
+            const message = createMemo(() => {
+              const entry = entryAccessor()
+              if (entry.type !== "part") return
+              return msgs().get(entry.ref.messageID)
+            })
+            const item = createMemo(() => {
+              const entry = entryAccessor()
+              if (entry.type !== "part") return
+              return part().get(entry.ref.messageID)?.get(entry.ref.partID)
+            })
+
+            return (
+              <Show when={message()}>
+                <Show when={item()}>
+                  <Part
+                    part={item()!}
+                    message={message()!}
+                    showAssistantCopyPartID={props.showAssistantCopyPartID}
+                    turnDurationMs={props.turnDurationMs}
+                    defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
+                  />
+                </Show>
+              </Show>
+            )
+          })()}
+        </Match>
+      </Switch>
+    )
+  }
+
+  return <Index each={grouped()}>{(entryAccessor) => renderEntry(entryAccessor, last)}</Index>
+}
+
+/** One line per turn standing for all of its folded tool calls; expands to the usual per-tool rows. */
+function ActionsFold(props: ParentProps<{ count: number; busy?: boolean }>) {
+  const i18n = useI18n()
+  const [open, setOpen] = createSignal(false)
+  const label = createMemo(() =>
+    i18n.t(props.count === 1 ? "ui.sessionTurn.actions.one" : "ui.sessionTurn.actions.other", {
+      count: String(props.count),
+    }),
+  )
+
   return (
-    <Index each={grouped()}>
-      {(entryAccessor) => {
-        const entryType = createMemo(() => entryAccessor().type)
-
-        return (
-          <Switch>
-            <Match when={entryType() === "context"}>
-              {(() => {
-                const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
-                    return entry.refs
-                      .map((ref) => part().get(ref.messageID)?.get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
-                  },
-                  emptyTools,
-                  { equals: same },
-                )
-                const busy = createMemo(() => props.working && last() === entryAccessor().key)
-
-                return (
-                  <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} busy={busy()} />
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "part"}>
-              {(() => {
-                const message = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return
-                  return msgs().get(entry.ref.messageID)
-                })
-                const item = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return
-                  return part().get(entry.ref.messageID)?.get(entry.ref.partID)
-                })
-
-                return (
-                  <Show when={message()}>
-                    <Show when={item()}>
-                      <Part
-                        part={item()!}
-                        message={message()!}
-                        showAssistantCopyPartID={props.showAssistantCopyPartID}
-                        turnDurationMs={props.turnDurationMs}
-                        defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
-                      />
-                    </Show>
-                  </Show>
-                )
-              })()}
-            </Match>
-          </Switch>
-        )
-      }}
-    </Index>
+    <div data-component="turn-actions-fold" class="turn-actions-fold">
+      <Collapsible open={open()} onOpenChange={setOpen} variant="ghost" class="tool-collapsible">
+        <Collapsible.Trigger>
+          <div data-slot="turn-actions-fold-trigger">
+            <span data-slot="turn-actions-fold-label">
+              <TextShimmer text={label()} active={!!props.busy} />
+            </span>
+            <Collapsible.Arrow />
+          </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <div data-slot="turn-actions-fold-list">{props.children}</div>
+        </Collapsible.Content>
+      </Collapsible>
+    </div>
   )
 }
 

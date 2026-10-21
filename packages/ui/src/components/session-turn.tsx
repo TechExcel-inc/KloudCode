@@ -10,10 +10,10 @@ import { useFileComponent } from "../context/file"
 
 import { Binary } from "@opencode-ai/util/binary"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
-import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, type UserActions } from "./message-part"
 import { Card } from "./card"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -25,6 +25,16 @@ import { TextReveal } from "./text-reveal"
 import { createAutoScroll } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { normalize } from "./session-diff"
+import { Spinner } from "./spinner"
+import {
+  checklistProgress,
+  currentAction,
+  elapsedParts,
+  latestChecklist,
+  runningHelpers,
+  type TurnStep,
+} from "./session-turn-activity"
+import type { UiI18nKey } from "../context/i18n"
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
@@ -88,23 +98,6 @@ function same<T>(a: readonly T[], b: readonly T[]) {
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
   return fallback
-}
-
-const hidden = new Set(["todowrite"])
-
-function partState(part: PartType, showReasoningSummaries: boolean) {
-  if (part.type === "tool") {
-    if (hidden.has(part.tool)) return
-    if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) return
-    return "visible" as const
-  }
-  if (part.type === "text") return part.text?.trim() ? ("visible" as const) : undefined
-  if (part.type === "reasoning") {
-    if (showReasoningSummaries && part.text?.trim()) return "visible" as const
-    return
-  }
-  if (PART_MAPPING[part.type]) return "visible" as const
-  return
 }
 
 function clean(value: string) {
@@ -343,30 +336,51 @@ export function SessionTurn(
     if (end < start) return undefined
     return end - start
   })
-  const assistantDerived = createMemo(() => {
-    let visible = 0
+  const turnParts = createMemo(() =>
+    assistantMessages().flatMap((message) => list(data.store.part?.[message.id], emptyParts)),
+  )
+  const reasoningHeading = createMemo(() => {
     let reason: string | undefined
-    const show = showReasoningSummaries()
-    for (const message of assistantMessages()) {
-      for (const part of list(data.store.part?.[message.id], emptyParts)) {
-        if (partState(part, show) === "visible") {
-          visible++
-        }
-        if (part.type === "reasoning" && part.text) {
-          const h = heading(part.text)
-          if (h) reason = h
-        }
-      }
+    for (const part of turnParts()) {
+      if (part.type !== "reasoning" || !part.text) continue
+      const h = heading(part.text)
+      if (h) reason = h
     }
-    return { visible, reason }
+    return reason
   })
-  const assistantVisible = createMemo(() => assistantDerived().visible)
-  const reasoningHeading = createMemo(() => assistantDerived().reason)
-  const showThinking = createMemo(() => {
+  const checklist = createMemo(() => latestChecklist(turnParts()))
+  const live = createMemo(() => {
     if (!working() || !!error()) return false
-    if (status().type === "retry") return false
-    if (showReasoningSummaries()) return assistantVisible() === 0
-    return true
+    return status().type !== "retry"
+  })
+  const action = createMemo(() => (live() ? currentAction(turnParts()) : undefined))
+  const actionText = createMemo(() => {
+    const value = action()
+    if (!value) return i18n.t("ui.sessionTurn.status.thinking")
+    return i18n.t(value.key as UiI18nKey, value.params)
+  })
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!live()) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const liveStatus = createMemo(() => {
+    const items: string[] = []
+    const helpers = runningHelpers(turnParts())
+    if (helpers > 0)
+      items.push(
+        i18n.t(helpers === 1 ? "ui.sessionTurn.live.helpers.one" : "ui.sessionTurn.live.helpers.other", {
+          count: String(helpers),
+        }),
+      )
+    const start = message()?.time.created
+    if (typeof start === "number") {
+      const elapsed = elapsedParts(now() - start)
+      items.push(i18n.t(elapsed.key as UiI18nKey, elapsed.params))
+    }
+    return items.join(" \u00B7 ")
   })
 
   const autoScroll = createAutoScroll({
@@ -409,13 +423,14 @@ export function SessionTurn(
                     showReasoningSummaries={showReasoningSummaries()}
                     shellToolDefaultOpen={props.shellToolDefaultOpen}
                     editToolDefaultOpen={props.editToolDefaultOpen}
+                    foldActions
                   />
                 </div>
               </Show>
-              <Show when={showThinking()}>
-                <div data-slot="session-turn-thinking">
-                  <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} />
-                  <Show when={!showReasoningSummaries()}>
+              <Show when={live()}>
+                <div data-slot="session-turn-thinking" data-component="session-turn-live-action">
+                  <TextShimmer text={actionText()} />
+                  <Show when={!action() && !showReasoningSummaries()}>
                     <TextReveal
                       text={reasoningHeading()}
                       class="session-turn-thinking-heading"
@@ -423,6 +438,12 @@ export function SessionTurn(
                       duration={700}
                     />
                   </Show>
+                </div>
+              </Show>
+              <Show when={checklist()}>{(steps) => <TurnChecklist steps={steps()} working={working()} />}</Show>
+              <Show when={live() && liveStatus()}>
+                <div data-component="session-turn-live-status" class="session-turn-live-status">
+                  {liveStatus()}
                 </div>
               </Show>
               <SessionRetry status={status()} show={active()} />
@@ -529,6 +550,52 @@ export function SessionTurn(
           {props.children}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The turn's checklist: the latest steps the AI wrote, updated in place as it works. */
+function TurnChecklist(props: { steps: TurnStep[]; working: boolean }) {
+  const i18n = useI18n()
+  const progress = createMemo(() => checklistProgress(props.steps))
+
+  return (
+    <div data-component="session-turn-checklist" class="session-turn-checklist">
+      <div data-slot="session-turn-checklist-header">
+        <Icon name="checklist" size="small" />
+        <span data-slot="session-turn-checklist-label">{i18n.t("ui.sessionTurn.checklist.label")}</span>
+        <span data-slot="session-turn-checklist-progress">
+          {i18n.t("ui.sessionTurn.checklist.progress", {
+            done: String(progress().done),
+            total: String(progress().total),
+          })}
+        </span>
+      </div>
+      <ul data-slot="session-turn-checklist-steps">
+        <For each={props.steps}>
+          {(step) => (
+            <li data-slot="session-turn-checklist-step" data-status={step.status}>
+              <span data-slot="session-turn-checklist-marker" aria-hidden="true">
+                <Show
+                  when={step.status === "in_progress" && props.working}
+                  fallback={
+                    step.status === "completed"
+                      ? "\u2713"
+                      : step.status === "in_progress"
+                        ? "\u25D0"
+                        : step.status === "cancelled"
+                          ? "\u2715"
+                          : "\u25CB"
+                  }
+                >
+                  <Spinner />
+                </Show>
+              </span>
+              <span data-slot="session-turn-checklist-content">{step.content}</span>
+            </li>
+          )}
+        </For>
+      </ul>
     </div>
   )
 }
