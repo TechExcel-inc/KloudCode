@@ -539,6 +539,7 @@ export function AgentEdits(props: {
                   onClick={() =>
                     dialog.show(() => (
                       <AgentCostReport
+                        session={sync.session.get(props.session!)?.title || props.session!}
                         items={costItems()}
                         total={(pilotCost.latest?.costMicroUsd ?? 0) / 1_000_000}
                         untimed={pilotCost.latest?.untimedRequests ?? 0}
