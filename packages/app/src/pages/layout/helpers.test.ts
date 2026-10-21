@@ -8,6 +8,7 @@ import {
 } from "./deep-links"
 import { type Session } from "@opencode-ai/sdk/v2/client"
 import {
+  startupProject,
   childSessionOnPath,
   displayName,
   scoped,
@@ -251,5 +252,14 @@ describe("displayName", () => {
     expect(displayName({ worktree: "/" })).toBe("/")
     expect(displayName({ worktree: "/Users/me/KloudCode" })).toBe("KloudCode")
     expect(displayName({ name: "Pilot", worktree: "/x" })).toBe("Pilot")
+  })
+})
+
+describe("startupProject", () => {
+  test("reopens the last active project first, then Pilot's recent one, then the first known", () => {
+    expect(startupProject("/work/kloudcode", ["/work/kloudmeet"], ["/work/a"])).toBe("/work/kloudcode")
+    expect(startupProject(undefined, [undefined, "/work/kloudmeet"], ["/work/a"])).toBe("/work/kloudmeet")
+    expect(startupProject(undefined, [], ["/work/a"])).toBe("/work/a")
+    expect(startupProject(undefined, [], [])).toBeUndefined()
   })
 })

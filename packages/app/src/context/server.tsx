@@ -226,6 +226,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     return {
       ready: isReady,
+      /** The stored servers and projects (including the last active project) have loaded. */
+      loaded: ready,
       healthy,
       isLocal,
       get key() {

@@ -145,3 +145,11 @@ export function ago(time: number, now: number, locale: string) {
   if (!hit) return format.format(0, "minute")
   return format.format(Math.round(secs / hit[1]), hit[0])
 }
+
+/**
+ * The project to open at startup: the one last active in this app on this computer, then the
+ * signed-in person's most recently active EAD Pilot project with a folder here, then the first known project.
+ */
+export function startupProject(last: string | undefined, recent: (string | undefined)[], known: string[]) {
+  return last ?? recent.find((dir) => !!dir) ?? known[0]
+}

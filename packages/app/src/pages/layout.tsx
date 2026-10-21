@@ -74,6 +74,7 @@ import {
   scoped,
   sortedRootSessions,
   workspaceKey,
+  startupProject,
 } from "./layout/helpers"
 import {
   collectNewSessionDeepLinks,
@@ -594,14 +595,18 @@ export default function Layout(props: ParentProps) {
   const [autoselecting] = createResource(async () => {
     await ready.promise
     await layout.ready.promise
+    // The last active project is kept in the server store, which loads on its own.
+    await server.loaded.promise
     if (!untrack(() => state.autoselect)) return
 
     const list = layout.projects.list()
-    // The signed-in person's most recently active Pilot project on this computer wins; otherwise the last one this app opened.
-    const recent = await cowork.recent({ limit: 10 })
-    const last = recent.find((item) => item.worktree)?.worktree ?? server.projects.last()
-
-    const next = last ?? list[0]?.worktree
+    const last = server.projects.last()
+    const recent = last ? [] : await cowork.recent({ limit: 10 })
+    const next = startupProject(
+      last,
+      recent.map((item) => item.worktree),
+      list.map((item) => item.worktree),
+    )
     if (!next) return
     await openProject(next, true)
   })
