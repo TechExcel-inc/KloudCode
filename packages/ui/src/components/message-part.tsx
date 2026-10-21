@@ -2385,6 +2385,36 @@ ToolRegistry.register({
   },
 })
 
+// A new task the AI suggested moving to its own session: when moved, the line links to that session.
+ToolRegistry.register({
+  name: "suggest_session",
+  render(props) {
+    const i18n = useI18n()
+    const navigate = useNavigate()
+    const href = createMemo(() => {
+      const directory = props.metadata.directory
+      const session = props.metadata.session
+      if (typeof directory !== "string" || !directory || typeof session !== "string" || !session) return
+      return `/${base64Encode(directory)}/session/${session}`
+    })
+
+    return (
+      <BasicTool
+        {...props}
+        icon="new-session"
+        trigger={{ title: i18n.t("ui.tool.suggestSession"), subtitle: String(props.input.title ?? "") }}
+        triggerHref={href()}
+        onTriggerClick={(event) => {
+          const to = href()
+          if (!to || event.button !== 0 || event.metaKey || event.ctrlKey) return
+          event.preventDefault()
+          navigate(to)
+        }}
+      />
+    )
+  },
+})
+
 // The work moved to another project: the line links to the session started there.
 ToolRegistry.register({
   name: "project_switch",

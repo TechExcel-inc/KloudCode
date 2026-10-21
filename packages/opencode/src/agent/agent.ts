@@ -92,6 +92,8 @@ export namespace Agent {
               ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
             },
             question: "deny",
+            // Only the primary agents a person talks to suggest moving a new task to its own session.
+            suggest_session: "deny",
             plan_enter: "deny",
             plan_exit: "deny",
             // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
@@ -114,6 +116,7 @@ export namespace Agent {
                 defaults,
                 Permission.fromConfig({
                   question: "allow",
+                  suggest_session: "allow",
                   plan_enter: "allow",
                 }),
                 user,
@@ -129,6 +132,7 @@ export namespace Agent {
                 defaults,
                 Permission.fromConfig({
                   question: "allow",
+                  suggest_session: "allow",
                   plan_exit: "allow",
                   external_directory: {
                     [path.join(Global.Path.data, "plans", "*")]: "allow",

@@ -1,7 +1,8 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Layer } from "effect"
 import { Tool } from "../../src/tool/tool"
 import { QuestionTool } from "../../src/tool/question"
+import { SuggestSession, SuggestSessionTool } from "../../src/tool/suggest-session"
 import { Question } from "../../src/question"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Agent } from "../../src/agent/agent"
@@ -127,4 +128,74 @@ describe("tool.question", () => {
   //       expect(e.cause).toBeInstanceOf(z.ZodError)
   //     }
   //   })
+})
+
+describe("tool.suggest_session", () => {
+  const user = { info: { role: "user" } } as never
+  const assistant = { info: { role: "assistant" } } as never
+  const later = { ...ctx, messages: [user, assistant, user] }
+
+  it.live("never asks on the first message of a session", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const tool = yield* (yield* SuggestSessionTool).init()
+        const result = yield* tool.execute({ title: "Report page" }, { ...ctx, messages: [user] })
+        expect(result.output).toBe(SuggestSession.FIRST)
+        expect(result.metadata.choice).toBe("first")
+      }),
+    ),
+  )
+
+  it.live("asks with the title and tells the model the request moved", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        const tool = yield* (yield* SuggestSessionTool).init()
+        const fiber = yield* tool
+          .execute({ title: "Report page", project: "KloudMeet" }, later)
+          .pipe(Effect.forkScoped)
+        const item = yield* pending(question)
+        expect(item.questions[0]?.question).toBe('This looks like a new task: "Report page".')
+        expect(item.questions[0]?.options.map((option) => option.label)).toEqual([
+          "Continue here",
+          "New session in KloudMeet",
+        ])
+        yield* question.reply({ requestID: item.id, answers: [["moved", "ses_2", "/work/meet"]] })
+
+        const result = yield* Fiber.join(fiber)
+        expect(result.output).toBe(SuggestSession.MOVED)
+        expect(result.metadata).toMatchObject({ choice: "moved", session: "ses_2", directory: "/work/meet" })
+      }),
+    ),
+  )
+
+  it.live("a dismissed card continues here", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        const tool = yield* (yield* SuggestSessionTool).init()
+        const fiber = yield* tool.execute({ title: "Report page" }, later).pipe(Effect.forkScoped)
+        const item = yield* pending(question)
+        yield* question.reject(item.id)
+
+        const result = yield* Fiber.join(fiber)
+        expect(result.output).toBe(SuggestSession.CONTINUE)
+      }),
+    ),
+  )
+
+  test("result text by choice", () => {
+    expect(SuggestSession.result(["continue"]).output).toBe(
+      "The user chose to continue here. Proceed with their request.",
+    )
+    expect(SuggestSession.result(["Continue here"]).choice).toBe("continue")
+    expect(SuggestSession.result(undefined).choice).toBe("continue")
+    expect(SuggestSession.result(["moved", "ses_2"]).output).toBe(
+      "The user moved this request to a new session. Do not act on it here; end your reply with one short sentence saying it continues in the new session.",
+    )
+    expect(SuggestSession.result(["New session in KloudMeet"]).choice).toBe("elsewhere")
+    const typed = SuggestSession.result(["just do it here"])
+    expect(typed.choice).toBe("typed")
+    expect(typed.output).toContain("just do it here")
+  })
 })

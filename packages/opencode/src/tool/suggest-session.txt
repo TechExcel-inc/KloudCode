@@ -1,0 +1,23 @@
+Use this tool to suggest moving a new, unrelated task to its own session. The user sees a short card with "New session", "New session, close this one" and "Continue here", and you wait for their choice.
+
+When to call it:
+- Only as the very first action of your turn, before any other tool call or any work.
+- Only when the user's latest message is clearly a new task that has nothing to do with the work this session has been doing (for example: the session fixed a login bug, and the user now asks for a new report page in an unrelated area).
+
+When NOT to call it:
+- The first message of a session. There is no earlier work to compare with.
+- Follow-ups, corrections, refinements, retries, or anything building on the current work.
+- Questions about the current work, its code, or its results.
+- Small side requests the user clearly wants done here, or when the user says to do it here.
+- When you are unsure. If in doubt, do not call it: just do the work. The card should be rare.
+- At most once per user message. Never call it again after the user chose "Continue here" for this message.
+
+Parameters:
+- title: a short title for the new task (a few words, in the user's language).
+- project: only when the request clearly belongs to another of the user's projects listed in the environment (for example the user names it). Use the project's name as listed. Leave it out otherwise.
+  A new, unrelated task for another project goes through this tool with project set, not through project_switch.
+- reason: optional, one short sentence on why this looks like a new task.
+
+After the user answers:
+- Continue here: do the work in this session as usual.
+- Moved: do not act on the request here. Make no more tool calls and end your reply with one short sentence saying it continues in the new session.

@@ -1,6 +1,7 @@
 import { PlanExitTool } from "./plan"
 import { Session } from "../session"
 import { QuestionTool } from "./question"
+import { SuggestSessionTool } from "./suggest-session"
 import { ProjectSwitchTool } from "./project"
 import { BashTool } from "./bash"
 import { EditTool } from "./edit"
@@ -110,6 +111,7 @@ export namespace ToolRegistry {
       const task = yield* TaskTool
       const read = yield* ReadTool
       const question = yield* QuestionTool
+      const suggest = yield* SuggestSessionTool
       const project = yield* ProjectSwitchTool
       const todo = yield* TodoWriteTool
       const lsptool = yield* LspTool
@@ -200,6 +202,7 @@ export namespace ToolRegistry {
             skill: Tool.init(skilltool),
             patch: Tool.init(patchtool),
             question: Tool.init(question),
+            suggest: Tool.init(suggest),
             project: Tool.init(project),
             lsp: Tool.init(lsptool),
             plan: Tool.init(plan),
@@ -209,7 +212,7 @@ export namespace ToolRegistry {
             custom,
             builtin: [
               tool.invalid,
-              ...(questionEnabled ? [tool.question] : []),
+              ...(questionEnabled ? [tool.question, tool.suggest] : []),
               ...(Foreign.enabled() ? [tool.project] : []),
               tool.bash,
               tool.read,

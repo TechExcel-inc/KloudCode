@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import type { Part, QuestionRequest } from "@opencode-ai/sdk/v2/client"
-import { carried, projectSwitch } from "./session-project"
+import {
+  carried,
+  projectSwitch,
+  sessionSuggestion,
+  suggestedMessage,
+  suggestedProject,
+  suggestionAnswer,
+  suggestionButtons,
+} from "./session-project"
 
 const request = (callID?: string) =>
   ({
@@ -50,5 +58,73 @@ describe("session project switch", () => {
     expect(carried({ fresh: false, parts: [], prompt: "Fix login", from: "KloudCode" })).toEqual([
       { type: "text", text: "Fix login\n\n(Continued from a session in KloudCode.)" },
     ])
+  })
+})
+
+describe("session suggestion", () => {
+  test("finds the suggest_session call behind a question", () => {
+    const parts = { msg_1: [tool("suggest_session", { title: " Report page ", project: "KloudMeet" })] }
+    expect(sessionSuggestion(request("call_1"), parts)).toEqual({
+      title: "Report page",
+      project: "KloudMeet",
+      reason: undefined,
+    })
+    expect(sessionSuggestion(request("call_1"), { msg_1: [tool("project_switch", { project: "/x" })] })).toBeUndefined()
+    expect(sessionSuggestion(request(), {})).toBeUndefined()
+  })
+
+  test("resolves the named project by display or folder name, ignoring case", () => {
+    const projects = [
+      { name: "Kloud Meet", worktree: "/work/meet" },
+      { worktree: "/work/KloudMeet/" },
+      { worktree: "/work/KloudCode" },
+    ]
+    expect(suggestedProject("kloud meet", projects, "/work/KloudCode")).toEqual({
+      worktree: "/work/meet",
+      name: "Kloud Meet",
+    })
+    expect(suggestedProject("KLOUDMEET", projects, "/work/KloudCode")).toEqual({
+      worktree: "/work/KloudMeet/",
+      name: "KloudMeet",
+    })
+  })
+
+  test("an unknown project or the current one starts the session here", () => {
+    const projects = [{ worktree: "/work/KloudCode" }]
+    expect(suggestedProject("Nowhere", projects, "/work/KloudCode")).toBeUndefined()
+    expect(suggestedProject("kloudcode", projects, "/work/KloudCode/")).toBeUndefined()
+    expect(suggestedProject(undefined, projects, "/work/KloudCode")).toBeUndefined()
+  })
+
+  test("buttons name the other project only when there is one", () => {
+    expect(suggestionButtons().map((item) => [item.action, item.key])).toEqual([
+      ["new", "session.suggest.new"],
+      ["close", "session.suggest.newClose"],
+      ["continue", "session.suggest.continue"],
+    ])
+    expect(suggestionButtons("KloudMeet")).toEqual([
+      { action: "new", key: "session.suggest.newIn", params: { project: "KloudMeet" } },
+      { action: "close", key: "session.suggest.newInClose", params: { project: "KloudMeet" } },
+      { action: "continue", key: "session.suggest.continue" },
+    ])
+  })
+
+  test("answers carry the choice, and a move carries the new session and folder", () => {
+    expect(suggestionAnswer({ moved: false })).toEqual([["continue"]])
+    expect(suggestionAnswer({ moved: true, sessionID: "ses_2", directory: "/work/meet" })).toEqual([
+      ["moved", "ses_2", "/work/meet"],
+    ])
+  })
+
+  test("the carried message is the one that started the suggesting turn", () => {
+    const messages = [
+      { id: "msg_0", role: "user" },
+      { id: "msg_a", role: "assistant", parentID: "msg_0" },
+      { id: "msg_u", role: "user" },
+      { id: "msg_1", role: "assistant", parentID: "msg_u" },
+      { id: "msg_later", role: "user" },
+    ]
+    expect(suggestedMessage(request("call_1"), messages)?.id).toBe("msg_u")
+    expect(suggestedMessage(request(), messages)?.id).toBe("msg_later")
   })
 })
