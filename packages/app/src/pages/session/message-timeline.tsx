@@ -34,6 +34,7 @@ import { sessionTitle } from "@/utils/session-title"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { makeTimer } from "@solid-primitives/timer"
 import { stepsUnfinished } from "@/pages/layout/active-sessions"
+import { stepDockMount } from "@/pages/session/composer/step-dock-mount"
 
 type MessageComment = {
   path: string
@@ -1109,6 +1110,7 @@ export function MessageTimeline(props: {
                         active={active()}
                         status={active() ? sessionStatus() : undefined}
                         checklistDocked={dockedMessageID() === messageID}
+                        liveMount={stepDockMount.get()}
                         showReasoningSummaries={settings.general.showReasoningSummaries()}
                         shellToolDefaultOpen={settings.general.shellToolPartsExpanded()}
                         editToolDefaultOpen={settings.general.editToolPartsExpanded()}

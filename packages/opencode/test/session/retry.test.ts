@@ -253,4 +253,19 @@ describe("session.message-v2.fromError", () => {
     const result = MessageV2.fromError(error, { providerID: ProviderID.make("openai") }) as MessageV2.APIError
     expect(result.data.isRetryable).toBe(true)
   })
+
+  test("a gateway's HTML error page reads as its page title, not the bare status text", () => {
+    const error = new APICallError({
+      message: "<none>",
+      url: "https://eadfm.com/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 520,
+      responseHeaders: { "content-type": "text/html" },
+      responseBody:
+        '<!DOCTYPE html>\n<html><head><title>eadfm.com | 520: Web server is returning an unknown error</title></head><body>…</body></html>',
+      isRetryable: true,
+    })
+    const result = MessageV2.fromError(error, { providerID: ProviderID.make("ead") }) as MessageV2.APIError
+    expect(SessionRetry.retryable(result)).toBe("eadfm.com | 520: Web server is returning an unknown error")
+  })
 })

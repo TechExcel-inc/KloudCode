@@ -5,6 +5,7 @@ import { createEffect, createMemo, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { composerEnabled, composerProbe } from "@/testing/session-composer"
 import { useLanguage } from "@/context/language"
+import { stepDockMount } from "./step-dock-mount"
 
 /**
  * The task step box above the composer: the session's steps, drawn like the step box in a reply. While
@@ -42,12 +43,20 @@ export function SessionTodoDock(props: {
   })
 
   onCleanup(() => {
+    stepDockMount.setAbove(undefined)
+    stepDockMount.setBelow(undefined)
+  })
+
+  onCleanup(() => {
     if (!e2e) return
     probe.drop()
   })
 
   return (
-    <div data-component="session-todo-dock" style={{ opacity: `${1 - shut()}` }}>
+    // The composer below is pulled up 36px over the dock (see the region's `lift`), so the bottom padding
+    // keeps the box clear of it, with a small gap.
+    <div data-component="session-todo-dock" style={{ opacity: `${1 - shut()}`, "padding-bottom": "44px" }}>
+      <div data-slot="session-step-dock-above" ref={stepDockMount.setAbove} />
       <TurnChecklist
         steps={steps()}
         working={props.live}
@@ -78,6 +87,7 @@ export function SessionTodoDock(props: {
           </>
         }
       />
+      <div data-slot="session-step-dock-below" ref={stepDockMount.setBelow} />
     </div>
   )
 }

@@ -58,6 +58,22 @@ export namespace ProviderError {
         return "Unknown error"
       }
 
+      // If responseBody is HTML (e.g. from a gateway or proxy error page),
+      // provide a human-readable message instead of dumping raw markup. Checked before the bare status
+      // text, which for codes such as Cloudflare's 520 is empty or "<none>".
+      if (e.responseBody && /^\s*<!doctype|^\s*<html/i.test(e.responseBody)) {
+        if (e.statusCode === 401) {
+          return "Unauthorized: request was blocked by a gateway or proxy. Your authentication token may be missing or expired — try running `opencode auth login <your provider URL>` to re-authenticate."
+        }
+        if (e.statusCode === 403) {
+          return "Forbidden: request was blocked by a gateway or proxy. You may not have permission to access this resource — check your account and provider settings."
+        }
+        const title = e.responseBody.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim()
+        if (title) return title
+        if (e.statusCode) return `${e.statusCode} ${STATUS_CODES[e.statusCode] ?? "error from a gateway or proxy"}`
+        return msg
+      }
+
       if (!e.responseBody || (e.statusCode && msg !== STATUS_CODES[e.statusCode])) {
         return msg
       }
@@ -70,18 +86,6 @@ export namespace ProviderError {
           return `${msg}: ${errMsg}`
         }
       } catch {}
-
-      // If responseBody is HTML (e.g. from a gateway or proxy error page),
-      // provide a human-readable message instead of dumping raw markup
-      if (/^\s*<!doctype|^\s*<html/i.test(e.responseBody)) {
-        if (e.statusCode === 401) {
-          return "Unauthorized: request was blocked by a gateway or proxy. Your authentication token may be missing or expired — try running `opencode auth login <your provider URL>` to re-authenticate."
-        }
-        if (e.statusCode === 403) {
-          return "Forbidden: request was blocked by a gateway or proxy. You may not have permission to access this resource — check your account and provider settings."
-        }
-        return msg
-      }
 
       return `${msg}: ${e.responseBody}`
     }).trim()

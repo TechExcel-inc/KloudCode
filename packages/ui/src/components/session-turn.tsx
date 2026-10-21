@@ -12,7 +12,7 @@ import { Binary } from "@opencode-ai/util/binary"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
+import { Dynamic, Portal } from "solid-js/web"
 import { AssistantParts, Message, MessageDivider, type UserActions } from "./message-part"
 import { Card } from "./card"
 import { Accordion } from "./accordion"
@@ -148,6 +148,11 @@ export function SessionTurn(
     status?: SessionStatus
     /** The steps show in the task step box above the composer instead of inside this reply. */
     checklistDocked?: boolean
+    /**
+     * While docked, the live lines go next to the box above the composer: the current action above it,
+     * the helpers, elapsed time and retry notice below it.
+     */
+    liveMount?: { above?: HTMLElement; below?: HTMLElement }
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -428,28 +433,32 @@ export function SessionTurn(
                   />
                 </div>
               </Show>
-              <Show when={live()}>
-                <div data-slot="session-turn-thinking" data-component="session-turn-live-action">
-                  <TextShimmer text={actionText()} />
-                  <Show when={!action() && !showReasoningSummaries()}>
-                    <TextReveal
-                      text={reasoningHeading()}
-                      class="session-turn-thinking-heading"
-                      travel={25}
-                      duration={700}
-                    />
-                  </Show>
-                </div>
-              </Show>
+              <Docked to={props.checklistDocked ? props.liveMount?.above : undefined}>
+                <Show when={live()}>
+                  <div data-slot="session-turn-thinking" data-component="session-turn-live-action">
+                    <TextShimmer text={actionText()} />
+                    <Show when={!action() && !showReasoningSummaries()}>
+                      <TextReveal
+                        text={reasoningHeading()}
+                        class="session-turn-thinking-heading"
+                        travel={25}
+                        duration={700}
+                      />
+                    </Show>
+                  </div>
+                </Show>
+              </Docked>
               <Show when={!props.checklistDocked && checklist()}>
                 {(steps) => <TurnChecklist steps={steps()} working={working()} />}
               </Show>
-              <Show when={live() && liveStatus()}>
-                <div data-component="session-turn-live-status" class="session-turn-live-status">
-                  {liveStatus()}
-                </div>
-              </Show>
-              <SessionRetry status={status()} show={active()} />
+              <Docked to={props.checklistDocked ? props.liveMount?.below : undefined}>
+                <Show when={live() && liveStatus()}>
+                  <div data-component="session-turn-live-status" class="session-turn-live-status">
+                    {liveStatus()}
+                  </div>
+                </Show>
+                <SessionRetry status={status()} show={active()} />
+              </Docked>
               <Show when={edited() > 0 && !working()}>
                 <div
                   data-slot="session-turn-diffs"
@@ -554,6 +563,15 @@ export function SessionTurn(
         </div>
       </div>
     </div>
+  )
+}
+
+/** Draws its children in place, or at `to` (a slot next to the docked task step box) when given. */
+function Docked(props: ParentProps<{ to?: HTMLElement }>) {
+  return (
+    <Show when={props.to} keyed fallback={props.children}>
+      {(el) => <Portal mount={el}>{props.children}</Portal>}
+    </Show>
   )
 }
 

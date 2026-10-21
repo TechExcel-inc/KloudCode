@@ -280,7 +280,6 @@
   /* Above the composer the box sits on the page background and scrolls a long list. */
   [data-component="session-todo-dock"] & {
     background: var(--background-base);
-    margin-bottom: 8px;
     [data-slot="session-turn-checklist-steps"] {
       max-height: 168px;
       overflow-y: auto;
@@ -369,6 +368,45 @@
     flex-direction: column;
     gap: 8px;
     padding-top: 4px;
+  }
+}
+
+/*
+ * The live lines around the task step box when it sits above the composer: what the AI is doing now
+ * above the box, and the helpers, elapsed time and retry notice below it. They are drawn out of the
+ * reply, so they carry their own type rather than the reply's.
+ */
+[data-slot="session-step-dock-above"],
+[data-slot="session-step-dock-below"] {
+  padding: 0 4px;
+}
+
+[data-slot="session-step-dock-above"] {
+  [data-component="session-turn-live-action"] {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--text-base);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 20px;
+    min-height: 20px;
+  }
+  [data-component="text-reveal"].session-turn-thinking-heading {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-weak);
+    font-weight: var(--font-weight-regular);
+  }
+}
+
+[data-slot="session-step-dock-below"] {
+  [data-component="session-turn-live-status"] {
+    margin-top: 6px;
+    color: var(--text-weak);
   }
 }
 
