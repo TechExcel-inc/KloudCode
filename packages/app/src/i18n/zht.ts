@@ -519,6 +519,7 @@ export const dict = {
   "session.todo.title": "待辦事項",
   "session.todo.collapse": "折疊",
   "session.todo.expand": "展開",
+  "session.todo.dismiss": "放棄剩餘步驟",
   "session.followupDock.summary.one": "{{count}} 則佇列訊息",
   "session.followupDock.summary.other": "{{count}} 則佇列訊息",
   "session.followupDock.sendNow": "立即傳送",

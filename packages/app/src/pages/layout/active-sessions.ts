@@ -11,6 +11,7 @@ export type ActiveSource = {
   message?: Record<string, { role: string; time?: unknown }[] | undefined>
   permission?: Record<string, PermissionRequest[] | undefined>
   question?: Record<string, QuestionRequest[] | undefined>
+  todo?: Record<string, { status: string }[] | undefined>
 }
 
 export type ActiveSession<P> = { session: Session; project: P; state: ActiveState }
@@ -40,9 +41,15 @@ export function sessionBusy(source: ActiveSource, sessionID: string) {
   return (source.message?.[sessionID] ?? []).some(unfinished)
 }
 
+/** True when the session's task steps are not all done: some are still pending or in progress. */
+export function stepsUnfinished(steps: readonly { status: string }[] | undefined) {
+  return (steps ?? []).some((step) => step.status === "pending" || step.status === "in_progress")
+}
+
 /**
  * "waiting" when a question or permission request for the user sits anywhere in the session tree,
- * "working" when the session or a subagent below it is busy, otherwise undefined.
+ * "working" when the session or a subagent below it is busy, "waiting" again when the turn ended with
+ * task steps left undone, otherwise undefined.
  * `include` drops permission requests that are answered automatically.
  */
 export function activeState(
@@ -54,6 +61,7 @@ export function activeState(
   if (ids.some((id) => (source.question?.[id]?.length ?? 0) > 0 || source.permission?.[id]?.some(include)))
     return "waiting"
   if (ids.some((id) => sessionBusy(source, id))) return "working"
+  if (stepsUnfinished(source.todo?.[sessionID])) return "waiting"
 }
 
 /**

@@ -12,14 +12,18 @@ import { useSync } from "@/context/sync"
 import { composerDriver, composerEnabled, composerEvent } from "@/testing/session-composer"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
+/**
+ * The task step box above the composer. Unfinished steps keep it open after the turn ends: the session
+ * then waits on the person, and the box shows what is left. Finished steps close it.
+ */
 export const todoState = (input: {
   count: number
   done: boolean
   live: boolean
 }): "hide" | "clear" | "open" | "close" => {
   if (input.count === 0) return "hide"
-  if (!input.live) return "clear"
   if (!input.done) return "open"
+  if (!input.live) return "clear"
   return "close"
 }
 
@@ -240,6 +244,9 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     permissionResponding,
     decide,
     todos,
+    live,
+    /** Drops steps the turn left undone, which ends the session's wait on the person. */
+    dismissTodos: clear,
     dock: () => store.dock,
     closing: () => store.closing,
     opening: () => store.opening,

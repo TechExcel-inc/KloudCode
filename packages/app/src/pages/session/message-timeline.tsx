@@ -33,6 +33,7 @@ import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { makeTimer } from "@solid-primitives/timer"
+import { stepsUnfinished } from "@/pages/layout/active-sessions"
 
 type MessageComment = {
   path: string
@@ -262,6 +263,15 @@ export function MessageTimeline(props: {
     return sync.data.session_status[id] ?? idle
   })
   const working = createMemo(() => !!pending() || sessionStatus().type !== "idle")
+  // While the task step box above the composer shows the session's steps (the AI is working, or the
+  // turn ended with steps left undone), the latest reply leaves its own copy of the box out.
+  const dockedMessageID = createMemo(() => {
+    const id = sessionID()
+    if (!id) return
+    const steps = sync.data.todo[id] ?? []
+    if (steps.length === 0 || !(working() || stepsUnfinished(steps))) return
+    return sessionMessages().findLast((message) => message.role === "user")?.id
+  })
   const tint = createMemo(() => messageAgentColor(sessionMessages(), sync.data.agent))
 
   const [timeoutDone, setTimeoutDone] = createSignal(true)
@@ -1098,6 +1108,7 @@ export function MessageTimeline(props: {
                         actions={props.actions}
                         active={active()}
                         status={active() ? sessionStatus() : undefined}
+                        checklistDocked={dockedMessageID() === messageID}
                         showReasoningSummaries={settings.general.showReasoningSummaries()}
                         shellToolDefaultOpen={settings.general.shellToolPartsExpanded()}
                         editToolDefaultOpen={settings.general.editToolPartsExpanded()}

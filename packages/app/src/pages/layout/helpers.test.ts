@@ -332,6 +332,26 @@ describe("active sessions", () => {
     expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "working"]])
   })
 
+  test("an idle session whose steps are not all done waits on the person; finished steps do not", () => {
+    const list = activeSessions([
+      {
+        project: "P",
+        sources: [
+          source({
+            todo: {
+              ses_i: [
+                { status: "completed" },
+                { status: "in_progress" },
+              ],
+              ses_q: [{ status: "completed" }, { status: "cancelled" }],
+            },
+          }),
+        ],
+      },
+    ])
+    expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "waiting"]])
+  })
+
   test("stopping rejects every pending request in the tree before aborting busy subagents and the session", () => {
     const steps = stopSteps(
       source({

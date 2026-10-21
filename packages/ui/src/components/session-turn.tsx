@@ -10,7 +10,7 @@ import { useFileComponent } from "../context/file"
 
 import { Binary } from "@opencode-ai/util/binary"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
-import { createEffect, createMemo, createSignal, For, on, onCleanup, ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { AssistantParts, Message, MessageDivider, type UserActions } from "./message-part"
@@ -146,6 +146,8 @@ export function SessionTurn(
     editToolDefaultOpen?: boolean
     active?: boolean
     status?: SessionStatus
+    /** The steps show in the task step box above the composer instead of inside this reply. */
+    checklistDocked?: boolean
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -439,7 +441,9 @@ export function SessionTurn(
                   </Show>
                 </div>
               </Show>
-              <Show when={checklist()}>{(steps) => <TurnChecklist steps={steps()} working={working()} />}</Show>
+              <Show when={!props.checklistDocked && checklist()}>
+                {(steps) => <TurnChecklist steps={steps()} working={working()} />}
+              </Show>
               <Show when={live() && liveStatus()}>
                 <div data-component="session-turn-live-status" class="session-turn-live-status">
                   {liveStatus()}
@@ -553,13 +557,23 @@ export function SessionTurn(
   )
 }
 
-/** The turn's checklist: the latest steps the AI wrote, updated in place as it works. */
-function TurnChecklist(props: { steps: TurnStep[]; working: boolean }) {
+/**
+ * The task step box: the latest steps the AI wrote, updated in place as it works. Drawn inside a reply,
+ * and above the composer while the session's steps are open; there `note` says the session waits on the
+ * person, `actions` adds header buttons and `collapsed` shows the header alone.
+ */
+export function TurnChecklist(props: {
+  steps: TurnStep[]
+  working: boolean
+  note?: string
+  actions?: JSX.Element
+  collapsed?: boolean
+}) {
   const i18n = useI18n()
   const progress = createMemo(() => checklistProgress(props.steps))
 
   return (
-    <div data-component="session-turn-checklist" class="session-turn-checklist">
+    <div data-component="session-turn-checklist" class="session-turn-checklist" data-collapsed={props.collapsed || undefined}>
       <div data-slot="session-turn-checklist-header">
         <Icon name="checklist" size="small" />
         <span data-slot="session-turn-checklist-label">{i18n.t("ui.sessionTurn.checklist.label")}</span>
@@ -569,19 +583,27 @@ function TurnChecklist(props: { steps: TurnStep[]; working: boolean }) {
             total: String(progress().total),
           })}
         </span>
+        <Show when={props.note}>
+          <span data-slot="session-turn-checklist-note">{props.note}</span>
+        </Show>
+        <Show when={props.actions}>
+          <span data-slot="session-turn-checklist-actions">{props.actions}</span>
+        </Show>
       </div>
-      <ul data-slot="session-turn-checklist-steps">
-        <For each={props.steps}>
-          {(step) => (
-            <li data-slot="session-turn-checklist-step" data-status={step.status}>
-              <span data-slot="session-turn-checklist-marker" aria-hidden="true">
-                <StepIcon status={step.status} working={props.working} />
-              </span>
-              <span data-slot="session-turn-checklist-content">{step.content}</span>
-            </li>
-          )}
-        </For>
-      </ul>
+      <Show when={!props.collapsed}>
+        <ul data-slot="session-turn-checklist-steps">
+          <For each={props.steps}>
+            {(step) => (
+              <li data-slot="session-turn-checklist-step" data-status={step.status}>
+                <span data-slot="session-turn-checklist-marker" aria-hidden="true">
+                  <StepIcon status={step.status} working={props.working} />
+                </span>
+                <span data-slot="session-turn-checklist-content">{step.content}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
     </div>
   )
 }
