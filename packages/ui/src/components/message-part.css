@@ -146,9 +146,10 @@
     max-width: 100%;
   }
 
+  /* Shown on hover; slim so it does not read as a blank row under every message. */
   [data-slot="user-message-copy-wrapper"] {
-    min-height: 24px;
-    margin-top: 4px;
+    min-height: 20px;
+    margin-top: 0;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -209,15 +210,20 @@
 
 [data-component="text-part"] {
   width: 100%;
-  margin-top: 24px;
+  margin-top: 12px;
+
+  /* The reply's first text starts right below the person's message; the turn's own gap separates them. */
+  &:first-child {
+    margin-top: 0;
+  }
 
   [data-slot="text-part-body"] {
     margin-top: 0;
   }
 
   [data-slot="text-part-copy-wrapper"] {
-    min-height: 24px;
-    margin-top: 4px;
+    min-height: 20px;
+    margin-top: 0;
     display: flex;
     align-items: center;
     justify-content: flex-start;

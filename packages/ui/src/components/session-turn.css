@@ -26,7 +26,7 @@
     align-items: flex-start;
     align-self: stretch;
     min-width: 0;
-    gap: 18px;
+    gap: 10px;
     overflow-anchor: none;
   }
 
@@ -225,8 +225,9 @@
   }
 }
 
+/* Turns sit close together: replies fold their actions into one line, so a wide gap only reads as empty space. */
 [data-slot="session-turn-list"] {
-  gap: 48px;
+  gap: 20px;
 }
 
 [data-component="session-turn-checklist"] {
