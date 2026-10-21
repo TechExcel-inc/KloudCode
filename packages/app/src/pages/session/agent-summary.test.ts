@@ -96,11 +96,47 @@ describe("waiting for answers", () => {
     expect(summary.activeMs).toBe(11 * MIN)
   })
 
+  test("a reply that never finished ends when the conversation moved on", () => {
+    // The reply at 1 minute was abandoned; the person wrote again at 10 and the AI worked 10 to 12.
+    const messages = [user(0), reply(1 * MIN, undefined, 0.1), user(10 * MIN), reply(10 * MIN, 12 * MIN, 0.1)]
+    const summary = sessionSummary(messages, 60 * MIN)
+    expect(summary.workingMs).toBe(9 * MIN + 2 * MIN)
+    expect(summary.sessionMs).toBe(12 * MIN)
+  })
+
+  test("a question left open does not swallow the work that came after it", () => {
+    // The question at 2 minutes was never closed, but the person wrote again at 10 and the AI worked 10 to 30.
+    const messages = [user(0), reply(1 * MIN, 3 * MIN, 0.1), user(10 * MIN), reply(10 * MIN, 30 * MIN, 0.1)]
+    const summary = sessionSummary(messages, 60 * MIN, waitsFor([question(2 * MIN)], 60 * MIN))
+    expect(summary.workingMs).toBe(1 * MIN + 20 * MIN)
+  })
+
   test("a quick answer counts fully, and an open question is not yet anyone's effort", () => {
     const quick = sessionSummary([user(0), reply(0, 10 * MIN, 0.1)], 20 * MIN, waitsFor([question(2 * MIN, 4 * MIN)]))
     expect([quick.workingMs, quick.activeMs]).toEqual([8 * MIN, 10 * MIN])
     const open = sessionSummary([user(0), reply(0, undefined, 0.1)], 30 * MIN, waitsFor([question(5 * MIN)], 30 * MIN))
     expect([open.workingMs, open.activeMs]).toEqual([5 * MIN, 5 * MIN])
+  })
+})
+
+describe("work recorded by EAD Pilot", () => {
+  const plan = (created: number, completed: number | undefined) =>
+    ({ ...reply(created, completed, 0), providerID: "ead" }) as unknown as Message
+
+  test("Pilot's request times replace the app's times for EAD plan replies", () => {
+    // The app thinks one EAD reply ran 1 to 40 minutes (it was abandoned); Pilot recorded three short requests.
+    const messages = [user(0), plan(1 * MIN, undefined), user(40 * MIN), plan(40 * MIN, 41 * MIN)]
+    const recorded = { provider: "ead", spans: [[1 * MIN, 2 * MIN], [2 * MIN, 3 * MIN], [40 * MIN, 41 * MIN]] as [number, number][] }
+    const summary = sessionSummary(messages, 60 * MIN, [], undefined, recorded)
+    expect(summary.workingMs).toBe(3 * MIN)
+    // Plus the person's effort before the message at 40 (at most 10 minutes).
+    expect(summary.activeMs).toBe(3 * MIN + 10 * MIN)
+  })
+
+  test("other models' replies still use the app's times", () => {
+    const messages = [user(0), reply(0, 5 * MIN, 0.1)]
+    const summary = sessionSummary(messages, 10 * MIN, [], undefined, { provider: "ead", spans: [] })
+    expect(summary.workingMs).toBe(5 * MIN)
   })
 })
 

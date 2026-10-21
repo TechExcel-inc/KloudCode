@@ -321,11 +321,6 @@ export function AgentEdits(props: {
   const [minute, setMinute] = createSignal(Date.now())
   const tick = setInterval(() => setMinute(Date.now()), 60_000)
   onCleanup(() => clearInterval(tick))
-  const summary = createMemo(() => {
-    const now = minute()
-    const parts = messages().flatMap((msg) => sync.data.part[msg.id] ?? [])
-    return sessionSummary(messages(), now, waitsFor(parts, now))
-  })
   // EAD plan answers have no price in the app: Pilot's AI gateway knows the real model behind each
   // one and prices it, so their cost is read from Pilot after each reply.
   const lastReply = createMemo(() => {
@@ -341,6 +336,25 @@ export function AgentEdits(props: {
         ?.gatewayCost(input.session)
         .catch(() => undefined),
   )
+  // For EAD plan replies, EAD Pilot's records are the source of truth for time, tokens and cost.
+  const recorded = createMemo(() => {
+    const pilot = pilotCost.latest
+    if (!usesPlan() || !pilot || pilot.requests === 0) return undefined
+    const spans = (pilot.entries ?? []).flatMap((entry): [number, number][] =>
+      entry.startedAt && entry.endedAt ? [[Date.parse(entry.startedAt), Date.parse(entry.endedAt)]] : [],
+    )
+    return { provider: PLAN, spans }
+  })
+  const summary = createMemo(() => {
+    const now = minute()
+    const parts = messages().flatMap((msg) => sync.data.part[msg.id] ?? [])
+    return sessionSummary(messages(), now, waitsFor(parts, now), undefined, recorded())
+  })
+  const [entriesOpen, setEntriesOpen] = createSignal(false)
+  const clock = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "—"
+  const seconds = (from?: string | null, to?: string | null) =>
+    from && to ? `${Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000))}s` : "—"
   const [costOpen, setCostOpen] = createSignal(false)
   const appCosts = createMemo(() => modelCosts(messages(), PLAN))
   const costText = () => {
@@ -441,9 +455,11 @@ export function AgentEdits(props: {
                       {row.unpricedRequests === row.requests ? language.t("agent.summary.notPriced") : money(row.costMicroUsd / 1_000_000)}
                     </span>
                     <span class="text-11-regular text-text-weak">
-                      {language.t("agent.summary.breakdown", {
+                      {language.t("agent.summary.breakdownPilot", {
                         count: row.requests,
+                        time: formatDuration(row.durationMs ?? 0),
                         input: formatTokens(row.promptTokens),
+                        cached: formatTokens(row.cachedTokens ?? 0),
                         output: formatTokens(row.completionTokens),
                       })}
                     </span>
@@ -467,6 +483,49 @@ export function AgentEdits(props: {
                   </div>
                 )}
               </For>
+              <Show when={(pilotCost.latest?.entries?.length ?? 0) > 0}>
+                <button
+                  type="button"
+                  data-action="agent-cost-entries"
+                  aria-expanded={entriesOpen()}
+                  class="h-6 flex items-center gap-1 text-left text-12-regular text-text-interactive-base"
+                  onClick={() => setEntriesOpen(!entriesOpen())}
+                >
+                  <Icon name={entriesOpen() ? "chevron-down" : "chevron-right"} size="small" />
+                  {language.t("agent.summary.entries", { count: pilotCost.latest?.entries?.length ?? 0 })}
+                </button>
+                <Show when={entriesOpen()}>
+                  <div data-component="agent-cost-entries" class="max-h-72 overflow-y-auto flex flex-col">
+                    <For each={pilotCost.latest?.entries ?? []}>
+                      {(entry, index) => (
+                        <div class="py-1 border-b border-border-weaker-base text-11-regular">
+                          <div class="flex gap-2 text-text-strong">
+                            <span class="text-text-weak">{index() + 1}.</span>
+                            <span>{clock(entry.startedAt ?? entry.endedAt)}</span>
+                            <span class="text-text-weak">{seconds(entry.startedAt, entry.endedAt)}</span>
+                            <span class="ml-auto">
+                              {entry.costMicroUsd == null ? language.t("agent.summary.notPriced") : money(entry.costMicroUsd / 1_000_000)}
+                            </span>
+                          </div>
+                          <div class="text-text-weak truncate" title={`${entry.providerId} / ${entry.modelId}`}>
+                            {language.t("agent.summary.entry", {
+                              model: `${entry.modelId} · ${entry.slotKey}`,
+                              input: formatTokens(entry.promptTokens),
+                              cached: formatTokens(entry.cachedTokens),
+                              output: formatTokens(entry.completionTokens),
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={(pilotCost.latest?.untimedRequests ?? 0) > 0}>
+                  <div class="text-11-regular text-text-weak">
+                    {language.t("agent.summary.untimed", { count: pilotCost.latest?.untimedRequests ?? 0 })}
+                  </div>
+                </Show>
+              </Show>
               <Show when={usesPlan()}>
                 <div class="text-11-regular text-text-weak">
                   {(pilotCost.latest?.models?.length ?? 0) > 0

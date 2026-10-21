@@ -35,14 +35,22 @@ export function waitsFor(parts: Part[], now = Date.now()) {
 /** How much of a pause before a message counts as the person's effort; a setting later. */
 export const EFFORT_MS = 10 * 60_000
 
+/**
+ * AI work recorded by EAD Pilot's gateway: for replies from `provider`, Pilot's request start and end
+ * times replace the app's own message times, which miss work and keep abandoned replies open.
+ */
+export type RecordedWork = { provider: string; spans: [number, number][] }
+
 export function sessionSummary(
   messages: Message[],
   now = Date.now(),
   waits: [number, number][] = [],
   effortMs = EFFORT_MS,
+  recorded?: RecordedWork,
 ): SessionSummary {
   if (messages.length === 0) return { sessionMs: 0, activeMs: 0, workingMs: 0, cost: 0, priced: true }
   const started = Math.min(...messages.map((msg) => msg.time.created))
+  const starts = messages.map((msg) => msg.time.created).sort((a, b) => a - b)
   let last = started
   let cost = 0
   let tokens = 0
@@ -50,15 +58,25 @@ export function sessionSummary(
   for (const msg of messages) {
     last = Math.max(last, msg.time.created)
     if (msg.role !== "assistant") continue
-    const end = msg.time.completed ?? now
+    // A reply that never finished ends when the conversation moved on; only the latest one is still running.
+    const end = msg.time.completed ?? starts.find((time) => time > msg.time.created) ?? now
     last = Math.max(last, end)
-    spans.push([msg.time.created, end])
+    if (!recorded || msg.providerID !== recorded.provider) spans.push([msg.time.created, end])
     cost += msg.cost
     tokens += msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
   }
+  for (const span of recorded?.spans ?? []) last = Math.max(last, span[1])
   const sessionMs = last - started
+  // A wait ends when it was answered, or at the latest when the conversation moved on (the person
+  // wrote again or the AI started a new reply): a question left open must not swallow later work.
+  const closed = waits.map(([from, to]): [number, number] => {
+    const next = starts.find((time) => time > from)
+    return [from, next === undefined ? to : Math.min(to, next)]
+  })
+  waits = closed
   // While the AI waits for an answer it is not working; the wait counts as a gap like any other.
-  const working = without(spans, waits)
+  // Pilot's requests never include waiting: each one is the model answering.
+  const working = [...without(spans, waits), ...(recorded?.spans ?? [])]
   const workingMs = joined(working, 0)
   // Each message or answer took the person effort since the last activity: reading, thinking, typing.
   const moments = [

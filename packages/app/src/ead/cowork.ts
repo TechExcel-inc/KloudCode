@@ -88,7 +88,12 @@ export type CoworkSessionBody = {
 
 export type CoworkGatewayCost = {
   requests: number
+  /** Time the AI was answering, from the gateway's request start and end times. */
+  workingMs?: number
+  /** Answers recorded before start times were kept, so their time is unknown. */
+  untimedRequests?: number
   promptTokens: number
+  cachedTokens?: number
   completionTokens: number
   costMicroUsd: number
   unpricedRequests: number
@@ -98,10 +103,25 @@ export type CoworkGatewayCost = {
     modelId: string
     slotKey: string
     requests: number
+    durationMs?: number
     promptTokens: number
+    cachedTokens?: number
     completionTokens: number
     costMicroUsd: number
     unpricedRequests: number
+  }[]
+  /** Every answer, in order. */
+  entries?: {
+    usageId: number
+    providerId: string
+    modelId: string
+    slotKey: string
+    promptTokens: number
+    cachedTokens: number
+    completionTokens: number
+    costMicroUsd: number | null
+    startedAt: string | null
+    endedAt: string | null
   }[]
 }
 

@@ -168,7 +168,7 @@ export const dict = {
   "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
 
   "provider.custom.title": "Custom provider",
-  "provider.custom.description.prefix": "Configure an OpenAI-compatible provider. See the ",
+  "provider.custom.description.prefix": "Configure an OpenAI-compatible provider.",
   "provider.custom.description.link": "provider config docs",
   "provider.custom.description.suffix": ".",
   "provider.custom.field.providerID.label": "Provider ID",
@@ -310,7 +310,7 @@ export const dict = {
   "dialog.mcp.empty": "No MCPs configured",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
-  "dialog.plugins.empty": "Plugins configured in opencode.json",
+  "dialog.plugins.empty": "Plugins configured in kloudcode.json",
 
   "mcp.status.connected": "connected",
   "mcp.status.failed": "failed",
@@ -481,7 +481,7 @@ export const dict = {
   "error.page.action.updateTo": "Update to {{version}}",
   "error.page.circular": "[Circular]",
   "error.page.report.prefix": "Please report this error to the EAD SiCode team",
-  "error.page.report.discord": "on Discord",
+  "error.page.report.discord": "through the help page",
   "error.page.version": "Version: {{version}}",
 
   "error.dev.rootNotFound":
@@ -505,7 +505,7 @@ export const dict = {
   "error.chain.responseBody": "Response body:\n{{body}}",
   "error.chain.didYouMean": "Did you mean: {{suggestions}}",
   "error.chain.modelNotFound": "Model not found: {{provider}}/{{model}}",
-  "error.chain.checkConfig": "Check your config (opencode.json) provider/model names",
+  "error.chain.checkConfig": "Check your config (kloudcode.json) provider/model names",
   "error.chain.mcpFailed": 'MCP server "{{name}}" failed. Note, EAD SiCode does not support MCP authentication yet.',
   "error.chain.providerAuthFailed": "Provider authentication failed ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
@@ -814,6 +814,10 @@ export const dict = {
   "agent.summary.costPilot": "EAD plan answers are priced by EAD Pilot at the real model's provider price",
   "agent.summary.breakdown": "{{count}} answers · {{input}} in · {{output}} out",
   "agent.summary.noPilotCost": "EAD Pilot has no priced answers for this session yet. Answers from before the cost tracking started are not included.",
+  "agent.summary.breakdownPilot": "{{count}} answers · {{time}} · {{input}} in ({{cached}} cached) · {{output}} out",
+  "agent.summary.entries": "Show all {{count}} entries",
+  "agent.summary.entry": "{{model}} · {{input}} in ({{cached}} cached) · {{output}} out",
+  "agent.summary.untimed": "{{count}} earlier answers were recorded before start times were kept, so their time is not counted.",
   "agent.summary.notPriced": "Not priced",
   "agent.context.title": "Context",
   "agent.context.loading": "Measuring…",
