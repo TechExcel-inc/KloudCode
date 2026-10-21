@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { sameChecklist, sessionBackground, sessionTasks } from "./agent-tasks"
+import { currentTask, sameChecklist, sessionBackground, sessionTasks } from "./agent-tasks"
 import { costReport, costTotals, type CostEntry } from "./agent-cost"
 
 const user = (id: string, title?: string, diffs: { file: string; additions: number; deletions: number }[] = []) =>
@@ -73,6 +73,33 @@ describe("sessionTasks", () => {
     ])
     expect([tasks[0]!.added, tasks[0]!.removed]).toEqual([18, 3])
     expect(tasks[0]!.elsewhere).toEqual([])
+  })
+
+  test("the current task is the latest request's checklist; a new request leaves an earlier one behind", () => {
+    const parked = todos(["Design icon", "pending"], ["Fix animation", "pending"])
+    const base = [user("u1"), reply("a1", "u1")]
+    const parts: Record<string, Part[]> = { u1: [text("u1", "Stop for now")], a1: [tool("a1", "todowrite", parked)] }
+    expect(currentTask(base, parts)?.steps.map((step) => step.content)).toEqual(["Design icon", "Fix animation"])
+
+    // A new request that has not written a checklist yet: no current task, the parked one stays behind.
+    const asked = [...base, user("u2"), reply("a2", "u2")]
+    const next = { ...parts, u2: [text("u2", "Show me the design results again")], a2: [text("a2", "Sure")] }
+    expect(currentTask(asked, next)).toBeUndefined()
+
+    // Its own checklist becomes the current task.
+    const own = { ...next, a2: [tool("a2", "todowrite", todos(["Render previews", "in_progress"]))] }
+    expect(currentTask(asked, own)?.steps.map((step) => step.content)).toEqual(["Render previews"])
+  })
+
+  test("a continue request carries the earlier task on until it writes its own steps", () => {
+    const messages = [user("u1"), reply("a1", "u1"), user("u2"), reply("a2", "u2")]
+    const parts: Record<string, Part[]> = {
+      a1: [tool("a1", "todowrite", todos(["Map code", "completed"], ["Build UI", "pending"]))],
+      u2: [text("u2", "Continue with the remaining steps.")],
+      a2: [],
+    }
+    expect(currentTask(messages, parts)?.steps.map((step) => step.status)).toEqual(["completed", "pending"])
+    expect(currentTask(messages, { ...parts, u2: [text("u2", "continue")] })?.id).toBe("u1")
   })
 
   test("checklists match when half the shorter one's steps are shared", () => {

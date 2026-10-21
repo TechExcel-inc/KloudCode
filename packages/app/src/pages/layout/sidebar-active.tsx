@@ -15,6 +15,7 @@ import type { LocalProject } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { sessionTitle } from "@/utils/session-title"
 import { type ActiveSource, activeSessions, runStopSteps, stopSteps } from "./active-sessions"
+import { dismissedSteps } from "@/pages/session/composer/dismissed-steps"
 import { displayName } from "./helpers"
 import { DialogDelete } from "./sidebar-items"
 
@@ -42,6 +43,7 @@ export const ActiveSessions = (props: {
       })),
       (item, directory) => !permission.autoResponds(item, directory),
       params.id,
+      dismissedSteps.is,
     ),
   )
 

@@ -332,24 +332,50 @@ describe("active sessions", () => {
     expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "working"]])
   })
 
-  test("an idle session whose steps are not all done waits on the person; finished steps do not", () => {
-    const list = activeSessions([
+  test("an idle session whose current task has steps left waits on the person; a finished or dismissed one does not", () => {
+    const user = (id: string, sessionID: string) => ({ id, sessionID, role: "user", time: { created: 1 } })
+    const reply = (id: string, sessionID: string, parentID: string) => ({
+      id,
+      sessionID,
+      role: "assistant",
+      parentID,
+      time: { created: 2, completed: 3 },
+    })
+    const steps = (messageID: string, ...statuses: string[]) => [
       {
-        project: "P",
-        sources: [
-          source({
-            todo: {
-              ses_i: [
-                { status: "completed" },
-                { status: "in_progress" },
-              ],
-              ses_q: [{ status: "completed" }, { status: "cancelled" }],
-            },
-          }),
-        ],
+        id: `p-${messageID}`,
+        messageID,
+        type: "tool",
+        tool: "todowrite",
+        state: {
+          status: "completed",
+          input: { todos: statuses.map((status, i) => ({ content: `Step ${i}`, status })) },
+          time: { start: 1, end: 2 },
+        },
       },
-    ])
-    expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "waiting"]])
+    ]
+    const groups = (dismissed?: (sessionID: string, taskID: string) => boolean) =>
+      activeSessions(
+        [
+          {
+            project: "P",
+            sources: [
+              source({
+                message: {
+                  ses_i: [user("u1", "ses_i"), reply("a1", "ses_i", "u1")],
+                  ses_q: [user("u2", "ses_q"), reply("a2", "ses_q", "u2")],
+                },
+                part: { a1: steps("a1", "completed", "in_progress"), a2: steps("a2", "completed", "cancelled") },
+              } as unknown as Partial<ActiveSource>),
+            ],
+          },
+        ],
+        undefined,
+        undefined,
+        dismissed,
+      )
+    expect(groups().map((item) => [item.session.id, item.state])).toEqual([["ses_i", "waiting"]])
+    expect(groups((sessionID, taskID) => sessionID === "ses_i" && taskID === "u1")).toEqual([])
   })
 
   test("stopping rejects every pending request in the tree before aborting busy subagents and the session", () => {

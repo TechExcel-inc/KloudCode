@@ -48,6 +48,22 @@ export function visuals(client: string) {
   ]
 }
 
+/**
+ * The desktop app shows the todo list as a step box above the input, one per request, and a list left with
+ * open steps tells the user the session waits on them; so the list has to follow the requests.
+ */
+export function stepGuidance(client: string) {
+  if (client !== "desktop") return []
+  return [
+    [
+      `The desktop app shows your todo list as a step box above the user's input, one box per request. A list that still has pending or in-progress steps when you stop tells the user you are waiting for them.`,
+      `  - When the user sends a new, different request, start a new list for it with todowrite. Do not carry over steps from an earlier request.`,
+      `  - Before you end a reply, bring the list up to date: mark finished steps completed. If steps will not be done now (the user postponed or dropped them, or they turned out unnecessary), mark them cancelled.`,
+      `  - When the user asks you to continue, keep the same list and carry on with its open steps.`,
+    ].join("\n"),
+  ]
+}
+
 export namespace SystemPrompt {
   export function provider(model: Provider.Model) {
     if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -94,6 +110,7 @@ export namespace SystemPrompt {
             ].join("\n"),
             ...others(),
             ...visuals(Flag.OPENCODE_CLIENT),
+            ...stepGuidance(Flag.OPENCODE_CLIENT),
           ]
         },
 

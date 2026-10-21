@@ -1,4 +1,5 @@
-import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import { currentTask } from "@/pages/session/agent-tasks"
 import { workspaceKey } from "./helpers"
 
 export type ActiveState = "working" | "waiting"
@@ -11,8 +12,11 @@ export type ActiveSource = {
   message?: Record<string, { role: string; time?: unknown }[] | undefined>
   permission?: Record<string, PermissionRequest[] | undefined>
   question?: Record<string, QuestionRequest[] | undefined>
-  todo?: Record<string, { status: string }[] | undefined>
+  part?: Record<string, Part[] | undefined>
 }
+
+/** Whether the person dismissed a session's task (or it closed), so it no longer waits on them. */
+export type DismissedTask = (sessionID: string, taskID: string) => boolean
 
 export type ActiveSession<P> = { session: Session; project: P; state: ActiveState }
 
@@ -49,19 +53,21 @@ export function stepsUnfinished(steps: readonly { status: string }[] | undefined
 /**
  * "waiting" when a question or permission request for the user sits anywhere in the session tree,
  * "working" when the session or a subagent below it is busy, "waiting" again when the turn ended with
- * task steps left undone, otherwise undefined.
+ * steps of its current task (the latest request's) left undone, otherwise undefined.
  * `include` drops permission requests that are answered automatically.
  */
 export function activeState(
   source: ActiveSource,
   sessionID: string,
   include: (item: PermissionRequest) => boolean = () => true,
+  dismissed: DismissedTask = () => false,
 ): ActiveState | undefined {
   const ids = sessionTree(source.session ?? [], sessionID)
   if (ids.some((id) => (source.question?.[id]?.length ?? 0) > 0 || source.permission?.[id]?.some(include)))
     return "waiting"
   if (ids.some((id) => sessionBusy(source, id))) return "working"
-  if (stepsUnfinished(source.todo?.[sessionID])) return "waiting"
+  const task = currentTask((source.message?.[sessionID] ?? []) as Message[], source.part ?? {})
+  if (task && !dismissed(sessionID, task.id) && stepsUnfinished(task.steps)) return "waiting"
 }
 
 /**
@@ -72,6 +78,7 @@ export function activeSessions<P>(
   groups: { project: P; sources: ActiveSource[] }[],
   include: (item: PermissionRequest, directory: string) => boolean = () => true,
   onScreen?: string,
+  dismissed?: DismissedTask,
 ): ActiveSession<P>[] {
   const result: ActiveSession<P>[] = []
   for (const group of groups) {
@@ -79,7 +86,7 @@ export function activeSessions<P>(
       for (const session of source.session ?? []) {
         if (session.parentID || session.time?.archived || session.id === onScreen) continue
         if (workspaceKey(session.directory) !== workspaceKey(source.directory)) continue
-        const state = activeState(source, session.id, (item) => include(item, source.directory))
+        const state = activeState(source, session.id, (item) => include(item, source.directory), dismissed)
         if (state) result.push({ session, project: group.project, state })
       }
     }

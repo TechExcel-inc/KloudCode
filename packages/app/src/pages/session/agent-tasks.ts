@@ -134,6 +134,24 @@ export function sessionTasks(messages: Message[], parts: Record<string, Part[] |
     .reverse()
 }
 
+/** A request that asks the AI to go on with what it was doing, such as the Continue button's message. */
+const CONTINUE = /^\s*(continue|go on|keep going|继续|繼續)/i
+
+/**
+ * The task the step box above the composer follows: the one the person's latest request belongs to. A new
+ * request leaves an earlier unfinished task behind (it stays in the Tasks panel and in its reply) until
+ * the AI writes the new request's own steps; a request to continue carries the newest task on.
+ */
+export function currentTask(messages: Message[], parts: Record<string, Part[] | undefined>): Task | undefined {
+  const last = messages.findLast((message) => message.role === "user")
+  if (!last) return
+  const tasks = sessionTasks(messages, parts)
+  const own = tasks.find((task) => task.requests.includes(last.id))
+  if (own) return own
+  const said = (parts[last.id] ?? []).flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+  if (CONTINUE.test(said.join("\n"))) return tasks[0]
+}
+
 export type BackgroundJob = { id: string; title: string; started: number; sessionID?: string }
 
 /**

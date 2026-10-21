@@ -11,6 +11,8 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { composerDriver, composerEnabled, composerEvent } from "@/testing/session-composer"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { currentTask } from "../agent-tasks"
+import { dismissedSteps } from "./dismissed-steps"
 
 /**
  * The task step box above the composer. Unfinished steps keep it open after the turn ends: the session
@@ -111,11 +113,19 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     makeEventListener(window, composerEvent, onEvent)
   })
 
+  // The step box follows the task of the person's latest request, not the session's one running list: a
+  // new request starts its own box, and a dismissed task stays out.
+  const task = createMemo(() => {
+    const id = params.id
+    if (!id) return
+    const found = currentTask(sync.data.message[id] ?? [], sync.data.part)
+    if (!found || dismissedSteps.is(id, found.id)) return
+    return found
+  })
+
   const todos = createMemo((): Todo[] => {
     if (test.on && test.todos !== undefined) return test.todos
-    const id = params.id
-    if (!id) return []
-    return globalSync.data.session_todo[id] ?? []
+    return (task()?.steps ?? []).map((step) => ({ content: step.content, status: step.status, priority: "medium" }) as Todo)
   })
 
   const done = createMemo(
@@ -189,9 +199,9 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
       return
     }
     const id = params.id
-    if (!id) return
-    globalSync.todo.set(id, [])
-    sync.set("todo", id, [])
+    const current = task()
+    if (!id || !current) return
+    dismissedSteps.set(id, current.id)
   }
 
   createEffect(

@@ -3,7 +3,7 @@ import path from "path"
 import { Effect } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Instance } from "../../src/project/instance"
-import { SystemPrompt, visuals } from "../../src/session/system"
+import { stepGuidance, SystemPrompt, visuals } from "../../src/session/system"
 import { provideInstance, tmpdir } from "../fixture/fixture"
 
 function load<A>(dir: string, fn: (svc: Agent.Interface) => Effect.Effect<A>) {
@@ -17,6 +17,14 @@ describe("session.system", () => {
     expect(text).toContain("instead of opening a browser, a full-window page")
     expect(text).toContain("with the question tool")
     expect(visuals("cli")).toEqual([])
+  })
+
+  test("tells the desktop app's agent to start a list per request and close it before ending a reply", () => {
+    const [text] = stepGuidance("desktop")
+    expect(text).toContain("start a new list for it with todowrite")
+    expect(text).toContain("mark them cancelled")
+    expect(text).toContain("keep the same list")
+    expect(stepGuidance("cli")).toEqual([])
   })
 
   test("skills output is sorted by name and stable across calls", async () => {
