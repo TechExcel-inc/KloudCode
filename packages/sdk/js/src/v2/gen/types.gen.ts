@@ -254,6 +254,10 @@ export type QuestionOption = {
    * Explanation of choice
    */
   description: string
+  /**
+   * Picture for this choice, shown as a card the user can enlarge and pick: a complete <svg>...</svg>, an image path inside the project, or an https URL
+   */
+  image?: string
 }
 
 export type QuestionInfo = {

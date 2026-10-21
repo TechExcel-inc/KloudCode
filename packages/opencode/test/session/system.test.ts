@@ -16,6 +16,7 @@ describe("session.system", () => {
     expect(text).toContain("```svg")
     expect(text).toContain("instead of opening a browser, a full-window page")
     expect(text).toContain("with the question tool")
+    expect(text).toContain("set each choice's image")
     expect(visuals("cli")).toEqual([])
   })
 

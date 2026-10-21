@@ -16,6 +16,12 @@ export namespace Question {
     .object({
       label: z.string().describe("Display text (1-5 words, concise)"),
       description: z.string().describe("Explanation of choice"),
+      image: z
+        .string()
+        .optional()
+        .describe(
+          "Picture for this choice, shown as a card the user can enlarge and pick: a complete <svg>...</svg>, an image path inside the project, or an https URL",
+        ),
     })
     .meta({ ref: "QuestionOption" })
   export type Option = z.infer<typeof Option>

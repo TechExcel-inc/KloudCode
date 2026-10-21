@@ -1295,3 +1295,42 @@
     object-fit: contain;
   }
 }
+
+/* Choices with pictures show as cards: picture (click to enlarge), label, and a Choose button. */
+[data-component="dock-prompt"][data-kind="question"] [data-slot="question-cards"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+
+  [data-slot="question-card"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    background-color: var(--surface-raised-stronger-non-alpha);
+    border: 1px solid var(--border-weak-base);
+    border-radius: 8px;
+    min-width: 0;
+
+    &[data-picked="true"] {
+      border-color: var(--border-interactive-base, var(--icon-interactive-base));
+      box-shadow: var(--shadow-xs-border-hover);
+    }
+
+    [data-slot="question-option-main"] {
+      flex: 1;
+      padding: 0 2px;
+    }
+
+    [data-slot="question-card-blank"] {
+      aspect-ratio: 4 / 3;
+      border-radius: var(--radius-md);
+      background: var(--surface-base);
+    }
+
+    > [data-component="button"] {
+      align-self: stretch;
+      justify-content: center;
+    }
+  }
+}

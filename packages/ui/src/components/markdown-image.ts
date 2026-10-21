@@ -115,3 +115,21 @@ export function writtenImageUrl(path: string, content: string | undefined) {
   if (!content || imageMime(path) !== "image/svg+xml") return
   return svgCodeToDataUrl(content)
 }
+
+// A question option's picture: inline SVG markup, a project image path, or a URL.
+export function optionImageSource(image: string, directory?: string): ImageSource {
+  const svg = svgCodeToDataUrl(image)
+  if (svg) return { kind: "url", url: svg }
+  if (/^\s*</.test(image)) return { kind: "blocked", reason: "not-image" }
+  return classifyImageSource(image, directory)
+}
+
+export async function loadImageSource(
+  source: ImageSource,
+  read: ((path: string) => Promise<ProjectFile | undefined>) | undefined,
+) {
+  if (source.kind === "url") return source.url
+  if (source.kind !== "project" || !read) return
+  const file = await read(source.path).catch(() => undefined)
+  return projectFileToDataUrl(source.path, file)
+}

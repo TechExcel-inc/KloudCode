@@ -7826,6 +7826,10 @@
           "description": {
             "description": "Explanation of choice",
             "type": "string"
+          },
+          "image": {
+            "description": "Picture for this choice, shown as a card the user can enlarge and pick: a complete <svg>...</svg>, an image path inside the project, or an https URL",
+            "type": "string"
           }
         },
         "required": ["label", "description"]

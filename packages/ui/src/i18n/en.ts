@@ -197,5 +197,7 @@ export const dict: Record<string, string> = {
   "ui.question.review.notAnswered": "(not answered)",
   "ui.question.multiHint": "Select all answers that apply",
   "ui.question.singleHint": "Select one answer",
+  "ui.question.choose": "Choose",
+  "ui.question.chosen": "Chosen",
   "ui.question.custom.placeholder": "Type your answer...",
 }

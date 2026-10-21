@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@opencode-ai/ui/dock-prompt"
 import { Icon } from "@opencode-ai/ui/icon"
+import { OptionImage } from "@opencode-ai/ui/option-image"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useLanguage } from "@/context/language"
@@ -58,6 +59,47 @@ function Option(props: {
   )
 }
 
+/** A choice with a picture: the picture enlarges on click, Choose answers with this choice. */
+function OptionCard(props: {
+  multi: boolean
+  picked: boolean
+  label: string
+  description?: string
+  image?: string
+  disabled: boolean
+  chooseLabel: string
+  chosenLabel: string
+  ref?: (el: HTMLButtonElement) => void
+  onFocus?: VoidFunction
+  onChoose: VoidFunction
+}) {
+  return (
+    <div data-slot="question-card" data-picked={props.picked}>
+      <Show when={props.image} fallback={<div data-slot="question-card-blank" />}>
+        {(image) => <OptionImage image={image()} alt={props.label} />}
+      </Show>
+      <span data-slot="question-option-main">
+        <span data-slot="option-label">{props.label}</span>
+        <Show when={props.description}>
+          <span data-slot="option-description">{props.description}</span>
+        </Show>
+      </span>
+      <Button
+        ref={props.ref}
+        variant={props.picked ? "primary" : "secondary"}
+        size="normal"
+        role={props.multi ? "checkbox" : undefined}
+        aria-checked={props.multi ? props.picked : undefined}
+        disabled={props.disabled}
+        onFocus={props.onFocus}
+        onClick={props.onChoose}
+      >
+        {props.picked && props.multi ? props.chosenLabel : props.chooseLabel}
+      </Button>
+    </div>
+  )
+}
+
 export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
   const sdk = useSDK()
   const language = useLanguage()
@@ -86,6 +128,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const input = createMemo(() => store.custom[store.tab] ?? "")
   const on = createMemo(() => store.customOn[store.tab] === true)
   const multi = createMemo(() => question()?.multiple === true)
+  const cards = createMemo(() => options().some((opt) => !!opt.image))
   const count = createMemo(() => options().length + 1)
 
   const summary = createMemo(() => {
@@ -365,6 +408,19 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     pick(opt.label)
   }
 
+  // Choosing a picture card answers at once for a single-choice question; with more questions it moves on.
+  const choose = (optIndex: number) => {
+    if (sending()) return
+    const opt = options()[optIndex]
+    if (!opt) return
+    if (multi()) {
+      selectOption(optIndex)
+      return
+    }
+    pick(opt.label)
+    next()
+  }
+
   const commitCustom = () => {
     setStore("editing", false)
     customUpdate(input())
@@ -474,20 +530,45 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
         <div data-slot="question-hint">{language.t("ui.question.multiHint")}</div>
       </Show>
       <div data-slot="question-options">
-        <For each={options()}>
-          {(opt, i) => (
-            <Option
-              multi={multi()}
-              picked={picked(opt.label)}
-              label={opt.label}
-              description={opt.description}
-              disabled={sending()}
-              ref={(el) => (optsRef[i()] = el)}
-              onFocus={() => setStore("focus", i())}
-              onClick={() => selectOption(i())}
-            />
-          )}
-        </For>
+        <Show
+          when={cards()}
+          fallback={
+            <For each={options()}>
+              {(opt, i) => (
+                <Option
+                  multi={multi()}
+                  picked={picked(opt.label)}
+                  label={opt.label}
+                  description={opt.description}
+                  disabled={sending()}
+                  ref={(el) => (optsRef[i()] = el)}
+                  onFocus={() => setStore("focus", i())}
+                  onClick={() => selectOption(i())}
+                />
+              )}
+            </For>
+          }
+        >
+          <div data-slot="question-cards">
+            <For each={options()}>
+              {(opt, i) => (
+                <OptionCard
+                  multi={multi()}
+                  picked={picked(opt.label)}
+                  label={opt.label}
+                  description={opt.description}
+                  image={opt.image}
+                  disabled={sending()}
+                  chooseLabel={language.t("ui.question.choose")}
+                  chosenLabel={language.t("ui.question.chosen")}
+                  ref={(el) => (optsRef[i()] = el)}
+                  onFocus={() => setStore("focus", i())}
+                  onChoose={() => choose(i())}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
 
         <Show
           when={store.editing}

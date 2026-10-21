@@ -181,6 +181,8 @@ export const dict = {
   "ui.question.review.notAnswered": "(未回答)",
   "ui.question.multiHint": "可多選",
   "ui.question.singleHint": "選擇一個答案",
+  "ui.question.choose": "選擇",
+  "ui.question.chosen": "已選擇",
   "ui.question.custom.placeholder": "輸入你的答案...",
 
   "ui.fileSearch.placeholder": "搜尋",

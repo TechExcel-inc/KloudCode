@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import {
   classifyImageSource,
   isImagePath,
+  loadImageSource,
+  optionImageSource,
   projectFileToDataUrl,
   svgCodeToDataUrl,
   writtenImageUrl,
@@ -68,5 +70,23 @@ describe("markdown-image", () => {
     expect(writtenImageUrl("icons/a.svg", "<svg></svg>")).toBeDefined()
     expect(writtenImageUrl("icons/a.ts", "<svg></svg>")).toBeUndefined()
     expect(writtenImageUrl("icons/a.svg", undefined)).toBeUndefined()
+  })
+
+  test("a question choice's picture can be svg markup, a project image or a URL", async () => {
+    const svg = optionImageSource('<svg viewBox="0 0 4 4"><rect width="4" height="4"/></svg>', dir)
+    expect(svg.kind).toBe("url")
+    expect(optionImageSource("designs/b.png", dir)).toEqual({ kind: "project", path: "designs/b.png" })
+    expect(optionImageSource("/tmp/b.png", dir).kind).toBe("blocked")
+    expect(optionImageSource("<div>not a picture</div>", dir).kind).toBe("blocked")
+
+    const reads: string[] = []
+    const read = async (path: string) => {
+      reads.push(path)
+      return { content: "AAAA", encoding: "base64", mimeType: "image/png" }
+    }
+    expect(await loadImageSource({ kind: "project", path: "designs/b.png" }, read)).toBe("data:image/png;base64,AAAA")
+    expect(await loadImageSource({ kind: "blocked", reason: "outside-project" }, read)).toBeUndefined()
+    expect(reads).toEqual(["designs/b.png"])
+    expect(await loadImageSource({ kind: "project", path: "x.png" }, async () => Promise.reject(new Error("gone")))).toBeUndefined()
   })
 })
