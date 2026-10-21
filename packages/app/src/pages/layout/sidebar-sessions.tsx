@@ -20,6 +20,7 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { sessionTitle } from "@/utils/session-title"
 import { displayName, hasProjectPermissions, sortedRootSessions, workspaceKey } from "./helpers"
+import { ActiveSessions } from "./sidebar-active"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
 import { type WorkspaceSidebarContext } from "./sidebar-workspace"
 
@@ -105,6 +106,7 @@ export const AllSessions = (props: {
         ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
         class="flex-1 min-h-0 flex flex-col gap-3 pb-3 overflow-y-auto no-scrollbar [overflow-anchor:none]"
       >
+        <ActiveSessions projects={props.projects} archiveSession={props.ctx.archiveSession} />
         <For each={props.projects()}>
           {(project, index) => (
             <>

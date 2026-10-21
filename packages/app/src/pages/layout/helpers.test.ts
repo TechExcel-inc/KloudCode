@@ -18,6 +18,8 @@ import {
   latestRootSession,
   workspaceKey,
 } from "./helpers"
+import { activeSessions, runStopSteps, stopSteps, type ActiveSource } from "./active-sessions"
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
 const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
   ({
@@ -261,5 +263,98 @@ describe("startupProject", () => {
     expect(startupProject(undefined, [undefined, "/work/kloudmeet"], ["/work/a"])).toBe("/work/kloudmeet")
     expect(startupProject(undefined, [], ["/work/a"])).toBe("/work/a")
     expect(startupProject(undefined, [], [])).toBeUndefined()
+  })
+})
+
+describe("active sessions", () => {
+  const root = session({ id: "ses_a", directory: "/p", time: { created: 1, updated: 5, archived: undefined } })
+  const child = session({ id: "ses_c", directory: "/p", parentID: "ses_a" })
+  const idle = session({ id: "ses_i", directory: "/p", time: { created: 1, updated: 9, archived: undefined } })
+  const asking = session({ id: "ses_q", directory: "/p", time: { created: 1, updated: 2, archived: undefined } })
+  const archived = session({ id: "ses_x", directory: "/p", time: { created: 1, updated: 1, archived: 3 } })
+  const perm = (id: string, sessionID: string) => ({ id, sessionID }) as PermissionRequest
+  const question = (id: string, sessionID: string) => ({ id, sessionID, questions: [] }) as unknown as QuestionRequest
+  const source = (input: Partial<ActiveSource> = {}): ActiveSource => ({
+    directory: "/p",
+    session: [root, child, idle, asking, archived],
+    session_status: { ses_x: { type: "busy" } },
+    message: { ses_i: [{ role: "assistant", time: { created: 1, completed: 2 } }] },
+    ...input,
+  })
+
+  test("lists busy and waiting root sessions, waiting first, and skips idle and archived ones", () => {
+    const list = activeSessions([
+      {
+        project: "P",
+        sources: [
+          source({
+            session_status: { ses_c: { type: "busy" }, ses_x: { type: "busy" } },
+            question: { ses_q: [question("que_1", "ses_q")] },
+          }),
+        ],
+      },
+    ])
+    expect(list.map((item) => [item.session.id, item.state, item.project])).toEqual([
+      ["ses_q", "waiting", "P"],
+      ["ses_a", "working", "P"],
+    ])
+  })
+
+  test("an unfinished assistant reply counts as working; an auto-answered permission does not count as waiting", () => {
+    const list = activeSessions(
+      [
+        {
+          project: "P",
+          sources: [
+            source({
+              message: { ses_i: [{ role: "assistant", time: { created: 1 } }] },
+              permission: { ses_q: [perm("per_auto", "ses_q")] },
+            }),
+          ],
+        },
+      ],
+      (item) => item.id !== "per_auto",
+    )
+    expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "working"]])
+  })
+
+  test("stopping rejects every pending request in the tree before aborting busy subagents and the session", () => {
+    const steps = stopSteps(
+      source({
+        session_status: { ses_c: { type: "busy" } },
+        permission: { ses_c: [perm("per_1", "ses_c")] },
+        question: { ses_a: [question("que_1", "ses_a")] },
+      }),
+      "ses_a",
+    )
+    expect(steps).toEqual([
+      { type: "question", requestID: "que_1" },
+      { type: "permission", requestID: "per_1" },
+      { type: "abort", sessionID: "ses_c" },
+      { type: "abort", sessionID: "ses_a" },
+    ])
+  })
+
+  test("runs the steps in order, tolerates gone requests, and fails when an abort fails", async () => {
+    const calls: string[] = []
+    const api = {
+      rejectPermission: async (id: string) => {
+        calls.push(`permission:${id}`)
+        throw new Error("gone")
+      },
+      rejectQuestion: async (id: string) => void calls.push(`question:${id}`),
+      abort: async (id: string) => void calls.push(`abort:${id}`),
+    }
+    await runStopSteps(
+      [
+        { type: "permission", requestID: "per_1" },
+        { type: "question", requestID: "que_1" },
+        { type: "abort", sessionID: "ses_a" },
+      ],
+      api,
+    )
+    expect(calls).toEqual(["permission:per_1", "question:que_1", "abort:ses_a"])
+    const failing = { ...api, abort: async () => Promise.reject(new Error("offline")) }
+    await expect(runStopSteps([{ type: "abort", sessionID: "ses_a" }], failing)).rejects.toThrow("offline")
   })
 })

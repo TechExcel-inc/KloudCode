@@ -168,16 +168,19 @@ const SessionRow = (props: {
   )
 }
 
-/** Confirms deleting a session from the sidebar; leaves the session page when it was open. */
-const DialogDelete = (props: { session: Session; slug: string }): JSX.Element => {
+/**
+ * Confirms deleting a session from the sidebar; leaves the session page when it was open.
+ * `prepare` runs after the confirmation and before the delete, e.g. to stop a running session first.
+ */
+export const DialogDelete = (props: { session: Session; slug: string; prepare?: () => Promise<void> }): JSX.Element => {
   const globalSDK = useGlobalSDK()
   const dialog = useDialog()
   const language = useLanguage()
   const params = useParams()
   const navigate = useNavigate()
   const remove = async () => {
-    const ok = await globalSDK.client.session
-      .delete({ directory: props.session.directory, sessionID: props.session.id })
+    const ok = await (props.prepare?.() ?? Promise.resolve())
+      .then(() => globalSDK.client.session.delete({ directory: props.session.directory, sessionID: props.session.id }))
       .then(() => true)
       .catch((err: unknown) => {
         showToast({
