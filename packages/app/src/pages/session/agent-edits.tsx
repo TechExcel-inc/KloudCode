@@ -267,6 +267,9 @@ export function AgentEdits(props: {
   session?: string
   onOpen: (path: string) => void
   onOpenOutput: (path: string) => void
+  /** Set (non-zero) to open the Changes box and scroll it into view; `onChangesFocused` clears it. */
+  focusChanges?: number
+  onChangesFocused?: () => void
 }) {
   const language = useLanguage()
   const sdk = useSDK()
@@ -277,6 +280,17 @@ export function AgentEdits(props: {
   const dialog = useDialog()
   const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
+  let panel: HTMLElement | undefined
+  createEffect(() => {
+    if (!props.focusChanges) return
+    setOpen((prev) => ({ ...prev, changes: true }))
+    requestAnimationFrame(() => {
+      panel
+        ?.querySelector('[data-component="agent-panel-changes"]')
+        ?.scrollIntoView({ block: "start", behavior: "smooth" })
+    })
+    props.onChangesFocused?.()
+  })
   const [shown, setShown] = createSignal<Partial<Record<OutputGroup, boolean>>>({})
 
   const messages = createMemo(() => (props.session ? (sync.data.message[props.session] ?? []) : []))
@@ -419,6 +433,7 @@ export function AgentEdits(props: {
 
   return (
     <aside
+      ref={panel}
       data-component="agent-edits"
       aria-label={language.t("agent.panel.title")}
       class="shrink-0 h-full min-h-0 overflow-y-auto no-scrollbar border-l border-border-weaker-base bg-background-base"

@@ -1049,6 +1049,43 @@ export const SessionRoutes = lazy(() =>
       },
     )
     .post(
+      "/:sessionID/message/:messageID/discard",
+      describeRoute({
+        summary: "Discard a reply's file changes",
+        description:
+          "Restore the given files to how they were before this reply. Only files in the reply's change list and inside the session folder are restored; files the reply created are deleted. The rest are refused.",
+        operationId: "session.discard",
+        responses: {
+          200: {
+            description: "Files restored and files refused",
+            content: {
+              "application/json": {
+                schema: resolver(SessionRevert.DiscardResult),
+              },
+            },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "param",
+        z.object({
+          sessionID: SessionID.zod,
+          messageID: MessageID.zod,
+        }),
+      ),
+      validator("json", SessionRevert.DiscardInput.pick({ files: true })),
+      async (c) => {
+        const params = c.req.valid("param")
+        const body = c.req.valid("json")
+        log.info("discard", { ...params, files: body.files.length })
+        const result = await AppRuntime.runPromise(
+          SessionRevert.Service.use((svc) => svc.discard({ ...params, files: body.files })),
+        )
+        return c.json(result)
+      },
+    )
+    .post(
       "/:sessionID/unrevert",
       describeRoute({
         summary: "Restore reverted messages",

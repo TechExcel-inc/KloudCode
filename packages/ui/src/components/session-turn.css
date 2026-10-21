@@ -126,6 +126,40 @@
     margin-left: 4px;
   }
 
+  /* Commit and Discard for a finished reply's own changes, at the right of the header. */
+  [data-slot="session-turn-diffs-actions"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  [data-slot="session-turn-diffs-action"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-weak-base);
+    background-color: var(--surface-base);
+    color: var(--text-base);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+  }
+
+  [data-slot="session-turn-diffs-action"]:hover {
+    background-color: var(--surface-base-hover);
+    color: var(--text-strong);
+  }
+
+  [data-slot="session-turn-diffs-action"][data-primary] {
+    border-color: var(--border-interactive-base);
+    color: var(--text-interactive-base);
+  }
+
   [data-component="session-turn-diffs-group"]:hover [data-slot="session-turn-diffs-toggle"] {
     opacity: 1;
   }
@@ -253,6 +287,40 @@
     color: var(--text-weak);
     font-weight: var(--font-weight-regular);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* A finished reply's checklist folds to one line; the header opens and closes it. */
+  &[data-foldable] [data-slot="session-turn-checklist-header"] {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &[data-foldable] [data-slot="session-turn-checklist-header"]:focus-visible {
+    outline: 2px solid var(--border-interactive-base);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  [data-slot="session-turn-checklist-summary"] {
+    color: var(--text-weak);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="session-turn-checklist-done"] {
+    display: inline-flex;
+    color: var(--icon-success-base);
+  }
+
+  [data-slot="session-turn-checklist-chevron"] {
+    display: inline-flex;
+    margin-left: auto;
+    color: var(--icon-weak-base);
+    transition: transform 0.15s ease;
+  }
+
+  [data-slot="session-turn-checklist-chevron"][data-open] {
+    transform: rotate(180deg);
   }
 
   /* "Waiting for you" when the turn ended with steps left undone. */

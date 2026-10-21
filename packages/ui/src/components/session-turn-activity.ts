@@ -51,6 +51,15 @@ export function checklistProgress(list: readonly TurnStep[]) {
   return { done: list.filter((step) => step.status === "completed").length, total: list.length }
 }
 
+/**
+ * A reply's checklist folds to one line once the turn has stopped and every step is completed or
+ * cancelled; while the AI works, or with any step still pending or in progress, it stays open.
+ */
+export function checklistFolds(list: readonly TurnStep[], working: boolean) {
+  if (working || list.length === 0) return false
+  return list.every((step) => step.status === "completed" || step.status === "cancelled")
+}
+
 /** True for a tool call that is folded into the turn's single "N actions" line. */
 export function isFoldedAction(part: PartType) {
   if (part.type !== "tool") return false

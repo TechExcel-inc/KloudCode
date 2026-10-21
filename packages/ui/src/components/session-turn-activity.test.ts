@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
 import {
+  checklistFolds,
   checklistProgress,
   currentAction,
   elapsedParts,
@@ -152,5 +153,19 @@ describe("live status", () => {
     expect(elapsedParts(130_000)).toEqual({ key: "ui.sessionTurn.live.elapsed.minutes", params: { minutes: 2, seconds: 10 } })
     expect(elapsedParts(3_780_000)).toEqual({ key: "ui.sessionTurn.live.elapsed.hours", params: { hours: 1, minutes: 3 } })
     expect(elapsedParts(-5)).toEqual({ key: "ui.sessionTurn.live.elapsed.seconds", params: { seconds: 0 } })
+  })
+})
+
+describe("checklistFolds", () => {
+  const done = { content: "a", status: "completed" }
+  const dropped = { content: "b", status: "cancelled" }
+  test("folds a finished turn whose steps are all completed or cancelled", () => {
+    expect(checklistFolds([done, dropped], false)).toBe(true)
+  })
+  test("stays open while working, with a step left, or with no steps", () => {
+    expect(checklistFolds([done], true)).toBe(false)
+    expect(checklistFolds([done, { content: "c", status: "pending" }], false)).toBe(false)
+    expect(checklistFolds([done, { content: "c", status: "in_progress" }], false)).toBe(false)
+    expect(checklistFolds([], false)).toBe(false)
   })
 })

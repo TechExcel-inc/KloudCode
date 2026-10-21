@@ -149,6 +149,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionDiscardErrors,
+  SessionDiscardResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -2598,6 +2600,47 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionRevertResponses, SessionRevertErrors, ThrowOnError>({
       url: "/session/{sessionID}/revert",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Discard a reply's file changes
+   *
+   * Restore the given files to how they were before this reply. Only files in the reply's change list and inside the session folder are restored; files the reply created are deleted. The rest are refused.
+   */
+  public discard<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+      files?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "files" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionDiscardResponses, SessionDiscardErrors, ThrowOnError>({
+      url: "/session/{sessionID}/message/{messageID}/discard",
       ...options,
       ...params,
       headers: {

@@ -13,7 +13,7 @@ import { getDirectory, getFilename } from "@opencode-ai/util/path"
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, type UserActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, type TurnFilesAction, type UserActions } from "./message-part"
 import { Card } from "./card"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -27,6 +27,7 @@ import { createAutoScroll } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { normalize } from "./session-diff"
 import {
+  checklistFolds,
   checklistProgress,
   currentAction,
   elapsedParts,
@@ -253,6 +254,11 @@ export function SessionTurn(
   const expanded = () => state.expanded
   const overflow = createMemo(() => Math.max(0, edited() - MAX_FILES))
   const visible = createMemo(() => (showAll() ? diffs() : diffs().slice(0, MAX_FILES)))
+  const runFilesAction = (action: TurnFilesAction) => {
+    const msg = message()
+    if (!msg) return
+    void action({ sessionID: props.sessionID, messageID: msg.id, files: diffs().map((diff) => diff.file) })
+  }
   const toggleAll = () => {
     autoScroll.pause()
     setState("showAll", !showAll())
@@ -449,7 +455,9 @@ export function SessionTurn(
                         </Show>
                       </div>
                     </Show>
-                    <Show when={checklist()}>{(steps) => <TurnChecklist steps={steps()} working={working()} />}</Show>
+                    <Show when={checklist()}>
+                      {(steps) => <TurnChecklist steps={steps()} working={working()} foldWhenDone />}
+                    </Show>
                     <Show when={live() && liveStatus()}>
                       <div data-component="session-turn-live-status" class="session-turn-live-status">
                         {liveStatus()}
@@ -491,6 +499,37 @@ export function SessionTurn(
                     <Show when={overflow() > 0}>
                       <span data-slot="session-turn-diffs-toggle" onClick={toggleAll}>
                         {showAll() ? i18n.t("ui.sessionTurn.diffs.showLess") : i18n.t("ui.sessionTurn.diffs.showAll")}
+                      </span>
+                    </Show>
+                    <Show when={props.actions?.commit || props.actions?.discard}>
+                      <span data-slot="session-turn-diffs-actions">
+                        <Show when={props.actions?.discard}>
+                          {(discard) => (
+                            <button
+                              type="button"
+                              data-action="session-turn-discard"
+                              data-slot="session-turn-diffs-action"
+                              onClick={() => runFilesAction(discard())}
+                            >
+                              <Icon name="reset" size="small" />
+                              {i18n.t("ui.sessionTurn.diffs.discard")}
+                            </button>
+                          )}
+                        </Show>
+                        <Show when={props.actions?.commit}>
+                          {(commit) => (
+                            <button
+                              type="button"
+                              data-action="session-turn-commit"
+                              data-slot="session-turn-diffs-action"
+                              data-primary
+                              onClick={() => runFilesAction(commit())}
+                            >
+                              <Icon name="cloud-upload" size="small" />
+                              {i18n.t("ui.sessionTurn.diffs.commit")}
+                            </button>
+                          )}
+                        </Show>
                       </span>
                     </Show>
                   </div>
@@ -603,21 +642,62 @@ export function TurnChecklist(props: {
   note?: string
   actions?: JSX.Element
   collapsed?: boolean
+  /** Inside a reply: once the turn stops with every step completed or cancelled, show one line that opens on click. */
+  foldWhenDone?: boolean
 }) {
   const i18n = useI18n()
   const progress = createMemo(() => checklistProgress(props.steps))
+  const foldable = createMemo(() => !!props.foldWhenDone && checklistFolds(props.steps, props.working))
+  const [opened, setOpened] = createSignal(false)
+  const folded = createMemo(() => foldable() && !opened())
+  const collapsed = () => props.collapsed || folded()
+  const counts = () => ({ done: String(progress().done), total: String(progress().total) })
 
   return (
-    <div data-component="session-turn-checklist" class="session-turn-checklist" data-collapsed={props.collapsed || undefined}>
-      <div data-slot="session-turn-checklist-header">
+    <div
+      data-component="session-turn-checklist"
+      class="session-turn-checklist"
+      data-collapsed={collapsed() || undefined}
+      data-foldable={foldable() || undefined}
+    >
+      <div
+        data-slot="session-turn-checklist-header"
+        role={foldable() ? "button" : undefined}
+        tabIndex={foldable() ? 0 : undefined}
+        aria-expanded={foldable() ? !folded() : undefined}
+        title={
+          foldable()
+            ? i18n.t(folded() ? "ui.sessionTurn.checklist.expand" : "ui.sessionTurn.checklist.collapse")
+            : undefined
+        }
+        onClick={() => foldable() && setOpened((value) => !value)}
+        onKeyDown={(event) => {
+          if (!foldable() || (event.key !== "Enter" && event.key !== " ")) return
+          event.preventDefault()
+          setOpened((value) => !value)
+        }}
+      >
         <Icon name="checklist" size="small" />
         <span data-slot="session-turn-checklist-label">{i18n.t("ui.sessionTurn.checklist.label")}</span>
-        <span data-slot="session-turn-checklist-progress">
-          {i18n.t("ui.sessionTurn.checklist.progress", {
-            done: String(progress().done),
-            total: String(progress().total),
-          })}
-        </span>
+        <Show
+          when={foldable()}
+          fallback={
+            <span data-slot="session-turn-checklist-progress">
+              {i18n.t("ui.sessionTurn.checklist.progress", counts())}
+            </span>
+          }
+        >
+          <span data-slot="session-turn-checklist-summary">
+            {"· "}
+            {i18n.t("ui.sessionTurn.checklist.done", counts())}
+          </span>
+          <span data-slot="session-turn-checklist-done">
+            <Icon name="check" size="small" />
+          </span>
+          <span data-slot="session-turn-checklist-chevron" data-open={!folded() || undefined}>
+            <Icon name="chevron-down" size="small" />
+          </span>
+        </Show>
         <Show when={props.note}>
           <span data-slot="session-turn-checklist-note">{props.note}</span>
         </Show>
@@ -625,7 +705,7 @@ export function TurnChecklist(props: {
           <span data-slot="session-turn-checklist-actions">{props.actions}</span>
         </Show>
       </div>
-      <Show when={!props.collapsed}>
+      <Show when={!collapsed()}>
         <ul data-slot="session-turn-checklist-steps">
           <For each={props.steps}>
             {(step) => (

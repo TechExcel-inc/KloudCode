@@ -4256,6 +4256,48 @@ export type SessionRevertResponses = {
 
 export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
 
+export type SessionDiscardResult = {
+  discarded: Array<string>
+  refused: Array<string>
+}
+
+export type SessionDiscardData = {
+  body?: {
+    files: Array<string>
+  }
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/discard"
+}
+
+export type SessionDiscardErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionDiscardError = SessionDiscardErrors[keyof SessionDiscardErrors]
+
+export type SessionDiscardResponses = {
+  /**
+   * Files restored and files refused
+   */
+  200: SessionDiscardResult
+}
+
+export type SessionDiscardResponse = SessionDiscardResponses[keyof SessionDiscardResponses]
+
 export type SessionUnrevertData = {
   body?: never
   path: {

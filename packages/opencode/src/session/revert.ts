@@ -11,6 +11,9 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
 import { SessionSummary } from "./summary"
 import { SessionStatus } from "./status"
+import { TurnFiles } from "./turn-files"
+import { InstanceState } from "@/effect/instance-state"
+import path from "path"
 
 export namespace SessionRevert {
   const log = Log.create({ service: "session.revert" })
@@ -22,10 +25,27 @@ export namespace SessionRevert {
   })
   export type RevertInput = z.infer<typeof RevertInput>
 
+  export const DiscardInput = z.object({
+    sessionID: SessionID.zod,
+    messageID: MessageID.zod,
+    files: z.string().array(),
+  })
+  export type DiscardInput = z.infer<typeof DiscardInput>
+
+  export const DiscardResult = z
+    .object({
+      discarded: z.string().array(),
+      refused: z.string().array(),
+    })
+    .meta({ ref: "SessionDiscardResult" })
+  export type DiscardResult = z.infer<typeof DiscardResult>
+
   export interface Interface {
     readonly revert: (input: RevertInput) => Effect.Effect<Session.Info>
     readonly unrevert: (input: { sessionID: SessionID }) => Effect.Effect<Session.Info>
     readonly cleanup: (session: Session.Info) => Effect.Effect<void>
+    /** Puts the given files of one turn back to how they were before that turn. */
+    readonly discard: (input: DiscardInput) => Effect.Effect<DiscardResult>
   }
 
   export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRevert") {}
@@ -157,7 +177,60 @@ export namespace SessionRevert {
         yield* sessions.clearRevert(sessionID)
       })
 
-      return Service.of({ revert, unrevert, cleanup })
+      const discard = Effect.fn("SessionRevert.discard")(function* (input: DiscardInput) {
+        yield* state.assertNotBusy(input.sessionID)
+        const all = yield* sessions.messages({ sessionID: input.sessionID })
+        const target = all.find((msg) => msg.info.id === input.messageID)
+        if (!target || target.info.role !== "user") return { discarded: [], refused: [...input.files] }
+        const turn = all.filter(
+          (msg) => msg.info.id === input.messageID || (msg.info.role === "assistant" && msg.info.parentID === input.messageID),
+        )
+        const start = (list: MessageV2.WithParts[]) => {
+          for (const msg of list)
+            for (const part of msg.parts) if (part.type === "step-start" && part.snapshot) return part.snapshot
+        }
+        const from = start(turn)
+        const ctx = yield* InstanceState.context
+        // Only files this turn's own AI changed, even when the saved list is older and also holds other people's changes.
+        const listed = TurnFiles.filter(
+          target.info.summary?.diffs ?? [],
+          TurnFiles.collect(turn.flatMap((msg) => msg.parts)),
+          { worktree: ctx.worktree, directory: ctx.directory },
+        )
+        const plan = TurnFiles.discardPlan(input.files, listed, { worktree: ctx.worktree, directory: ctx.directory })
+        if (!from || !plan.allowed.length) {
+          return { discarded: [], refused: [...plan.refused, ...(from ? [] : input.files.filter((f) => !plan.refused.includes(f)))] }
+        }
+
+        log.info("discarding", { sessionID: input.sessionID, messageID: input.messageID, files: plan.allowed.length })
+        // Files the turn created are not in the starting snapshot and get deleted; the rest are checked out.
+        yield* snap.revert([{ hash: from, files: plan.allowed.map((file) => path.join(ctx.worktree, file)) }])
+
+        // The turn's change list drops the files that are back to how they were.
+        const gone = new Set(plan.allowed)
+        target.info.summary = { ...target.info.summary, diffs: listed.filter((diff) => !gone.has(diff.file)) }
+        yield* sessions.updateMessage(target.info)
+
+        // The session's change list (the Changes box) is re-read against the folder as it is now.
+        const first = start(all)
+        const now = yield* snap.track()
+        if (first && now) {
+          const diffs = yield* snap.diffFull(first, now)
+          yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
+          yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
+          yield* sessions.setSummary({
+            sessionID: input.sessionID,
+            summary: {
+              additions: diffs.reduce((sum, x) => sum + x.additions, 0),
+              deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
+              files: diffs.length,
+            },
+          })
+        }
+        return { discarded: plan.allowed, refused: plan.refused }
+      })
+
+      return Service.of({ revert, unrevert, cleanup, discard })
     }),
   )
 

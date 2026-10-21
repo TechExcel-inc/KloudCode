@@ -6,6 +6,8 @@ import { Storage } from "@/storage/storage"
 import { Session } from "."
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
+import { TurnFiles } from "./turn-files"
+import { InstanceState } from "@/effect/instance-state"
 
 export namespace SessionSummary {
   function unquoteGitPath(input: string) {
@@ -127,7 +129,26 @@ export namespace SessionSummary {
         const target = messages.find((m) => m.info.id === input.messageID)
         if (!target || target.info.role !== "user") return
         const msgDiffs = yield* computeDiff({ messages })
-        target.info.summary = { ...target.info.summary, diffs: msgDiffs }
+        // The snapshots cover the whole folder; keep only the files this turn's AI changed itself,
+        // including through helpers (task tool child sessions).
+        const parts = messages.flatMap((m) => m.parts)
+        const children = parts.flatMap((part) => {
+          if (part.type !== "tool" || part.tool !== "task") return []
+          const id = part.state.status === "pending" ? undefined : part.state.metadata?.sessionId
+          return typeof id === "string" ? [id] : []
+        })
+        for (const child of children) {
+          const more = yield* sessions
+            .messages({ sessionID: child as SessionID })
+            .pipe(Effect.catch(() => Effect.succeed([] as MessageV2.WithParts[])))
+          parts.push(...more.flatMap((m) => m.parts))
+        }
+        const ctx = yield* InstanceState.context
+        const own = TurnFiles.filter(msgDiffs, TurnFiles.collect(parts), {
+          worktree: ctx.worktree,
+          directory: ctx.directory,
+        })
+        target.info.summary = { ...target.info.summary, diffs: own }
         yield* sessions.updateMessage(target.info)
       })
 
