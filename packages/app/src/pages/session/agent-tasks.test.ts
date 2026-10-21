@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { sameChecklist, sessionBackground, sessionTasks } from "./agent-tasks"
-import { costReport, type CostEntry } from "./agent-cost"
+import { costReport, costTotals, type CostEntry } from "./agent-cost"
 
 const user = (id: string, title?: string, diffs: { file: string; additions: number; deletions: number }[] = []) =>
   ({ id, sessionID: "s", role: "user", time: { created: 1 }, summary: { title, diffs }, agent: "build", model: {} }) as unknown as Message
@@ -148,7 +148,10 @@ describe("costReport", () => {
       ["Add table", 2, 0.3],
       ["Add page", 1, 0.3],
     ])
-    expect(deploy!.steps.map((step) => step.title)).toEqual([undefined, "Back up"])
+    expect(deploy!.steps.map((step) => [step.title, step.state])).toEqual([[undefined, "untracked"], ["Back up", "step"]])
+    // Subtotals add the parts of every request.
+    const sum = costTotals(build!.entries)
+    expect([sum.input, sum.cached, sum.output, sum.cost]).toEqual([300, 0, 30, 600_000])
     expect(deploy!.unpriced).toBe(1)
   })
 })

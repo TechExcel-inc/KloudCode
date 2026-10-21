@@ -4,7 +4,11 @@ import type { Task } from "./agent-tasks"
 
 export type CostEntry = NonNullable<CoworkGatewayCost["entries"]>[number]
 
-export type CostStep = { title: string | undefined; cost: number; entries: CostEntry[] }
+/**
+ * A checklist step and its requests. A request recorded before step tracking began has no step
+ * ("untracked"); a newer request sent while no checklist step was in progress is "none".
+ */
+export type CostStep = { title: string | undefined; state: "step" | "none" | "untracked"; cost: number; entries: CostEntry[] }
 
 /** One numbered piece of work and what its AI requests cost, in dollars. */
 export type CostItem = {
@@ -26,8 +30,9 @@ function item(kind: CostItem["kind"], title: string, entries: CostEntry[]): Omit
   const steps: CostStep[] = []
   for (const entry of entries) {
     const title = entry.stepText?.trim() || undefined
-    let step = steps.find((row) => row.title === title)
-    if (!step) steps.push((step = { title, cost: 0, entries: [] }))
+    const state: CostStep["state"] = title ? "step" : entry.messageUid ? "none" : "untracked"
+    let step = steps.find((row) => row.title === title && row.state === state)
+    if (!step) steps.push((step = { title, state, cost: 0, entries: [] }))
     step.entries.push(entry)
     step.cost += dollars(entry)
   }
@@ -62,6 +67,22 @@ function helperTitles(parts: Part[]) {
  * when the user message it served is one of the task's requests. Older requests that do not name
  * their message belong to the latest user message sent before they started.
  */
+/** Token and cost totals of a set of requests; costs in millionths of a dollar. */
+export function costTotals(entries: CostEntry[]) {
+  return entries.reduce(
+    (sum, entry) => ({
+      input: sum.input + entry.promptTokens - entry.cachedTokens,
+      cached: sum.cached + entry.cachedTokens,
+      output: sum.output + entry.completionTokens,
+      inputCost: sum.inputCost + (entry.inputCostMicroUsd ?? 0),
+      cachedCost: sum.cachedCost + (entry.cachedCostMicroUsd ?? 0),
+      outputCost: sum.outputCost + (entry.outputCostMicroUsd ?? 0),
+      cost: sum.cost + (entry.costMicroUsd ?? 0),
+    }),
+    { input: 0, cached: 0, output: 0, inputCost: 0, cachedCost: 0, outputCost: 0, cost: 0 },
+  )
+}
+
 export function costReport(
   sessionID: string,
   messages: Message[],

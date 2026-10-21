@@ -3,7 +3,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { formatTokens } from "./agent-context"
-import type { CostEntry, CostItem } from "./agent-cost"
+import { costTotals, type CostEntry, type CostItem, type CostStep } from "./agent-cost"
 
 /** The title of a numbered piece of work, as both the Summary and the report show it. */
 export function costItemTitle(item: CostItem, t: ReturnType<typeof useLanguage>["t"]) {
@@ -30,15 +30,44 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
       ? `${Math.max(0, Math.round((Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) / 1000))}s`
       : language.t("agent.cost.untimed")
   const requests = props.items.reduce((sum, item) => sum + item.entries.length, 0)
+  const stepTitle = (step: CostStep) =>
+    step.state === "step" ? step.title : language.t(step.state === "none" ? "agent.cost.noStep" : "agent.cost.untracked")
+  const stepHint = (step: CostStep) =>
+    step.state === "step" ? step.title : language.t(step.state === "none" ? "agent.cost.noStepHint" : "agent.cost.untrackedHint")
+  /** Totals of a set of requests, laid out in the same columns as the requests. */
+  const subtotal = (label: string, entries: CostEntry[]) => {
+    const sum = costTotals(entries)
+    return (
+      <tr class="border-t-2 border-border-weak-base text-text-strong">
+        <td class="py-1 pr-2" colspan="2">
+          {label} · {language.t("agent.cost.requests", { count: entries.length })}
+        </td>
+        <td class="py-1 pr-2 text-right whitespace-nowrap" title={count(sum.input)}>
+          <div>{formatTokens(sum.input)}</div>
+          <div class="text-text-weak">{part(sum.inputCost)}</div>
+        </td>
+        <td class="py-1 pr-2 text-right whitespace-nowrap" title={count(sum.cached)}>
+          <div>{formatTokens(sum.cached)}</div>
+          <div class="text-text-weak">{part(sum.cachedCost)}</div>
+        </td>
+        <td class="py-1 pr-2 text-right whitespace-nowrap" title={count(sum.output)}>
+          <div>{formatTokens(sum.output)}</div>
+          <div class="text-text-weak">{part(sum.outputCost)}</div>
+        </td>
+        <td class="py-1 text-right whitespace-nowrap">{part(sum.cost)}</td>
+      </tr>
+    )
+  }
 
   return (
     <Dialog title={language.t("agent.cost.report")} size="x-large">
-      <div data-component="agent-cost-report" class="flex flex-col gap-3 px-4 pb-4 text-12-regular text-text-base select-text">
+      <div data-component="agent-cost-report" class="flex-1 min-h-0 flex flex-col gap-3 px-4 pb-4 text-12-regular text-text-base select-text">
         <div class="flex items-baseline gap-3 text-13-regular">
           <span class="text-text-strong">{language.t("agent.cost.total", { cost: props.money(props.total) })}</span>
           <span class="text-text-weak">{language.t("agent.cost.requests", { count: requests })}</span>
         </div>
         <p class="text-text-weak">{language.t("agent.cost.explain")}</p>
+        <div data-slot="agent-cost-report-list" class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-1">
         <For each={props.items}>
           {(item) => (
             <section data-component="agent-cost-item" class="rounded-md border border-border-weaker-base">
@@ -60,7 +89,9 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
                     {(step) => (
                       <div class="flex flex-col">
                         <div class="flex items-center gap-2 py-1 border-b border-border-weaker-base">
-                          <span class="min-w-0 truncate text-text-strong">{step.title ?? language.t("agent.cost.noStep")}</span>
+                          <span class="min-w-0 truncate text-text-strong" title={stepHint(step)}>
+                            {stepTitle(step)}
+                          </span>
                           <span class="ml-auto shrink-0 text-text-strong">{props.money(step.cost)}</span>
                         </div>
                         <table class="w-full text-11-regular">
@@ -111,10 +142,16 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
                               )}
                             </For>
                           </tbody>
+                          <tfoot>{subtotal(language.t("agent.cost.stepTotal"), step.entries)}</tfoot>
                         </table>
                       </div>
                     )}
                   </For>
+                  <Show when={item.steps.length > 1}>
+                    <table class="w-full text-11-regular">
+                      <tbody>{subtotal(language.t("agent.cost.itemTotal", { number: item.number }), item.entries)}</tbody>
+                    </table>
+                  </Show>
                 </div>
               </Show>
             </section>
@@ -123,6 +160,7 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
         <Show when={props.untimed > 0}>
           <p class="text-text-weak">{language.t("agent.summary.untimed", { count: props.untimed })}</p>
         </Show>
+        </div>
       </div>
     </Dialog>
   )
