@@ -11,6 +11,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
+import { DesignReviewTool, EAD_PROVIDER } from "./design-review"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
@@ -117,6 +118,7 @@ export namespace ToolRegistry {
       const lsptool = yield* LspTool
       const plan = yield* PlanExitTool
       const webfetch = yield* WebFetchTool
+      const designReview = yield* DesignReviewTool
       const websearch = yield* WebSearchTool
       const bash = yield* BashTool
       const codesearch = yield* CodeSearchTool
@@ -196,6 +198,7 @@ export namespace ToolRegistry {
             write: Tool.init(writetool),
             task: Tool.init(task),
             fetch: Tool.init(webfetch),
+            designReview: Tool.init(designReview),
             todo: Tool.init(todo),
             search: Tool.init(websearch),
             code: Tool.init(codesearch),
@@ -222,6 +225,7 @@ export namespace ToolRegistry {
               tool.write,
               tool.task,
               tool.fetch,
+              ...(questionEnabled ? [tool.designReview] : []),
               tool.todo,
               tool.search,
               tool.code,
@@ -281,6 +285,8 @@ export namespace ToolRegistry {
 
       const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
         const filtered = (yield* all()).filter((tool) => {
+          // Visual design review runs on EAD Pilot, so it is offered only to sessions on an EAD Pilot plan.
+          if (tool.id === DesignReviewTool.id) return input.providerID === EAD_PROVIDER
           if (tool.id === CodeSearchTool.id || tool.id === WebSearchTool.id) {
             return input.providerID === ProviderID.opencode || Flag.OPENCODE_ENABLE_EXA
           }

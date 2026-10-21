@@ -44,6 +44,7 @@ export function visuals(client: string) {
       `  - Images from http(s) URLs can be shown with the same syntax.`,
       `Label each option with a letter and a short name (for example "A. Hub & Spoke"). Several sizes or states of one option can sit side by side in the same reply.`,
       `After showing the options, ask the user which one they want with the question tool, one choice per option letter, and set each choice's image to that option's picture (its complete <svg>...</svg>, or its image path inside the project). The app shows those choices as picture cards the user can enlarge and pick with one click.`,
+      `Before you show design options as SVG, check them with the design_review tool when it is available: a model that can see draws them as the app shows them and compares them with the person's image. Fix the options it marks "fix" and check again, at most two rounds, and show only options that pass.`,
     ].join("\n"),
   ]
 }

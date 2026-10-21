@@ -1,0 +1,8 @@
+Have a model that can see check your design options before you show them to the person.
+
+Use it whenever you designed something visual as SVG (icons, logos, small UI pieces, diagrams) and are about to present options. EAD Pilot draws every option the way the app shows it (at 20, 40 and 160 px, in the app's text colour on its dark background), compares it with the image the person attached, and returns a verdict per option: "pass", or "fix" with concrete problems and exact SVG changes.
+
+- Send every option with its label (for example "A. Node tree") and its complete <svg>...</svg>.
+- Fix the options marked "fix" exactly as told, then review again. Do at most two rounds of fixes.
+- Show the person only options that pass. If an option still fails after two rounds, leave it out or say plainly what is still wrong.
+- When the tool says review is not available, say so in one line and present the options as they are.
