@@ -324,6 +324,19 @@ export function SessionSidePanel(props: {
                             />
                           </Tooltip>
                         </Show>
+                        <Show when={!code()}>
+                          <Tooltip placement="bottom" value={language.t("agent.panel.closeReview")}>
+                            <IconButton
+                              icon="close"
+                              variant="ghost"
+                              iconSize="large"
+                              class="!rounded-md"
+                              data-action="session-side-panel-close"
+                              onClick={() => view().reviewPanel.close()}
+                              aria-label={language.t("agent.panel.closeReview")}
+                            />
+                          </Tooltip>
+                        </Show>
                       </div>
                     </Tabs.List>
                   </div>

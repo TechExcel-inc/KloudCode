@@ -714,6 +714,7 @@ export const dict = {
   "agent.group.week": "本週",
   "agent.group.older": "更早",
   "agent.panel.title": "工作階段詳情",
+  "agent.panel.closeReview": "關閉並顯示工作階段概覽",
   "agent.summary.title": "概要",
   "agent.summary.started": "開始於 {{time}}",
   "agent.summary.active": "工作階段活躍時長",

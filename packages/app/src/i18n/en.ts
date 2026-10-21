@@ -819,6 +819,7 @@ export const dict = {
   "agent.group.week": "This week",
   "agent.group.older": "Older",
   "agent.panel.title": "Session details",
+  "agent.panel.closeReview": "Close and show the session overview",
   "agent.summary.title": "Summary",
   "agent.summary.started": "Started {{time}}",
   "agent.summary.active": "Session active time",

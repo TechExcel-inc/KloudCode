@@ -425,6 +425,18 @@ export default function Page() {
   const eadMapWidth = createMemo(() => (eadMapOpen() ? layout.pluginPanel.width(EAD_MAP_ID)() : 0))
   const eadPilotWidth = createMemo(() => (eadPilotOpen() ? layout.pluginPanel.width(EAD_PILOT_ID)() : 0))
   const eadExtra = createMemo(() => eadMapWidth() + eadPilotWidth())
+  // In the Agent view the right side belongs to the session overview. A Review panel left open from the
+  // Code view (or from an earlier visit) closes when a session is opened here; one opened on purpose in
+  // this view keeps its close button, and closing it brings the overview back.
+  createEffect(
+    on(
+      () => [params.id, layout.nav.current()] as const,
+      ([id, nav]) => {
+        if (!id || nav !== "agent") return
+        if (view().reviewPanel.opened()) view().reviewPanel.close()
+      },
+    ),
+  )
   const editsOpen = createMemo(
     () => isDesktop() && layout.nav.current() === "agent" && !desktopReviewOpen(),
   )

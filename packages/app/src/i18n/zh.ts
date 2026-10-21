@@ -726,6 +726,7 @@ export const dict = {
   "agent.group.week": "本周",
   "agent.group.older": "更早",
   "agent.panel.title": "会话详情",
+  "agent.panel.closeReview": "关闭并显示会话概览",
   "agent.summary.title": "概要",
   "agent.summary.started": "开始于 {{time}}",
   "agent.summary.active": "会话活跃时长",
