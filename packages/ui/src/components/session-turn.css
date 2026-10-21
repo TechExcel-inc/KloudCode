@@ -277,12 +277,32 @@
     gap: 2px;
   }
 
-  /* Above the composer the box sits on the page background and scrolls a long list. */
+  /*
+   * Above the composer the box is compact: smaller type, one line per step (the full text on hover), the
+   * step in progress shown in full, and a long list scrolls.
+   */
   [data-component="session-todo-dock"] & {
     background: var(--background-base);
+    padding: 6px 10px;
+    font-size: var(--font-size-small);
+    line-height: 18px;
     [data-slot="session-turn-checklist-steps"] {
-      max-height: 168px;
+      margin-top: 4px;
+      gap: 1px;
+      max-height: 140px;
       overflow-y: auto;
+    }
+    [data-slot="session-turn-checklist-marker"] {
+      height: 18px;
+    }
+    [data-slot="session-turn-checklist-content"] {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    [data-status="in_progress"] [data-slot="session-turn-checklist-content"] {
+      white-space: normal;
+      font-weight: var(--font-weight-medium);
     }
   }
 
@@ -381,6 +401,8 @@
   padding: 0 4px;
 }
 
+/* One line: spinner, what the AI is doing (its tool action, or the topic it is thinking about), and the
+   elapsed time and helpers at the right. */
 [data-slot="session-step-dock-above"] {
   [data-component="session-turn-live-action"] {
     margin-bottom: 6px;
@@ -388,25 +410,38 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
-    color: var(--text-base);
+    color: var(--text-strong);
     font-family: var(--font-family-sans);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
     line-height: 20px;
     min-height: 20px;
   }
-  [data-component="text-reveal"].session-turn-thinking-heading {
+  .session-turn-live-spinner {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--icon-interactive-base);
+  }
+  [data-slot="session-turn-live-text"] {
     flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-slot="session-turn-live-meta"] {
+    flex-shrink: 0;
     color: var(--text-weak);
+    font-size: var(--font-size-small);
     font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
   }
 }
 
 [data-slot="session-step-dock-below"] {
-  [data-component="session-turn-live-status"] {
+  [data-slot="session-turn-retry"] {
     margin-top: 6px;
-    color: var(--text-weak);
   }
 }
 

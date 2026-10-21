@@ -20,6 +20,7 @@ import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { DiffChanges } from "./diff-changes"
 import { Icon } from "./icon"
 import { TextShimmer } from "./text-shimmer"
+import { Spinner } from "./spinner"
 import { SessionRetry } from "./session-retry"
 import { TextReveal } from "./text-reveal"
 import { createAutoScroll } from "../hooks"
@@ -355,6 +356,7 @@ export function SessionTurn(
     return reason
   })
   const checklist = createMemo(() => latestChecklist(turnParts()))
+  const docked = createMemo(() => !!props.checklistDocked && !!props.liveMount?.above && !!props.liveMount?.below)
   const live = createMemo(() => {
     if (!working() || !!error()) return false
     return status().type !== "retry"
@@ -433,32 +435,52 @@ export function SessionTurn(
                   />
                 </div>
               </Show>
-              <Docked to={props.checklistDocked ? props.liveMount?.above : undefined}>
-                <Show when={live()}>
-                  <div data-slot="session-turn-thinking" data-component="session-turn-live-action">
-                    <TextShimmer text={actionText()} />
-                    <Show when={!action() && !showReasoningSummaries()}>
-                      <TextReveal
-                        text={reasoningHeading()}
-                        class="session-turn-thinking-heading"
-                        travel={25}
-                        duration={700}
-                      />
+              <Show
+                when={docked()}
+                fallback={
+                  <>
+                    <Show when={live()}>
+                      <div data-slot="session-turn-thinking" data-component="session-turn-live-action">
+                        <TextShimmer text={actionText()} />
+                        <Show when={!action() && !showReasoningSummaries()}>
+                          <TextReveal
+                            text={reasoningHeading()}
+                            class="session-turn-thinking-heading"
+                            travel={25}
+                            duration={700}
+                          />
+                        </Show>
+                      </div>
                     </Show>
-                  </div>
-                </Show>
-              </Docked>
-              <Show when={!props.checklistDocked && checklist()}>
-                {(steps) => <TurnChecklist steps={steps()} working={working()} />}
+                    <Show when={checklist()}>{(steps) => <TurnChecklist steps={steps()} working={working()} />}</Show>
+                    <Show when={live() && liveStatus()}>
+                      <div data-component="session-turn-live-status" class="session-turn-live-status">
+                        {liveStatus()}
+                      </div>
+                    </Show>
+                    <SessionRetry status={status()} show={active()} />
+                  </>
+                }
+              >
+                {/* Docked: one line above the box says what the AI is doing, with the elapsed time and
+                    helpers at the right; below the box only a retry notice, when there is one. */}
+                <Docked to={props.liveMount?.above}>
+                  <Show when={live()}>
+                    <div data-component="session-turn-live-action" data-docked>
+                      <Spinner class="session-turn-live-spinner" />
+                      <span data-slot="session-turn-live-text">
+                        <TextShimmer text={action() ? actionText() : (reasoningHeading() ?? actionText())} />
+                      </span>
+                      <Show when={liveStatus()}>
+                        <span data-slot="session-turn-live-meta">{liveStatus()}</span>
+                      </Show>
+                    </div>
+                  </Show>
+                </Docked>
+                <Docked to={props.liveMount?.below}>
+                  <SessionRetry status={status()} show={active()} />
+                </Docked>
               </Show>
-              <Docked to={props.checklistDocked ? props.liveMount?.below : undefined}>
-                <Show when={live() && liveStatus()}>
-                  <div data-component="session-turn-live-status" class="session-turn-live-status">
-                    {liveStatus()}
-                  </div>
-                </Show>
-                <SessionRetry status={status()} show={active()} />
-              </Docked>
               <Show when={edited() > 0 && !working()}>
                 <div
                   data-slot="session-turn-diffs"
@@ -616,7 +638,9 @@ export function TurnChecklist(props: {
                 <span data-slot="session-turn-checklist-marker" aria-hidden="true">
                   <StepIcon status={step.status} working={props.working} />
                 </span>
-                <span data-slot="session-turn-checklist-content">{step.content}</span>
+                <span data-slot="session-turn-checklist-content" title={step.content}>
+                  {step.content}
+                </span>
               </li>
             )}
           </For>
