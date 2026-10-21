@@ -22,6 +22,9 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
+import { dismissedSteps } from "../session/composer/dismissed-steps"
+import { type SessionAttention, sessionAttention } from "./active-sessions"
+import { SessionAttentionDot, useAttentionAction } from "./session-attention-dot"
 import { ago, childSessionOnPath, hasProjectPermissions } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
@@ -94,6 +97,8 @@ const SessionRow = (props: {
   dense?: boolean
   tint: Accessor<string | undefined>
   isWorking: Accessor<boolean>
+  attention: Accessor<SessionAttention | undefined>
+  onAttention: (attention: SessionAttention) => void
   hasPermissions: Accessor<boolean>
   hasError: Accessor<boolean>
   unseenCount: Accessor<number>
@@ -104,6 +109,12 @@ const SessionRow = (props: {
 }): JSX.Element => {
   const language = useLanguage()
   const title = () => sessionTitle(props.session.title)
+  // The orange (waiting on the person) or red (stuck) dot; real work shows the spinner instead.
+  const dot = () => {
+    const attention = props.attention()
+    if (!attention || attention.kind === "working") return
+    return <SessionAttentionDot attention={attention} placement="right" onActivate={() => props.onAttention(attention)} />
+  }
 
   return (
     <A
@@ -138,7 +149,12 @@ const SessionRow = (props: {
         </div>
       </Show>
       <div class="min-w-0 flex-1 flex flex-col">
-        <span class="text-14-regular text-text-strong truncate">{title()}</span>
+        <Show when={props.dense} fallback={<span class="text-14-regular text-text-strong truncate">{title()}</span>}>
+          <span class="flex items-center gap-1.5 min-w-0">
+            <span class="text-14-regular text-text-strong truncate">{title()}</span>
+            {dot()}
+          </span>
+        </Show>
         <Show when={!props.dense}>
           <span class="flex items-center gap-1.5 min-w-0 text-12-regular text-text-weak">
             <span class="truncate">
@@ -150,9 +166,19 @@ const SessionRow = (props: {
                   {language.t("agent.status.working")}
                 </span>
               </Match>
-              <Match when={props.hasPermissions()}>
+              <Match when={props.attention()?.cause === "permission"}>
                 <span class="shrink-0 px-1.5 rounded bg-surface-warning-weak text-text-on-warning-base">
                   {language.t("agent.status.approval")}
+                </span>
+              </Match>
+              <Match when={props.attention()?.kind === "waiting"}>
+                <span class="shrink-0 px-1.5 rounded bg-surface-warning-weak text-text-on-warning-base">
+                  {language.t("agent.status.waiting")}
+                </span>
+              </Match>
+              <Match when={props.attention()?.kind === "stuck"}>
+                <span class="shrink-0 px-1.5 rounded bg-surface-critical-weak text-text-on-critical-base">
+                  {language.t("agent.status.stopped")}
                 </span>
               </Match>
               <Match when={props.hasError()}>
@@ -161,6 +187,7 @@ const SessionRow = (props: {
                 </span>
               </Match>
             </Switch>
+            {dot()}
           </span>
         </Show>
       </div>
@@ -232,21 +259,17 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       return !permission.autoResponds(item, props.session.directory)
     })
   })
-  const isWorking = createMemo(() => {
-    if (hasPermissions()) return false
-    const pending = (sessionStore.message[props.session.id] ?? []).findLast(
-      (message) =>
-        message.role === "assistant" &&
-        typeof (message as { time?: { completed?: unknown } }).time?.completed !== "number",
-    )
-    const status = sessionStore.session_status[props.session.id]
-    return (
-      pending !== undefined ||
-      status?.type === "busy" ||
-      status?.type === "retry" ||
-      (status !== undefined && status.type !== "idle")
-    )
-  })
+  // Shared with the session header and the Active group, so they never disagree.
+  const attention = createMemo(() =>
+    sessionAttention(
+      { ...sessionStore, directory: props.session.directory },
+      props.session.id,
+      (item) => !permission.autoResponds(item, props.session.directory),
+      dismissedSteps.is,
+    ),
+  )
+  const isWorking = createMemo(() => attention()?.kind === "working")
+  const act = useAttentionAction()
 
   const title = () => sessionTitle(props.session.title) ?? ""
   // The draft title while renaming in place; undefined when not renaming.
@@ -298,6 +321,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       dense={props.dense}
       tint={tint}
       isWorking={isWorking}
+      attention={attention}
+      onAttention={(value) => act(props.session, value)}
       hasPermissions={hasPermissions}
       hasError={hasError}
       unseenCount={unseenCount}

@@ -442,7 +442,9 @@ export const SessionRoutes = lazy(() =>
         }),
       ),
       async (c) => {
-        await SessionPrompt.cancel(c.req.valid("param").sessionID)
+        const sessionID = c.req.valid("param").sessionID
+        await SessionPrompt.cancel(sessionID)
+        await closeOpenReplies(sessionID)
         return c.json(true)
       },
     )
@@ -1117,3 +1119,30 @@ export const SessionRoutes = lazy(() =>
       },
     ),
 )
+
+/**
+ * Stopping a session also ends any reply it left open. A reply that the engine is still running is ended by
+ * its own cleanup when it is cancelled; one left open with nothing running (its run ended without closing it)
+ * would otherwise keep the session showing as working, so it is closed here as interrupted.
+ */
+async function closeOpenReplies(sessionID: Parameters<typeof Session.messages>[0]["sessionID"]) {
+  const reason = "Stopped: this reply did not finish"
+  const messages = await Session.messages({ sessionID })
+  for (const message of messages) {
+    if (message.info.role !== "assistant" || typeof message.info.time.completed === "number") continue
+    for (const part of message.parts) {
+      if (part.type !== "tool") continue
+      if (part.state.status !== "pending" && part.state.status !== "running") continue
+      const start = "time" in part.state ? part.state.time.start : Date.now()
+      await Session.updatePart({
+        ...part,
+        state: { status: "error", input: part.state.input, error: reason, time: { start, end: Date.now() } },
+      } as MessageV2.Part)
+    }
+    await Session.updateMessage({
+      ...message.info,
+      time: { ...message.info.time, completed: Date.now() },
+      error: message.info.error ?? new MessageV2.AbortedError({ message: reason }).toObject(),
+    })
+  }
+}

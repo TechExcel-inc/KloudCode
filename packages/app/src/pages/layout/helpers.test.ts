@@ -19,7 +19,7 @@ import {
   latestRootSession,
   workspaceKey,
 } from "./helpers"
-import { activeSessions, runStopSteps, stopSteps, type ActiveSource } from "./active-sessions"
+import { activeSessions, runStopSteps, sessionAttention, stopSteps, type ActiveSource } from "./active-sessions"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
 const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
@@ -314,7 +314,7 @@ describe("active sessions", () => {
     ])
   })
 
-  test("an unfinished assistant reply counts as working; an auto-answered permission does not count as waiting", () => {
+  test("an unfinished reply with nothing running is stuck; an auto-answered permission does not count as waiting", () => {
     const list = activeSessions(
       [
         {
@@ -329,7 +329,7 @@ describe("active sessions", () => {
       ],
       (item) => item.id !== "per_auto",
     )
-    expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "working"]])
+    expect(list.map((item) => [item.session.id, item.state])).toEqual([["ses_i", "stuck"]])
   })
 
   test("an idle session whose current task has steps left waits on the person; a finished or dismissed one does not", () => {
@@ -376,6 +376,75 @@ describe("active sessions", () => {
       )
     expect(groups().map((item) => [item.session.id, item.state])).toEqual([["ses_i", "waiting"]])
     expect(groups((sessionID, taskID) => sessionID === "ses_i" && taskID === "u1")).toEqual([])
+  })
+
+  describe("sessionAttention", () => {
+    const open = { id: "msg_a", role: "assistant", time: { created: 1 } }
+    const asked = {
+      msg_a: [{ id: "prt_q", messageID: "msg_a", type: "tool", tool: "question", state: { status: "running" } }],
+    } as unknown as ActiveSource["part"]
+
+    test("a running question waits on the person for an answer and is not working", () => {
+      const running = source({ session_status: { ses_a: { type: "busy" } }, message: { ses_a: [open] }, part: asked })
+      expect(sessionAttention(running, "ses_a")).toEqual({ kind: "waiting", cause: "question" })
+      const requested = source({
+        session_status: { ses_a: { type: "busy" } },
+        message: { ses_a: [open] },
+        question: { ses_c: [question("que_1", "ses_c")] },
+      })
+      expect(sessionAttention(requested, "ses_a")).toEqual({ kind: "waiting", cause: "question" })
+    })
+
+    test("a busy session or subagent is working", () => {
+      expect(sessionAttention(source({ session_status: { ses_a: { type: "busy" } } }), "ses_a")).toEqual({
+        kind: "working",
+      })
+      expect(sessionAttention(source({ session_status: { ses_c: { type: "retry" } } }), "ses_a")?.kind).toBe("working")
+    })
+
+    test("an unfinished reply on an idle session with nothing asked is stuck", () => {
+      const idleOpen = source({ session_status: { ses_a: { type: "idle" } }, message: { ses_a: [open] } })
+      expect(sessionAttention(idleOpen, "ses_a")).toEqual({ kind: "stuck", cause: "unfinished" })
+      // A question tool left running after the engine went idle is stuck too: nobody can answer it.
+      expect(sessionAttention(source({ message: { ses_a: [open] }, part: asked }), "ses_a")).toEqual({
+        kind: "stuck",
+        cause: "unfinished",
+      })
+    })
+
+    test("a permission request waits on the person unless it is answered automatically", () => {
+      const asking = source({ session_status: { ses_c: { type: "busy" } }, permission: { ses_c: [perm("per_1", "ses_c")] } })
+      expect(sessionAttention(asking, "ses_a")).toEqual({ kind: "waiting", cause: "permission" })
+      expect(sessionAttention(asking, "ses_a", () => false)).toEqual({ kind: "working" })
+    })
+
+    test("steps left undone on an idle session wait on the person", () => {
+      const done = source({
+        message: {
+          ses_a: [
+            { id: "u1", role: "user", time: { created: 1 } },
+            { id: "a1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } },
+          ],
+        },
+        part: {
+          a1: [
+            {
+              id: "p1",
+              messageID: "a1",
+              type: "tool",
+              tool: "todowrite",
+              state: {
+                status: "completed",
+                input: { todos: [{ content: "Step", status: "pending" }] },
+                time: { start: 1, end: 2 },
+              },
+            },
+          ],
+        },
+      } as unknown as Partial<ActiveSource>)
+      expect(sessionAttention(done, "ses_a")).toEqual({ kind: "waiting", cause: "steps" })
+      expect(sessionAttention(done, "ses_a", undefined, () => true)).toBeUndefined()
+    })
   })
 
   test("stopping rejects every pending request in the tree before aborting busy subagents and the session", () => {

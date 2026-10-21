@@ -18,6 +18,7 @@ import { type ActiveSource, activeSessions, runStopSteps, stopSteps } from "./ac
 import { dismissedSteps } from "@/pages/session/composer/dismissed-steps"
 import { displayName } from "./helpers"
 import { DialogDelete } from "./sidebar-items"
+import { SessionAttentionDot, useAttentionAction } from "./session-attention-dot"
 
 /** Sessions across the open projects that are working or waiting on the user, with Stop, Archive and Delete. */
 export const ActiveSessions = (props: {
@@ -56,6 +57,7 @@ export const ActiveSessions = (props: {
       abort: (sessionID) => globalSDK.client.session.abort({ sessionID, directory }),
     })
   }
+  const act = useAttentionAction()
   const failed = (err: unknown) =>
     showToast({ title: language.t("agent.sessions.stopFailed"), description: err instanceof Error ? err.message : "" })
 
@@ -63,7 +65,9 @@ export const ActiveSessions = (props: {
     <Show when={list().length > 0}>
       <section data-component="session-group-active" class="sidebar-active-sessions flex flex-col gap-0.5">
         <div class="h-8 pl-2 flex items-center gap-1.5 text-[13px] font-medium text-text-strong">
-          <Spinner class="size-3 shrink-0" />
+          <Show when={list().some((item) => item.state === "working")}>
+            <Spinner class="size-3 shrink-0" />
+          </Show>
           <span class="truncate">{language.t("agent.sessions.active")}</span>
         </div>
         <nav class="flex flex-col gap-0.5" aria-label={language.t("agent.sessions.active")}>
@@ -88,10 +92,24 @@ export const ActiveSessions = (props: {
                       classList={{
                         "bg-surface-info-weak text-text-on-info-base": item.state === "working",
                         "bg-surface-warning-weak text-text-on-warning-base": item.state === "waiting",
+                        "bg-surface-critical-weak text-text-on-critical-base": item.state === "stuck",
                       }}
                     >
-                      {language.t(item.state === "working" ? "agent.status.working" : "agent.status.waiting")}
+                      {language.t(
+                        item.state === "working"
+                          ? "agent.status.working"
+                          : item.state === "stuck"
+                            ? "agent.status.stopped"
+                            : "agent.status.waiting",
+                      )}
                     </span>
+                    <Show when={item.state !== "working"}>
+                      <SessionAttentionDot
+                        attention={item.attention}
+                        placement="right"
+                        onActivate={() => act(item.session, item.attention)}
+                      />
+                    </Show>
                   </span>
                 </A>
                 <DropdownMenu placement="bottom-end">

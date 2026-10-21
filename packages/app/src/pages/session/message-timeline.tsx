@@ -37,6 +37,9 @@ import { stepsUnfinished } from "@/pages/layout/active-sessions"
 import { stepDockMount } from "@/pages/session/composer/step-dock-mount"
 import { dismissedSteps } from "@/pages/session/composer/dismissed-steps"
 import { currentTask } from "@/pages/session/agent-tasks"
+import { usePermission } from "@/context/permission"
+import { sessionAttention } from "@/pages/layout/active-sessions"
+import { SessionAttentionDot, useAttentionAction } from "@/pages/layout/session-attention-dot"
 
 type MessageComment = {
   path: string
@@ -266,6 +269,25 @@ export function MessageTimeline(props: {
     return sync.data.session_status[id] ?? idle
   })
   const working = createMemo(() => !!pending() || sessionStatus().type !== "idle")
+  const permission = usePermission()
+  // The same rule as the sidebar: animate only for real work; a waiting or stuck session shows a dot.
+  const attention = createMemo(() => {
+    const id = sessionID()
+    if (!id) return
+    const directory = sdk.directory
+    return sessionAttention(
+      { ...sync.data, directory },
+      id,
+      (item) => !permission.autoResponds(item, directory),
+      dismissedSteps.is,
+    )
+  })
+  const animating = createMemo(() => attention()?.kind === "working")
+  const attentionDot = createMemo(() => {
+    const value = attention()
+    if (value && value.kind !== "working") return value
+  })
+  const actOnAttention = useAttentionAction()
   // While the task step box above the composer shows the current task's steps (the AI is working, or the
   // turn ended with steps left undone), the latest reply leaves its own copy of the box out.
   const dockedMessageID = createMemo(() => {
@@ -281,7 +303,7 @@ export function MessageTimeline(props: {
   const [timeoutDone, setTimeoutDone] = createSignal(true)
 
   const workingStatus = createMemo<"hidden" | "showing" | "hiding">((prev) => {
-    if (working()) return "showing"
+    if (animating()) return "showing"
     if (prev === "showing" || !timeoutDone()) return "hiding"
     return "hidden"
   })
@@ -773,8 +795,8 @@ export function MessageTimeline(props: {
                       <div
                         class="shrink-0 flex items-center justify-center overflow-hidden transition-[width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
                         style={{
-                          width: working() ? "16px" : "0px",
-                          "margin-right": working() ? "8px" : "0px",
+                          width: animating() ? "16px" : "0px",
+                          "margin-right": animating() ? "8px" : "0px",
                         }}
                         aria-hidden="true"
                       >
@@ -793,7 +815,8 @@ export function MessageTimeline(props: {
                           fallback={
                             <h1
                               data-slot="session-title-child"
-                              class="text-14-medium text-text-strong truncate grow-1 min-w-0"
+                              class="text-14-medium text-text-strong truncate min-w-0"
+                              classList={{ "grow-1": !attentionDot() }}
                               onDblClick={openTitleEditor}
                             >
                               {childTitle()}
@@ -825,6 +848,18 @@ export function MessageTimeline(props: {
                             onBlur={closeTitleEditor}
                           />
                         </Show>
+                      </Show>
+                      <Show when={!title.editing && attentionDot()}>
+                        {(value) => (
+                          <SessionAttentionDot
+                            class="ml-1.5"
+                            attention={value()}
+                            onActivate={() => {
+                              const id = sessionID()
+                              if (id) actOnAttention({ id, directory: sdk.directory }, value())
+                            }}
+                          />
+                        )}
                       </Show>
                     </div>
                   </div>
