@@ -811,6 +811,8 @@ export const dict = {
   "agent.summary.active": "Session active time",
   "agent.summary.working": "AI working time",
   "agent.summary.cost": "Estimated cost",
+  "agent.summary.signIn": "Sign in to EAD Pilot",
+  "agent.summary.signInHint": "EAD plan costs and AI time are kept by EAD Pilot. Sign in to see them.",
   "agent.summary.costPilot": "EAD plan answers are priced by EAD Pilot at the real model's provider price",
   "agent.summary.breakdown": "{{count}} answers · {{input}} in · {{output}} out",
   "agent.summary.noPilotCost": "EAD Pilot has no priced answers for this session yet. Answers from before the cost tracking started are not included.",

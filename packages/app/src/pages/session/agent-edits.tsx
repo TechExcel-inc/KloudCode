@@ -8,6 +8,9 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useCowork } from "@/context/cowork"
+import { useLayout } from "@/context/layout"
+import { useEad } from "@/ead/settings"
+import { EAD_MAP_ID, EAD_MAP_WIDTH } from "@/ead/urls"
 import { PLAN } from "@/ead/plan"
 import { githubRepo } from "@/ead/cowork"
 import { estimateSessionContextBreakdown } from "@/components/session/session-context-breakdown"
@@ -270,6 +273,8 @@ export function AgentEdits(props: {
   const sdk = useSDK()
   const sync = useSync()
   const cowork = useCowork()
+  const ead = useEad()
+  const layout = useLayout()
   const dialog = useDialog()
   const [open, setOpen] = createSignal({ summary: true, context: false, tasks: true, background: true, outputs: false, changes: true })
   const toggle = (key: keyof ReturnType<typeof open>) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -375,7 +380,14 @@ export function AgentEdits(props: {
       : [],
   )
   const appCosts = createMemo(() => modelCosts(messages(), PLAN))
+  // EAD plan costs are kept by EAD Pilot; signed out, the app cannot read them, so it asks to sign in.
+  const signedOut = createMemo(() => usesPlan() && !ead.token().trim())
+  const signIn = () => {
+    layout.nav.set("ead")
+    layout.pluginPanel.open(EAD_MAP_ID, EAD_MAP_WIDTH)
+  }
   const costText = () => {
+    if (signedOut()) return language.t("agent.summary.signIn")
     const pilot = pilotCost.latest
     if (pilot && pilot.requests > 0) return money(summary().cost + pilot.costMicroUsd / 1_000_000)
     return summary().priced ? money(summary().cost) : language.t("agent.summary.notPriced")
@@ -442,7 +454,11 @@ export function AgentEdits(props: {
             </Row>
           </Show>
           <Show when={summary().started}>
-            <Row icon={<Icon name="brain" size="small" />} right={formatDuration(summary().workingMs)}>
+            <Row
+              icon={<Icon name="brain" size="small" />}
+              right={signedOut() ? "—" : formatDuration(summary().workingMs)}
+              title={signedOut() ? language.t("agent.summary.signInHint") : undefined}
+            >
               {language.t("agent.summary.working")}
             </Row>
           </Show>
@@ -450,16 +466,21 @@ export function AgentEdits(props: {
             type="button"
             data-action="agent-summary-cost"
             aria-expanded={costOpen()}
-            title={language.t(usesPlan() ? "agent.summary.costPilot" : "agent.context.cost.hint")}
+            title={language.t(signedOut() ? "agent.summary.signInHint" : usesPlan() ? "agent.summary.costPilot" : "agent.context.cost.hint")}
             class="w-full h-8 flex items-center gap-2.5 min-w-0 text-left rounded-md hover:bg-surface-base-hover"
-            onClick={() => setCostOpen(!costOpen())}
+            onClick={() => (signedOut() ? signIn() : setCostOpen(!costOpen()))}
           >
             <span class="shrink-0 flex items-center text-icon-weak">
               <Icon name="providers" size="small" />
             </span>
             <span class="min-w-0 truncate text-13-regular text-text-strong">{language.t("agent.summary.cost")}</span>
             <Icon name={costOpen() ? "chevron-down" : "chevron-right"} size="small" class="shrink-0 text-icon-weak" />
-            <span class="ml-auto shrink-0 text-12-regular text-text-weak">{costText()}</span>
+            <span
+              class="ml-auto shrink-0 text-12-regular"
+              classList={{ "text-text-weak": !signedOut(), "text-text-interactive-base": signedOut() }}
+            >
+              {costText()}
+            </span>
           </button>
           <Show when={costOpen()}>
             <div data-component="agent-cost-breakdown" class="pl-7 pb-1 flex flex-col gap-1">

@@ -713,6 +713,8 @@ export const dict = {
   "agent.summary.active": "工作階段活躍時長",
   "agent.summary.working": "AI 工作時長",
   "agent.summary.cost": "預估費用",
+  "agent.summary.signIn": "登入 EAD Pilot",
+  "agent.summary.signInHint": "EAD 計劃的費用和 AI 時間由 EAD Pilot 記錄，登入後即可查看。",
   "agent.summary.costPilot": "EAD 方案的回答由 EAD Pilot 按實際模型的供應商價格計費",
   "agent.summary.breakdown": "{{count}} 次回答 · 輸入 {{input}} · 輸出 {{output}}",
   "agent.summary.noPilotCost": "EAD Pilot 還沒有本次工作階段的計費記錄。開始計費之前的回答不計入。",
