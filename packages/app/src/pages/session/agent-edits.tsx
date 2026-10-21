@@ -320,6 +320,13 @@ export function AgentEdits(props: {
       ? time(value)
       : new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 
+  // The conversation shows only its most recent messages until someone scrolls up; Summary, tasks and
+  // costs need the whole session, so the rest is loaded here.
+  createEffect(() => {
+    const id = props.session
+    if (!id || !sync.session.history.more(id) || sync.session.history.loading(id)) return
+    void sync.session.history.loadMore(id, 500)
+  })
   const tasks = createMemo(() => sessionTasks(messages(), sync.data.part))
   // Ticks once a minute so a running session's times stay current.
   const [minute, setMinute] = createSignal(Date.now())

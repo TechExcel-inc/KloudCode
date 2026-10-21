@@ -148,7 +148,7 @@ describe("costReport", () => {
       ["Add table", 2, 0.3],
       ["Add page", 1, 0.3],
     ])
-    expect(deploy!.steps.map((step) => [step.title, step.state])).toEqual([[undefined, "untracked"], ["Back up", "step"]])
+    expect(deploy!.steps.map((step) => step.title)).toEqual([undefined, "Back up"])
     // Subtotals add the parts of every request.
     const sum = costTotals(build!.entries)
     expect([sum.input, sum.cached, sum.output, sum.cost]).toEqual([300, 0, 30, 600_000])

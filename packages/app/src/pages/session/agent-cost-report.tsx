@@ -30,10 +30,8 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
       ? `${Math.max(0, Math.round((Date.parse(entry.endedAt) - Date.parse(entry.startedAt)) / 1000))}s`
       : language.t("agent.cost.untimed")
   const requests = props.items.reduce((sum, item) => sum + item.entries.length, 0)
-  const stepTitle = (step: CostStep) =>
-    step.state === "step" ? step.title : language.t(step.state === "none" ? "agent.cost.noStep" : "agent.cost.untracked")
-  const stepHint = (step: CostStep) =>
-    step.state === "step" ? step.title : language.t(step.state === "none" ? "agent.cost.noStepHint" : "agent.cost.untrackedHint")
+  const stepTitle = (step: CostStep) => step.title ?? language.t("agent.cost.noStep")
+  const stepHint = (step: CostStep) => step.title ?? language.t("agent.cost.noStepHint")
   /** Totals of a set of requests, laid out in the same columns as the requests. */
   const subtotal = (label: string, entries: CostEntry[]) => {
     const sum = costTotals(entries)
@@ -110,7 +108,11 @@ export function AgentCostReport(props: { items: CostItem[]; total: number; untim
                               {(entry) => (
                                 <tr class="align-top border-t border-border-weaker-base">
                                   <td class="py-1 pr-2 whitespace-nowrap">
-                                    <div class="text-text-strong">{clock(entry.startedAt ?? entry.endedAt)}</div>
+                                    <div class="text-text-strong">
+                                      {entry.startedAt
+                                        ? clock(entry.startedAt)
+                                        : language.t("agent.cost.finished", { time: clock(entry.endedAt) })}
+                                    </div>
                                     <div class="text-text-weak">{seconds(entry)}</div>
                                   </td>
                                   <td class="py-1 pr-2" title={`${entry.providerId} / ${entry.modelId}`}>

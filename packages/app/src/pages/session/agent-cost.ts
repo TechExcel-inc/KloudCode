@@ -4,11 +4,8 @@ import type { Task } from "./agent-tasks"
 
 export type CostEntry = NonNullable<CoworkGatewayCost["entries"]>[number]
 
-/**
- * A checklist step and its requests. A request recorded before step tracking began has no step
- * ("untracked"); a newer request sent while no checklist step was in progress is "none".
- */
-export type CostStep = { title: string | undefined; state: "step" | "none" | "untracked"; cost: number; entries: CostEntry[] }
+/** A checklist step and its requests; requests without a step (sent outside a step, or recorded before steps were) have no title. */
+export type CostStep = { title: string | undefined; cost: number; entries: CostEntry[] }
 
 /** One numbered piece of work and what its AI requests cost, in dollars. */
 export type CostItem = {
@@ -30,9 +27,8 @@ function item(kind: CostItem["kind"], title: string, entries: CostEntry[]): Omit
   const steps: CostStep[] = []
   for (const entry of entries) {
     const title = entry.stepText?.trim() || undefined
-    const state: CostStep["state"] = title ? "step" : entry.messageUid ? "none" : "untracked"
-    let step = steps.find((row) => row.title === title && row.state === state)
-    if (!step) steps.push((step = { title, state, cost: 0, entries: [] }))
+    let step = steps.find((row) => row.title === title)
+    if (!step) steps.push((step = { title, cost: 0, entries: [] }))
     step.entries.push(entry)
     step.cost += dollars(entry)
   }
