@@ -22,7 +22,22 @@ export namespace SessionOneTime {
     z.object({ sessionID: z.string(), limit: z.number(), message: z.string() }),
   )
 
+  export const OnlyError = NamedError.create(
+    "SessionOneTimeOnlyError",
+    z.object({ providerID: z.string(), modelID: z.string(), message: z.string() }),
+  )
+
   export type Model = Session.OneTime["model"]
+
+  /** Refuses a one-session-only model in a regular session. */
+  export function only(model: Provider.Model) {
+    if (!model.oneSession) return
+    return new OnlyError({
+      providerID: model.providerID,
+      modelID: model.id,
+      message: `${model.name} is a one-session model. Open it in a one-time session from the model picker.`,
+    })
+  }
 
   /** The session, or undefined when it was deleted. `Session.get` reports a missing row as a defect. */
   const find = (sessions: Session.Interface, id: SessionID) =>
@@ -73,7 +88,7 @@ export namespace SessionOneTime {
         originSessionID: from?.id,
         status: "open",
         requests: 0,
-        limit: input.limit,
+        limit: input.limit ?? model.oneSession?.limit,
         time: { opened: Date.now() },
       },
     })

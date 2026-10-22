@@ -1,4 +1,5 @@
 import { eadOrigin } from "./urls"
+import type { OneSession } from "./api"
 
 export const PLAN = "ead"
 const NPM = "@ai-sdk/openai-compatible"
@@ -20,8 +21,9 @@ export function gateway() {
 /**
  * A plan as a picker model: `name` is what the gateway routes on, `label` what people see.
  * `context` and `output` are the plan's token limits from Pilot, when it sends them.
+ * `oneSession` marks a plan that runs only in a one-time session.
  */
-export type PlanModel = { name: string; label: string; context?: number; output?: number }
+export type PlanModel = { name: string; label: string; context?: number; output?: number; oneSession?: OneSession }
 
 const IMAGES = {
   attachment: true,
@@ -30,6 +32,8 @@ const IMAGES = {
 
 const limit = (plan: PlanModel) =>
   plan.context && plan.output ? { limit: { context: plan.context, output: plan.output } } : {}
+
+const once = (plan: PlanModel) => (plan.oneSession ? { one_session: plan.oneSession } : {})
 
 /**
  * One model per EAD Dynamic Plan, in the account's order. Config saves merge models, so the
@@ -41,7 +45,9 @@ export function spec(plans: PlanModel[]) {
     name: "EAD",
     options: { baseURL: gateway() },
     // Plans take images: EAD Pilot reads them for a plan model that cannot, so the engine must send them.
-    models: Object.fromEntries(plans.map((plan) => [plan.name, { name: plan.label, ...IMAGES, ...limit(plan) }])),
+    models: Object.fromEntries(
+      plans.map((plan) => [plan.name, { name: plan.label, ...IMAGES, ...limit(plan), ...once(plan) }]),
+    ),
     whitelist: plans.map((plan) => plan.name),
   }
 }
@@ -59,6 +65,7 @@ export function match(cfg: unknown, plans: PlanModel[]) {
           attachment?: boolean
           modalities?: { input?: string[] }
           limit?: { context?: number; output?: number }
+          one_session?: OneSession
         }
       | undefined
     >
@@ -73,6 +80,7 @@ export function match(cfg: unknown, plans: PlanModel[]) {
     const model = row.models?.[plan.name]
     if (model?.name !== plan.label) return false
     if (!model.attachment || !model.modalities?.input?.includes("image")) return false
+    if (JSON.stringify(model.one_session ?? null) !== JSON.stringify(plan.oneSession ?? null)) return false
     const want = limit(plan).limit
     return want ? model.limit?.context === want.context && model.limit?.output === want.output : !model.limit
   })

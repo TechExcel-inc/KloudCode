@@ -881,6 +881,13 @@ export namespace Provider {
         output: z.number(),
       }),
       status: z.enum(["alpha", "beta", "deprecated", "active"]),
+      oneSession: z
+        .object({
+          description: z.string().optional(),
+          price: z.string().optional(),
+          limit: z.number().optional(),
+        })
+        .optional(),
       options: z.record(z.string(), z.any()),
       headers: z.record(z.string(), z.string()),
       release_date: z.string(),
@@ -1137,6 +1144,7 @@ export namespace Provider {
                     url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
                   },
                   status: model.status ?? existingModel?.status ?? "active",
+                  oneSession: model.one_session ?? existingModel?.oneSession,
                   name,
                   providerID: ProviderID.make(providerID),
                   capabilities: {

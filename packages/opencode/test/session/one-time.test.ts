@@ -5,6 +5,7 @@ import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Session } from "../../src/session"
 import { SessionOneTime } from "../../src/session/one-time"
 import { SessionPrompt } from "../../src/session/prompt"
+import { Provider } from "../../src/provider/provider"
 import { AppRuntime } from "../../src/effect/app-runtime"
 import { Log } from "../../src/util/log"
 import { tmpdir } from "../fixture/fixture"
@@ -63,7 +64,10 @@ async function within(fn: () => Promise<void>, url = "http://localhost:1") {
         id: "test",
         env: [],
         npm: "@ai-sdk/openai-compatible",
-        models: { premium: model("premium"), regular: model("regular") },
+        models: {
+          premium: { ...model("premium"), one_session: { price: "≈ $0.40 / request", limit: 5 } },
+          regular: model("regular"),
+        },
         options: { apiKey: "test-key", baseURL: `${url}/v1` },
       },
     },
@@ -219,6 +223,49 @@ describe("one-time model lock", () => {
   test("blocked() is quiet for normal sessions", async () => {
     await within(async () => {
       expect(SessionOneTime.blocked(await Session.create({}))).toBeUndefined()
+    })
+  })
+})
+
+describe("one-session-only models", () => {
+  test("open takes the request limit from the model setting", async () => {
+    await within(async () => {
+      const session = await open({ model: premium })
+      expect(session.oneTime?.limit).toBe(5)
+    })
+  })
+
+  test("an explicit limit wins over the model setting", async () => {
+    await within(async () => {
+      const session = await open({ model: premium, limit: 2 })
+      expect(session.oneTime?.limit).toBe(2)
+    })
+  })
+
+  test("the provider exposes the one-session setting", async () => {
+    await within(async () => {
+      const found = await AppRuntime.runPromise(
+        Provider.Service.use((svc) => svc.getModel(premium.providerID, premium.modelID)),
+      )
+      expect(found.oneSession).toEqual({ price: "≈ $0.40 / request", limit: 5 })
+      const plain = await AppRuntime.runPromise(
+        Provider.Service.use((svc) => svc.getModel(regular.providerID, regular.modelID)),
+      )
+      expect(plain.oneSession).toBeUndefined()
+    })
+  })
+
+  test("a regular session refuses a one-session model", async () => {
+    await within(async () => {
+      const session = await Session.create({})
+      await expect(
+        SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          model: premium,
+          parts: [{ type: "text", text: "review this" }],
+        }),
+      ).rejects.toThrow("SessionOneTimeOnlyError")
     })
   })
 })

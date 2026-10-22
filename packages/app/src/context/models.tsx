@@ -111,7 +111,11 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       setStore("user", store.user.length, { ...model, visibility: state })
     }
 
+    // One-session-only models open their own one-time session, so they never show as a regular choice.
+    const once = (model: ModelKey) => !!find(model)?.oneSession
+
     const visible = (model: ModelKey) => {
+      if (once(model)) return false
       const key = modelKey(model)
       const state = visibility().get(key)
       if (state === "hide") return false
@@ -127,6 +131,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     }
 
     const push = (model: ModelKey) => {
+      if (once(model)) return
       const uniq = uniqueBy([model, ...store.recent], (x) => `${x.providerID}:${x.modelID}`)
       if (uniq.length > RECENT_LIMIT) uniq.pop()
       setStore("recent", uniq)

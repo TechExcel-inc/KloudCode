@@ -1040,6 +1040,53 @@ describe("ead i18n + env + mcp", () => {
     expect(match(spec(sized), [{ ...sized[0]!, context: 128_000 }])).toBe(false)
   })
 
+  test("loadPlans reads one-session plans, which may have any name", async () => {
+    const rows = (async () =>
+      new Response(
+        JSON.stringify({
+          assignedPlans: [
+            { name: "EAD 3.2", displayOrder: 1 },
+            {
+              name: "EAD Expert Review 4.0",
+              displayOrder: 2,
+              usage: "one-session",
+              description: "  Architecture and   security review ",
+              priceHint: "≈ $0.40 / request",
+              policy: { maxRequests: 5 },
+            },
+            { name: "EAD Vision Pro", displayOrder: 3, usage: "one-session", policy: { maxRequests: 0 } },
+            { name: "Premium", displayOrder: 4, usage: "regular" },
+            { name: "", displayOrder: 5, usage: "one-session" },
+          ],
+        }),
+      )) as unknown as typeof fetch
+    const list = await loadPlans("token", rows)
+    expect(list.map((plan) => [plan.name, plan.label, plan.oneSession])).toEqual([
+      ["EAD 3.2", "EAD DP3.2", undefined],
+      [
+        "EAD Expert Review 4.0",
+        "EAD Expert Review 4.0",
+        { description: "Architecture and security review", price: "≈ $0.40 / request", limit: 5 },
+      ],
+      ["EAD Vision Pro", "EAD Vision Pro", {}],
+    ])
+  })
+
+  test("plan spec marks one-session plans, and a change in that marking rewrites the config", () => {
+    applyEnv("production")
+    const plans = [
+      { name: "EAD 3.2", label: "EAD DP3.2" },
+      { name: "EAD Expert Review 4.0", label: "EAD Expert Review 4.0", oneSession: { price: "≈ $0.40", limit: 5 } },
+    ]
+    const models = spec(plans).models as Record<string, { one_session?: unknown }>
+    expect(models["EAD 3.2"]?.one_session).toBeUndefined()
+    expect(models["EAD Expert Review 4.0"]?.one_session).toEqual({ price: "≈ $0.40", limit: 5 })
+    expect(spec(plans).whitelist).toEqual(["EAD 3.2", "EAD Expert Review 4.0"])
+    expect(match(spec(plans), plans)).toBe(true)
+    expect(match(spec(plans), [plans[0]!, { ...plans[1]!, oneSession: { price: "≈ $0.40", limit: 3 } }])).toBe(false)
+    expect(match(spec(plans), [plans[0]!, { name: plans[1]!.name, label: plans[1]!.label }])).toBe(false)
+  })
+
   test("apply writes the sign-in only when it differs from the one stored", async () => {
     applyEnv("production")
     const keys: string[] = []

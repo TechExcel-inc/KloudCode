@@ -795,6 +795,16 @@ export namespace Config {
         .optional(),
       experimental: z.boolean().optional(),
       status: z.enum(["alpha", "beta", "deprecated"]).optional(),
+      one_session: z
+        .object({
+          description: z.string().optional().describe("What the model is for, shown in the model picker"),
+          price: z.string().optional().describe('Price hint shown in the model picker, such as "≈ $0.40 / request"'),
+          limit: z.number().int().positive().optional().describe("Most requests one session may send"),
+        })
+        .optional()
+        .describe(
+          "Marks a one-session-only model: it runs only in a one-time session opened for it, never as a regular model",
+        ),
       provider: z.object({ npm: z.string().optional(), api: z.string().optional() }).optional(),
       options: z.record(z.string(), z.any()),
       headers: z.record(z.string(), z.string()).optional(),

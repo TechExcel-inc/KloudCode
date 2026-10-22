@@ -1384,6 +1384,23 @@ export type ProviderConfig = {
       }
       experimental?: boolean
       status?: "alpha" | "beta" | "deprecated"
+      /**
+       * Marks a one-session-only model: it runs only in a one-time session opened for it, never as a regular model
+       */
+      one_session?: {
+        /**
+         * What the model is for, shown in the model picker
+         */
+        description?: string
+        /**
+         * Price hint shown in the model picker, such as "≈ $0.40 / request"
+         */
+        price?: string
+        /**
+         * Most requests one session may send
+         */
+        limit?: number
+      }
       provider?: {
         npm?: string
         api?: string
@@ -1784,6 +1801,11 @@ export type Model = {
     output: number
   }
   status: "alpha" | "beta" | "deprecated" | "active"
+  oneSession?: {
+    description?: string
+    price?: string
+    limit?: number
+  }
   options: {
     [key: string]: unknown
   }

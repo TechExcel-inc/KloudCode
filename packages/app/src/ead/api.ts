@@ -1045,7 +1045,12 @@ export type Plan = {
   /** Token limits of the plan's smallest model, from Pilot; absent from an older Pilot. */
   context?: number
   output?: number
+  /** Set for a one-session-only plan: it runs only in a one-time session opened for it. */
+  oneSession?: OneSession
 }
+
+/** How Pilot describes a one-session-only plan in the model picker. */
+export type OneSession = { description?: string; price?: string; limit?: number }
 
 /** `EAD DP2.1` and `EAD 2.1` name the same plan; the gateway's stored name is `EAD 2.1`. */
 export function planName(raw: string) {
@@ -1065,11 +1070,32 @@ type PlanRow = {
   contextTokens?: number
   maxOutputTokens?: number
   slots?: Array<{ slotKey?: string; modelId?: string }>
+  /** `one-session` marks a one-session-only plan; anything else, or nothing, is a regular plan. */
+  usage?: string
+  description?: string
+  priceHint?: string
+  policy?: { maxRequests?: number }
+}
+
+const text = (value: unknown, max: number) =>
+  typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) || undefined : undefined
+
+function oneSession(row: PlanRow): OneSession | undefined {
+  if (row.usage !== "one-session") return
+  const limit = row.policy?.maxRequests
+  return Object.fromEntries(
+    Object.entries({
+      description: text(row.description, 120),
+      price: text(row.priceHint, 40),
+      limit: typeof limit === "number" && limit > 0 ? Math.floor(limit) : undefined,
+    }).filter(([, value]) => value !== undefined),
+  )
 }
 
 /**
  * Every EAD Dynamic Plan the account holds, in the team's display order (Pilot's `assignedPlans`).
  * A Pilot from before multi-plan support sends only `effectivePlan`, which becomes a one-plan list.
+ * Regular plans must be named like `EAD 3.2`; a one-session plan (`usage: "one-session"`) may have any name.
  */
 export async function loadPlans(token: string, http: Http = eadHttp()): Promise<Plan[]> {
   const data = (await call(http, `/account-settings/llm-plans/assignment`, token).catch(() => undefined)) as
@@ -1084,7 +1110,8 @@ export async function loadPlans(token: string, http: Http = eadHttp()): Promise<
     .sort((a, b) => order(a) - order(b))
     .flatMap((row) => {
       const name = planName(String(row.name || ""))
-      if (!PLAN.test(name)) return []
+      const one = oneSession(row)
+      if (one ? !name : !PLAN.test(name)) return []
       const suffix = String(row.nameSuffix || "")
         .trim()
         .replace(/\s+/g, " ")
@@ -1094,12 +1121,13 @@ export async function loadPlans(token: string, http: Http = eadHttp()): Promise<
       return [
         {
           name,
-          label: planLabel(name),
+          label: PLAN.test(name) ? planLabel(name) : name,
           suffix,
           model: slot.advanced || slot.reasoning || slot.easy,
           slots: slot,
           context: tokens(row.contextTokens),
           output: tokens(row.maxOutputTokens),
+          ...(one ? { oneSession: one } : {}),
         },
       ]
     })

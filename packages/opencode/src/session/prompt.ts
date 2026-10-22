@@ -950,6 +950,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         const variant = locked
           ? SessionOneTime.variant(locked, input.variant)
           : (input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined))
+        if (!locked && !input.noReply) {
+          const picked = yield* provider
+            .getModel(model.providerID, model.modelID)
+            .pipe(Effect.catchDefect(() => Effect.void))
+          const err = picked ? SessionOneTime.only(picked) : undefined
+          if (err) {
+            yield* bus.publish(Session.Event.Error, {
+              sessionID: session.id,
+              error: new NamedError.Unknown({ message: err.data.message }).toObject(),
+            })
+            throw err
+          }
+        }
         if (locked && !input.noReply && session.oneTime)
           yield* sessions.setOneTime({
             sessionID: session.id,

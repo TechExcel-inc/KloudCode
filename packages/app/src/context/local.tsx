@@ -95,6 +95,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return !!provider?.models[model.modelID] && connected().has(model.providerID)
     }
 
+    /** A model that can be a session's default: valid, and not one-session-only. */
+    const regular = (model: ModelKey) =>
+      validModel(model) &&
+      !providers.all().find((item) => item.id === model.providerID)?.models[model.modelID]?.oneSession
+
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {
       for (const item of items) {
         const model = item()
@@ -145,12 +150,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (!sync.data.config.model) return
       const [providerID, modelID] = sync.data.config.model.split("/")
       const model = { providerID, modelID }
-      if (validModel(model)) return model
+      if (regular(model)) return model
     }
 
     const recentModel = () => {
       for (const item of models.recent.list()) {
-        if (validModel(item)) return item
+        if (regular(item)) return item
       }
     }
 
@@ -160,13 +165,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const configured = defaults[provider.id]
         if (configured) {
           const model = { providerID: provider.id, modelID: configured }
-          if (validModel(model)) return model
+          if (regular(model)) return model
         }
 
-        const first = Object.values(provider.models)[0]
+        const first = Object.values(provider.models).find((item) => !item.oneSession)
         if (!first) continue
         const model = { providerID: provider.id, modelID: first.id }
-        if (validModel(model)) return model
+        if (regular(model)) return model
       }
     }
 
