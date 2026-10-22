@@ -53,6 +53,8 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
     summary_diffs: grab(info, "summary", (v) => grab(v, "diffs")),
     revert: grab(info, "revert"),
     permission: grab(info, "permission"),
+    one_time: grab(info, "oneTime"),
+    origin_id: grab(info, "oneTime", (v) => v.originSessionID ?? null),
     time_created: grab(info, "time", (v) => grab(v, "created")),
     time_updated: grab(info, "time", (v) => grab(v, "updated")),
     time_compacting: grab(info, "time", (v) => grab(v, "compacting")),

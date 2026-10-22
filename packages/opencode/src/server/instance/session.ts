@@ -28,11 +28,94 @@ import { errors } from "../error"
 import { lazy } from "../../util/lazy"
 import { Bus } from "../../bus"
 import { NamedError } from "@opencode-ai/util/error"
+import { SessionOneTime } from "../../session/one-time"
+import { Flag } from "../../flag/flag"
 
 const log = Log.create({ service: "server" })
 
+const OneTimeDone = z
+  .object({
+    session: Session.Info,
+    targetSessionID: SessionID.zod,
+    fallback: z.boolean().describe("True when the origin session was gone and a new session was created instead"),
+  })
+  .meta({ ref: "SessionOneTimeDone" })
+
 export const SessionRoutes = lazy(() =>
   new Hono()
+    .use("/one-time", async (c, next) => {
+      if (!Flag.OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS) return c.notFound()
+      await next()
+    })
+    .use("/:sessionID/one-time/*", async (c, next) => {
+      if (!Flag.OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS) return c.notFound()
+      await next()
+    })
+    .post(
+      "/one-time",
+      describeRoute({
+        summary: "Open one-time session",
+        description:
+          "Create a session locked to one model. Every turn in it runs on that model, whatever the request, agent or command asks for.",
+        operationId: "session.oneTime.open",
+        responses: {
+          200: {
+            description: "The new one-time session",
+            content: { "application/json": { schema: resolver(Session.Info) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("json", SessionOneTime.OpenInput),
+      async (c) => {
+        const session = await AppRuntime.runPromise(SessionOneTime.open(c.req.valid("json")))
+        return c.json(session)
+      },
+    )
+    .post(
+      "/:sessionID/one-time/done",
+      describeRoute({
+        summary: "Finish one-time session",
+        description:
+          "Close a one-time session and say where to go next: back to the session it was opened from, or a new session. Optionally adds a result card to that session without running a model.",
+        operationId: "session.oneTime.done",
+        responses: {
+          200: {
+            description: "The closed session and the session to open next",
+            content: { "application/json": { schema: resolver(OneTimeDone) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod })),
+      validator("json", SessionOneTime.DoneInput.omit({ sessionID: true })),
+      async (c) => {
+        const result = await AppRuntime.runPromise(
+          SessionOneTime.done({ ...c.req.valid("json"), sessionID: c.req.valid("param").sessionID }),
+        )
+        return c.json(result)
+      },
+    )
+    .post(
+      "/:sessionID/one-time/reopen",
+      describeRoute({
+        summary: "Reopen one-time session",
+        description: "Open a closed one-time session again so it can take more requests on its locked model.",
+        operationId: "session.oneTime.reopen",
+        responses: {
+          200: {
+            description: "The reopened session",
+            content: { "application/json": { schema: resolver(Session.Info) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("param", z.object({ sessionID: SessionID.zod })),
+      async (c) => {
+        const session = await AppRuntime.runPromise(SessionOneTime.reopen(c.req.valid("param").sessionID))
+        return c.json(session)
+      },
+    )
     .get(
       "/",
       describeRoute({
@@ -608,12 +691,13 @@ export const SessionRoutes = lazy(() =>
               }
             }
 
+            const locked = (yield* session.get(sessionID)).oneTime?.model
             yield* compact.create({
               sessionID,
               agent: currentAgent,
               model: {
-                providerID: body.providerID,
-                modelID: body.modelID,
+                providerID: locked?.providerID ?? body.providerID,
+                modelID: locked?.modelID ?? body.modelID,
               },
               auto: body.auto,
             })

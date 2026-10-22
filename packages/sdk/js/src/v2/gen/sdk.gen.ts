@@ -133,6 +133,8 @@ import type {
   SessionDeleteMessageResponses,
   SessionDeleteResponses,
   SessionDiffResponses,
+  SessionDiscardErrors,
+  SessionDiscardResponses,
   SessionForkResponses,
   SessionGetErrors,
   SessionGetResponses,
@@ -143,14 +145,18 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionOneTimeDoneErrors,
+  SessionOneTimeDoneResponses,
+  SessionOneTimeOpenErrors,
+  SessionOneTimeOpenResponses,
+  SessionOneTimeReopenErrors,
+  SessionOneTimeReopenResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
-  SessionDiscardErrors,
-  SessionDiscardResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -1660,6 +1666,132 @@ export class Worktree extends HeyApiClient {
   }
 }
 
+export class OneTime extends HeyApiClient {
+  /**
+   * Open one-time session
+   *
+   * Create a session locked to one model. Every turn in it runs on that model, whatever the request, agent or command asks for.
+   */
+  public open<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      originSessionID?: string
+      model?: {
+        providerID: string
+        modelID: string
+        variant?: string
+      }
+      title?: string
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "originSessionID" },
+            { in: "body", key: "model" },
+            { in: "body", key: "title" },
+            { in: "body", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionOneTimeOpenResponses, SessionOneTimeOpenErrors, ThrowOnError>({
+      url: "/session/one-time",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Finish one-time session
+   *
+   * Close a one-time session and say where to go next: back to the session it was opened from, or a new session. Optionally adds a result card to that session without running a model.
+   */
+  public done<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      goTo?: "origin" | "new"
+      addResult?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "goTo" },
+            { in: "body", key: "addResult" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionOneTimeDoneResponses, SessionOneTimeDoneErrors, ThrowOnError>({
+      url: "/session/{sessionID}/one-time/done",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Reopen one-time session
+   *
+   * Open a closed one-time session again so it can take more requests on its locked model.
+   */
+  public reopen<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionOneTimeReopenResponses,
+      SessionOneTimeReopenErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/one-time/reopen",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -2681,6 +2813,11 @@ export class Session2 extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _oneTime?: OneTime
+  get oneTime(): OneTime {
+    return (this._oneTime ??= new OneTime({ client: this.client }))
   }
 }
 

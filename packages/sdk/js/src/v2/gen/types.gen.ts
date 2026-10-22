@@ -933,6 +933,24 @@ export type PermissionRule = {
 
 export type PermissionRuleset = Array<PermissionRule>
 
+export type SessionOneTime = {
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  originSessionID?: string
+  status: "open" | "closed"
+  requests: number
+  limit?: number
+  resultMessageID?: string
+  targetSessionID?: string
+  time: {
+    opened: number
+    closed?: number
+  }
+}
+
 export type Session = {
   id: string
   slug: string
@@ -958,6 +976,7 @@ export type Session = {
     archived?: number
   }
   permission?: PermissionRuleset
+  oneTime?: SessionOneTime
   revert?: {
     messageID: string
     partID?: string
@@ -1085,6 +1104,7 @@ export type SyncEventSessionUpdated = {
         archived: number | null
       }
       permission: PermissionRuleset | null
+      oneTime: SessionOneTime | null
       revert: {
         messageID: string
         partID?: string
@@ -1865,6 +1885,7 @@ export type GlobalSession = {
     archived?: number
   }
   permission?: PermissionRuleset
+  oneTime?: SessionOneTime
   revert?: {
     messageID: string
     partID?: string
@@ -1880,6 +1901,15 @@ export type McpResource = {
   description?: string
   mimeType?: string
   client: string
+}
+
+export type SessionOneTimeDone = {
+  session: Session
+  targetSessionID: string
+  /**
+   * True when the origin session was gone and a new session was created instead
+   */
+  fallback: boolean
 }
 
 export type ContextSizeItem = {
@@ -1949,6 +1979,11 @@ export type SubtaskPartInput = {
     modelID: string
   }
   command?: string
+}
+
+export type SessionDiscardResult = {
+  discarded: Array<string>
+  refused: Array<string>
 }
 
 export type ProviderAuthMethod = {
@@ -2134,14 +2169,8 @@ export type VcsFileDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
-  /**
-   * Not known to git yet (listed file by file, .gitignore respected).
-   */
   untracked?: boolean
   binary?: boolean
-  /**
-   * Size of the working copy in bytes; absent for deleted files.
-   */
   size?: number
 }
 
@@ -3300,6 +3329,118 @@ export type ExperimentalResourceListResponses = {
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
 
+export type SessionOneTimeOpenData = {
+  body?: {
+    originSessionID?: string
+    model: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
+    title?: string
+    limit?: number
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/one-time"
+}
+
+export type SessionOneTimeOpenErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionOneTimeOpenError = SessionOneTimeOpenErrors[keyof SessionOneTimeOpenErrors]
+
+export type SessionOneTimeOpenResponses = {
+  /**
+   * The new one-time session
+   */
+  200: Session
+}
+
+export type SessionOneTimeOpenResponse = SessionOneTimeOpenResponses[keyof SessionOneTimeOpenResponses]
+
+export type SessionOneTimeDoneData = {
+  body?: {
+    goTo: "origin" | "new"
+    addResult: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/one-time/done"
+}
+
+export type SessionOneTimeDoneErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionOneTimeDoneError = SessionOneTimeDoneErrors[keyof SessionOneTimeDoneErrors]
+
+export type SessionOneTimeDoneResponses = {
+  /**
+   * The closed session and the session to open next
+   */
+  200: SessionOneTimeDone
+}
+
+export type SessionOneTimeDoneResponse = SessionOneTimeDoneResponses[keyof SessionOneTimeDoneResponses]
+
+export type SessionOneTimeReopenData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/one-time/reopen"
+}
+
+export type SessionOneTimeReopenErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionOneTimeReopenError = SessionOneTimeReopenErrors[keyof SessionOneTimeReopenErrors]
+
+export type SessionOneTimeReopenResponses = {
+  /**
+   * The reopened session
+   */
+  200: Session
+}
+
+export type SessionOneTimeReopenResponse = SessionOneTimeReopenResponses[keyof SessionOneTimeReopenResponses]
+
 export type SessionListData = {
   body?: never
   path?: never
@@ -4264,11 +4405,6 @@ export type SessionRevertResponses = {
 }
 
 export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
-
-export type SessionDiscardResult = {
-  discarded: Array<string>
-  refused: Array<string>
-}
 
 export type SessionDiscardData = {
   body?: {

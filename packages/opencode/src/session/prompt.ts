@@ -33,6 +33,7 @@ import { pathToFileURL, fileURLToPath } from "url"
 import { ConfigMarkdown } from "../config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/util/error"
+import { SessionOneTime } from "./one-time"
 import { SessionProcessor } from "./processor"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
@@ -725,7 +726,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
           throw error
         }
-        const model = input.model ?? agent.model ?? (yield* lastModel(input.sessionID))
+        const locked = yield* lock(session)
+        const model = locked ?? input.model ?? agent.model ?? (yield* lastModel(input.sessionID))
         const userMsg: MessageV2.User = {
           id: input.messageID ?? MessageID.ascending(),
           sessionID: input.sessionID,
@@ -907,6 +909,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         return yield* Effect.failCause(exit.cause)
       })
 
+      /** The one-time session's locked model; publishes the error and throws when the session can't take a turn. */
+      const lock = Effect.fnUntraced(function* (session: Session.Info) {
+        const err = SessionOneTime.blocked(session)
+        if (err) {
+          yield* bus.publish(Session.Event.Error, {
+            sessionID: session.id,
+            error: new NamedError.Unknown({ message: err.data.message }).toObject(),
+          })
+          throw err
+        }
+        return session.oneTime?.model
+      })
+
       const lastModel = Effect.fnUntraced(function* (sessionID: SessionID) {
         const match = yield* sessions.findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
         if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
@@ -924,13 +939,22 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           throw error
         }
 
-        const model = input.model ?? ag.model ?? (yield* lastModel(input.sessionID))
+        const session = yield* sessions.get(input.sessionID)
+        const locked = input.noReply ? session.oneTime?.model : yield* lock(session)
+        const model = locked ?? input.model ?? ag.model ?? (yield* lastModel(input.sessionID))
         const same = ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
         const full =
-          !input.variant && ag.variant && same
+          !locked && !input.variant && ag.variant && same
             ? yield* provider.getModel(model.providerID, model.modelID).pipe(Effect.catchDefect(() => Effect.void))
             : undefined
-        const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+        const variant = locked
+          ? SessionOneTime.variant(locked, input.variant)
+          : (input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined))
+        if (locked && !input.noReply && session.oneTime)
+          yield* sessions.setOneTime({
+            sessionID: session.id,
+            oneTime: { ...session.oneTime, requests: session.oneTime.requests + 1 },
+          })
 
         const info: MessageV2.User = {
           id: input.messageID ?? MessageID.ascending(),
@@ -1597,7 +1621,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         }
         template = template.trim()
 
+        const locked = yield* lock(yield* sessions.get(input.sessionID))
         const taskModel = yield* Effect.gen(function* () {
+          if (locked) return locked
           if (cmd.model) return Provider.parseModel(cmd.model)
           if (cmd.agent) {
             const cmdAgent = yield* agents.get(cmd.agent)
@@ -1634,11 +1660,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           : [...templateParts, ...(input.parts ?? [])]
 
         const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultAgent())) : agentName
-        const userModel = isSubtask
-          ? input.model
-            ? Provider.parseModel(input.model)
-            : yield* lastModel(input.sessionID)
-          : taskModel
+        const userModel = locked
+          ? locked
+          : isSubtask
+            ? input.model
+              ? Provider.parseModel(input.model)
+              : yield* lastModel(input.sessionID)
+            : taskModel
 
         yield* plugin.trigger(
           "command.execute.before",

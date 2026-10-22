@@ -25,6 +25,7 @@ import { Snapshot } from "@/snapshot"
 import { ProjectID } from "../project/schema"
 import { WorkspaceID } from "../control-plane/schema"
 import { SessionID, MessageID, PartID } from "./schema"
+import { ProviderID, ModelID } from "@/provider/schema"
 
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
@@ -75,6 +76,7 @@ export namespace Session {
       share,
       revert,
       permission: row.permission ?? undefined,
+      oneTime: row.one_time ?? undefined,
       time: {
         created: row.time_created,
         updated: row.time_updated,
@@ -101,6 +103,8 @@ export namespace Session {
       summary_diffs: info.summary?.diffs,
       revert: info.revert ?? null,
       permission: info.permission,
+      one_time: info.oneTime ?? null,
+      origin_id: info.oneTime?.originSessionID ?? null,
       time_created: info.time.created,
       time_updated: info.time.updated,
       time_compacting: info.time.compacting,
@@ -117,6 +121,29 @@ export namespace Session {
     }
     return `${title} (fork #1)`
   }
+
+  export const OneTime = z
+    .object({
+      model: z.object({
+        providerID: ProviderID.zod,
+        modelID: ModelID.zod,
+        variant: z.string().optional(),
+      }),
+      originSessionID: SessionID.zod.optional(),
+      status: z.enum(["open", "closed"]),
+      requests: z.number(),
+      limit: z.number().optional(),
+      resultMessageID: MessageID.zod.optional(),
+      targetSessionID: SessionID.zod.optional(),
+      time: z.object({
+        opened: z.number(),
+        closed: z.number().optional(),
+      }),
+    })
+    .meta({
+      ref: "SessionOneTime",
+    })
+  export type OneTime = z.output<typeof OneTime>
 
   export const Info = z
     .object({
@@ -148,6 +175,7 @@ export namespace Session {
         archived: z.number().optional(),
       }),
       permission: Permission.Ruleset.optional(),
+      oneTime: OneTime.optional(),
       revert: z
         .object({
           messageID: MessageID.zod,
@@ -317,6 +345,8 @@ export namespace Session {
       title?: string
       permission?: Permission.Ruleset
       workspaceID?: WorkspaceID
+      directory?: string
+      oneTime?: OneTime
     }) => Effect.Effect<Info>
     readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info>
     readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -324,6 +354,9 @@ export namespace Session {
     readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
     readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
     readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
+    readonly setOneTime: (input: { sessionID: SessionID; oneTime: OneTime }) => Effect.Effect<void>
+    /** One-time sessions opened from this session. */
+    readonly byOrigin: (originID: SessionID) => Effect.Effect<Info[]>
     readonly setRevert: (input: {
       sessionID: SessionID
       revert: Info["revert"]
@@ -382,6 +415,7 @@ export namespace Session {
         workspaceID?: WorkspaceID
         directory: string
         permission?: Permission.Ruleset
+        oneTime?: OneTime
       }) {
         const ctx = yield* InstanceState.context
         const result: Info = {
@@ -394,6 +428,7 @@ export namespace Session {
           parentID: input.parentID,
           title: input.title ?? createDefaultTitle(!!input.parentID),
           permission: input.permission,
+          oneTime: input.oneTime,
           time: {
             created: Date.now(),
             updated: Date.now(),
@@ -429,6 +464,11 @@ export namespace Session {
             .where(and(eq(SessionTable.parent_id, parentID)))
             .all(),
         )
+        return rows.map(fromRow)
+      })
+
+      const byOrigin = Effect.fn("Session.byOrigin")(function* (originID: SessionID) {
+        const rows = yield* db((d) => d.select().from(SessionTable).where(eq(SessionTable.origin_id, originID)).all())
         return rows.map(fromRow)
       })
 
@@ -504,14 +544,17 @@ export namespace Session {
         title?: string
         permission?: Permission.Ruleset
         workspaceID?: WorkspaceID
+        directory?: string
+        oneTime?: OneTime
       }) {
-        const directory = yield* InstanceState.directory
+        const directory = input?.directory ?? (yield* InstanceState.directory)
         return yield* createNext({
           parentID: input?.parentID,
           directory,
           title: input?.title,
           permission: input?.permission,
           workspaceID: input?.workspaceID,
+          oneTime: input?.oneTime,
         })
       })
 
@@ -575,6 +618,10 @@ export namespace Session {
         permission: Permission.Ruleset
       }) {
         yield* patch(input.sessionID, { permission: input.permission, time: { updated: Date.now() } })
+      })
+
+      const setOneTime = Effect.fn("Session.setOneTime")(function* (input: { sessionID: SessionID; oneTime: OneTime }) {
+        yield* patch(input.sessionID, { oneTime: input.oneTime, time: { updated: Date.now() } })
       })
 
       const setRevert = Effect.fn("Session.setRevert")(function* (input: {
@@ -666,6 +713,8 @@ export namespace Session {
         setTitle,
         setArchived,
         setPermission,
+        setOneTime,
+        byOrigin,
         setRevert,
         clearRevert,
         setSummary,
