@@ -1072,6 +1072,41 @@ describe("ead i18n + env + mcp", () => {
     ])
   })
 
+  test("the Pilot panel keeps its embedded mode and tells Pilot it runs in EAD SiCode", () => {
+    applyEnv("production")
+    const url = new URL(buildPilotShellUrl({ productId: 7, mode: "cursor" }))
+    expect(url.searchParams.get("mode")).toBe("cursor")
+    expect(url.searchParams.get("host")).toBe("sicode")
+    expect(new URL(buildPilotUrl({ mode: "cursor" })).searchParams.get("host")).toBe("sicode")
+  })
+
+  test("loadPlans reads Pilot's One Time Only Models after the plans", async () => {
+    const rows = (async () =>
+      new Response(
+        JSON.stringify({
+          assignedPlans: [{ name: "EAD 3.2", displayOrder: 1 }],
+          oneTimeModels: [
+            {
+              name: "EAD Expert Review",
+              providerId: "anthropic",
+              modelId: "claude-opus-5-5",
+              description: "Architecture review",
+              priceHint: "In/Out: $15/$75",
+              maxRequests: 5,
+            },
+            { name: "Vision Pro", providerId: "openai", modelId: "gpt-5.2", maxRequests: null },
+            { name: "", providerId: "openai", modelId: "x" },
+          ],
+        }),
+      )) as unknown as typeof fetch
+    const list = await loadPlans("token", rows)
+    expect(list.map((plan) => [plan.name, plan.label, plan.oneSession])).toEqual([
+      ["EAD 3.2", "EAD DP3.2", undefined],
+      ["EAD Expert Review", "EAD Expert Review", { description: "Architecture review", price: "In/Out: $15/$75", limit: 5 }],
+      ["Vision Pro", "Vision Pro", {}],
+    ])
+  })
+
   test("plan spec marks one-session plans, and a change in that marking rewrites the config", () => {
     applyEnv("production")
     const plans = [

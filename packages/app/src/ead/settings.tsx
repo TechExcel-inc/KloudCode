@@ -327,7 +327,9 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
       sourceName: () => store.sourceName ?? "",
       sourcePath: () => store.sourcePath ?? "",
       view: () => (store.view === "source" ? "source" : "pfm"),
-      pilotMode: () => (store.pilotMode === "cursor" ? "cursor" : "opencode"),
+      // Pilot's "cursor" mode means "embedded in a host panel" (sign-in and bridge from the host), the same as
+      // before; the panel names EAD SiCode because the URL also carries host=sicode. Not a setting any more.
+      pilotMode: () => "cursor" as const,
       language: (): Lang => {
         const lang = store.language
         if (lang === "en" || lang === "ja" || lang === "ko") return lang
@@ -428,9 +430,6 @@ export const { use: useEad, provider: EadProvider } = createSimpleContext({
         if (!pref) return
         setStore("badge", pref.badge ?? store.badge)
         setStore("eadsOnly", pref.eadsOnly !== false)
-      },
-      setPilotMode(mode: Mode) {
-        setStore("pilotMode", mode)
       },
       setEadsOnly(value: boolean) {
         setStore("eadsOnly", value)

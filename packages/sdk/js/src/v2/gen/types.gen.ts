@@ -943,6 +943,7 @@ export type SessionOneTime = {
   status: "open" | "closed"
   requests: number
   limit?: number
+  allowance?: number
   resultMessageID?: string
   targetSessionID?: string
   time: {

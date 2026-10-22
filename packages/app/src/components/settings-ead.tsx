@@ -110,19 +110,6 @@ export function SettingsEad() {
             </Show>
           </span>
         </Row>
-        <Row title="Pilot mode" description="Cursor (default, same as the Cursor extension) or EAD SiCode">
-          <select
-            class="h-8 text-12-regular rounded-md border border-border-weak-base bg-background-base px-2"
-            value={ead.pilotMode()}
-            onChange={(e) => {
-              ead.setPilotMode(e.currentTarget.value === "cursor" ? "cursor" : "opencode")
-              ead.bumpPilot()
-            }}
-          >
-            <option value="opencode">EAD SiCode</option>
-            <option value="cursor">Cursor</option>
-          </select>
-        </Row>
         <Row title={language.t("settings.ead.mcpEntry.title")} description={language.t("settings.ead.mcpEntry.description")}>
           <div class="flex flex-col gap-2 w-full max-w-[360px]">
             <input

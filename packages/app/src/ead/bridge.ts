@@ -108,6 +108,8 @@ export function buildPilotShellUrl(
   if (ctx.productName) url.searchParams.set("productName", ctx.productName)
   if (ctx.subSchemaId && ctx.subSchemaId > 0) url.searchParams.set("subSchemaId", String(ctx.subSchemaId))
   url.searchParams.set("mode", ctx.mode === "opencode" ? "opencode" : "cursor")
+  // Pilot names EAD SiCode in its messages, never Cursor; the mode above still drives its behaviour.
+  url.searchParams.set("host", "sicode")
   if (ctx.language) url.searchParams.set("lang", ctx.language)
   if (ctx.bust) url.searchParams.set("_cb", String(ctx.bust))
   return url.toString()
@@ -116,6 +118,7 @@ export function buildPilotShellUrl(
 export function buildPilotUrl(ctx: PilotContext) {
   const url = new URL(`${eadServer()}/plugin/ai-code`)
   url.searchParams.set("mode", ctx.mode === "cursor" ? "cursor" : "opencode")
+  url.searchParams.set("host", "sicode")
   if (ctx.productId && ctx.productId > 0) url.searchParams.set("productId", String(ctx.productId))
   if (ctx.productName) url.searchParams.set("productName", ctx.productName)
   if (ctx.sourceId && ctx.sourceId > 0) {

@@ -89,6 +89,7 @@ export namespace SessionOneTime {
         status: "open",
         requests: 0,
         limit: input.limit ?? model.oneSession?.limit,
+        allowance: input.limit ?? model.oneSession?.limit,
         time: { opened: Date.now() },
       },
     })
@@ -139,7 +140,11 @@ export namespace SessionOneTime {
   /** Writes a card into the target session that links back to the one-time session. No model turn runs. */
   const result = Effect.fnUntraced(function* (target: SessionID, session: Session.Info, agents: Agent.Interface) {
     const sessions = yield* Session.Service
+    const provider = yield* Provider.Service
     const one = session.oneTime!
+    const model = yield* provider
+      .getModel(one.model.providerID, one.model.modelID)
+      .pipe(Effect.catchDefect(() => Effect.succeed(undefined)))
     const last = yield* sessions.findMessage(target, (m) => m.info.role === "user")
     const prior = Option.getOrUndefined(last)?.info
     const user = prior?.role === "user" ? prior : undefined
@@ -151,18 +156,42 @@ export namespace SessionOneTime {
       agent: user?.agent ?? (yield* agents.defaultAgent()),
       model: user?.model ?? { providerID: one.model.providerID, modelID: one.model.modelID },
     }
+    const name = model?.name ?? `${one.model.providerID}/${one.model.modelID}`
+    const answer = excerpt(yield* sessions.messages({ sessionID: session.id }))
+    const head = `Result from one-time session "${session.title}" (${name}, ${one.requests} request${one.requests === 1 ? "" : "s"}).`
     yield* sessions.updateMessage(msg)
     yield* sessions.updatePart({
       id: PartID.ascending(),
       messageID: msg.id,
       sessionID: target,
       type: "text",
-      text: `Result from one-time session "${session.title}" (${one.model.providerID}/${one.model.modelID}, ${one.requests} request${one.requests === 1 ? "" : "s"}).`,
-      metadata: { oneTimeResult: { sessionID: session.id, model: one.model } },
+      // The text is what the model sees on the next turn here, so it carries the answer itself.
+      text: answer ? `${head}\n\n${answer}` : head,
+      metadata: {
+        oneTimeResult: {
+          sessionID: session.id,
+          title: session.title,
+          model: one.model,
+          name,
+          requests: one.requests,
+          answer,
+        },
+      },
     } satisfies MessageV2.TextPart)
     yield* sessions.touch(target)
     return msg.id
   })
+
+  /** The last answer in a session, trimmed to a size that fits as context in another session. */
+  export function excerpt(messages: MessageV2.WithParts[], max = 1500) {
+    const last = messages.findLast((m) => m.info.role === "assistant" && m.parts.some((p) => p.type === "text"))
+    const text = (last?.parts ?? [])
+      .flatMap((p) => (p.type === "text" && !p.synthetic ? [p.text] : []))
+      .join("\n")
+      .trim()
+    if (text.length <= max) return text
+    return text.slice(0, max).trimEnd() + "…"
+  }
 
   export const reopen = Effect.fn("SessionOneTime.reopen")(function* (sessionID: SessionID) {
     const sessions = yield* Session.Service
@@ -172,6 +201,8 @@ export namespace SessionOneTime {
     const next: Session.OneTime = {
       ...one,
       status: "open",
+      // A reopened session gets a fresh allowance on top of what it already used.
+      limit: one.allowance ? one.requests + one.allowance : one.limit,
       targetSessionID: undefined,
       time: { opened: one.time.opened },
     }

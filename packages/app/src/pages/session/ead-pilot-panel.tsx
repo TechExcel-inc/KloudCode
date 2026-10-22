@@ -508,6 +508,7 @@ export function EadPilotPanel(props: { sizing: Sizing }) {
             url.searchParams.set("productId", String(opts.productId))
             if (opts.productName) url.searchParams.set("productName", opts.productName)
             url.searchParams.set("openEditProduct", "1")
+            url.searchParams.set("host", "sicode")
             platform.openLink(url.toString())
             return
           }

@@ -29,7 +29,8 @@ function local(method: string, path: string) {
 }
 
 function getSessionID(url: URL) {
-  if (url.pathname === "/session/status") return null
+  // Session-level routes that aren't about one session.
+  if (url.pathname === "/session/status" || url.pathname === "/session/one-time") return null
 
   const id = url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1]
   if (!id) return null

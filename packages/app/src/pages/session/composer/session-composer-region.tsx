@@ -15,6 +15,7 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { OneTimeBanner, OneTimeClosed } from "@/components/one-time"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -54,6 +55,12 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
+  const once = createMemo(() => info()?.oneTime)
+  // An open one-time session that has used every request it was allowed.
+  const spent = createMemo(() => {
+    const one = once()
+    return one?.status === "open" && one.limit !== undefined && one.requests >= one.limit
+  })
   // A pending question stays usable: it is answered in the conversation or by typing a message.
   const showComposer = createMemo(() => !props.state.permissionRequest() || child())
 
@@ -235,6 +242,9 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-lift()}px`,
               }}
             >
+              <Show when={once()?.status === "open" && info()} keyed>
+                {(session) => <OneTimeBanner session={session} />}
+              </Show>
               <Show when={props.followup?.items.length}>
                 <SessionFollowupDock
                   items={props.followup!.items}
@@ -244,7 +254,7 @@ export function SessionComposerRegion(props: {
                 />
               </Show>
               <Show
-                when={child()}
+                when={child() || once()?.status === "closed" || spent()}
                 fallback={
                   <Show when={!props.state.permissionRequest()}>
                     <PromptInput
@@ -261,21 +271,26 @@ export function SessionComposerRegion(props: {
                   </Show>
                 }
               >
-                <div
-                  ref={props.inputRef}
-                  class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
-                >
-                  <span>{language.t("session.child.promptDisabled")} </span>
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      class="text-text-base transition-colors hover:text-text-strong"
-                      onClick={openParent}
-                    >
-                      {language.t("session.child.backToParent")}
-                    </button>
-                  </Show>
-                </div>
+                <Show when={(once()?.status === "closed" || spent()) && info()} keyed>
+                  {(session) => <OneTimeClosed session={session} full={spent()} ref={props.inputRef} />}
+                </Show>
+                <Show when={child()}>
+                  <div
+                    ref={props.inputRef}
+                    class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+                  >
+                    <span>{language.t("session.child.promptDisabled")} </span>
+                    <Show when={parentID()}>
+                      <button
+                        type="button"
+                        class="text-text-base transition-colors hover:text-text-strong"
+                        onClick={openParent}
+                      >
+                        {language.t("session.child.backToParent")}
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
               </Show>
             </div>
           </Show>

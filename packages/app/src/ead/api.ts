@@ -1099,7 +1099,7 @@ function oneSession(row: PlanRow): OneSession | undefined {
  */
 export async function loadPlans(token: string, http: Http = eadHttp()): Promise<Plan[]> {
   const data = (await call(http, `/account-settings/llm-plans/assignment`, token).catch(() => undefined)) as
-    | { assignedPlans?: PlanRow[]; effectivePlan?: PlanRow }
+    | { assignedPlans?: PlanRow[]; effectivePlan?: PlanRow; oneTimeModels?: OneTimeRow[] }
     | undefined
   if (!data) return []
   const rows = (Array.isArray(data.assignedPlans) ? [...data.assignedPlans] : [data.effectivePlan]).filter(
@@ -1108,7 +1108,7 @@ export async function loadPlans(token: string, http: Http = eadHttp()): Promise<
   const order = (row: PlanRow) => (typeof row.displayOrder === "number" ? row.displayOrder : Number.MAX_SAFE_INTEGER)
   return rows
     .sort((a, b) => order(a) - order(b))
-    .flatMap((row) => {
+    .flatMap((row): Plan[] => {
       const name = planName(String(row.name || ""))
       const one = oneSession(row)
       if (one ? !name : !PLAN.test(name)) return []
@@ -1131,7 +1131,43 @@ export async function loadPlans(token: string, http: Http = eadHttp()): Promise<
         },
       ]
     })
+    .concat(oneTimeModels(data.oneTimeModels))
     .filter((plan, i, list) => list.findIndex((item) => item.name === plan.name) === i)
+}
+
+/** A One Time Only Model as Pilot's admin page offers it (`oneTimeModels` on the plan assignment). */
+type OneTimeRow = {
+  name?: string
+  providerId?: string
+  modelId?: string
+  description?: string
+  priceHint?: string
+  maxRequests?: number | null
+}
+
+/** Pilot's One Time Only Models as plans that run only in a one-time session; the gateway routes on the name. */
+function oneTimeModels(rows: OneTimeRow[] | undefined): Plan[] {
+  if (!Array.isArray(rows)) return []
+  return rows.flatMap((row) => {
+    const name = text(row?.name, 80)
+    if (!name) return []
+    const one = oneSession({
+      usage: "one-session",
+      description: row.description,
+      priceHint: row.priceHint,
+      policy: { maxRequests: row.maxRequests ?? undefined },
+    })
+    return [
+      {
+        name,
+        label: name,
+        suffix: "",
+        model: pretty(String(row.modelId || "")),
+        slots: { easy: "", reasoning: "", advanced: "", vision: "" },
+        ...(one ? { oneSession: one } : {}),
+      },
+    ]
+  })
 }
 
 export type RunPref = {

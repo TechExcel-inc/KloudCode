@@ -1334,3 +1334,35 @@
     }
   }
 }
+
+[data-component="user-message"] [data-slot="user-message-text"][data-variant="one-time-result"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-warning-base);
+  background: var(--surface-warning-weak);
+
+  [data-slot="one-time-result-head"] {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+
+  [data-slot="one-time-result-open"] {
+    margin-left: auto;
+    white-space: nowrap;
+    color: var(--text-interactive-base);
+    text-decoration: none;
+  }
+
+  [data-slot="one-time-result-open"]:hover {
+    text-decoration: underline;
+  }
+
+  [data-slot="one-time-result-answer"] {
+    white-space: pre-wrap;
+    color: var(--text-base);
+  }
+}

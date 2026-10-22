@@ -1,3 +1,4 @@
+import { OnceTag } from "@/components/one-time"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { Button } from "@opencode-ai/ui/button"
@@ -106,9 +107,13 @@ const SessionRow = (props: {
   sidebarOpened: Accessor<boolean>
   warmPress: () => void
   warmFocus: () => void
+  /** A one-time session shown under the session it was opened from. */
+  nested?: boolean
 }): JSX.Element => {
   const language = useLanguage()
   const title = () => sessionTitle(props.session.title)
+  const once = () =>
+    props.session.oneTime ? <OnceTag closed={props.session.oneTime.status === "closed"} /> : undefined
   // The orange (waiting on the person) or red (stuck) dot; real work shows the spinner instead.
   const dot = () => {
     const attention = props.attention()
@@ -119,7 +124,7 @@ const SessionRow = (props: {
   return (
     <A
       href={`/${props.slug}/session/${props.session.id}`}
-      class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
+      class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"} ${props.nested ? "pl-3 border-l border-dashed border-border-weak-base" : ""}`}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
       onClick={() => {
@@ -152,11 +157,13 @@ const SessionRow = (props: {
         <Show when={props.dense} fallback={<span class="text-14-regular text-text-strong truncate">{title()}</span>}>
           <span class="flex items-center gap-1.5 min-w-0">
             <span class="text-14-regular text-text-strong truncate">{title()}</span>
+            {once()}
             {dot()}
           </span>
         </Show>
         <Show when={!props.dense}>
           <span class="flex items-center gap-1.5 min-w-0 text-12-regular text-text-weak">
+            {once()}
             <span class="truncate">
               {ago(props.session.time.updated ?? props.session.time.created, Date.now(), language.intl())}
             </span>
@@ -316,6 +323,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const item = (
     <SessionRow
       session={props.session}
+      nested={
+        !!props.session.oneTime?.originSessionID &&
+        props.list.some((item) => item.id === props.session.oneTime?.originSessionID)
+      }
       slug={props.slug}
       mobile={props.mobile}
       dense={props.dense}

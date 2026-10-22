@@ -34,7 +34,20 @@ const isRootVisibleSession = (session: Session, directory: string) =>
 const roots = (store: SessionStore) =>
   (store.session ?? []).filter((session) => isRootVisibleSession(session, store.path.directory))
 
-export const sortedRootSessions = (store: SessionStore, now: number) => roots(store).sort(sortSessions(now))
+/**
+ * Puts each one-time session right after the session it was opened from, when that session is in the list,
+ * so the sidebar can show it nested. Others keep their place.
+ */
+export function nestOneTime<T extends { id: string; oneTime?: { originSessionID?: string } }>(list: T[]) {
+  const ids = new Set(list.map((item) => item.id))
+  const nested = (item: T) => !!item.oneTime?.originSessionID && ids.has(item.oneTime.originSessionID)
+  return list
+    .filter((item) => !nested(item))
+    .flatMap((item) => [item, ...list.filter((child) => nested(child) && child.oneTime?.originSessionID === item.id)])
+}
+
+export const sortedRootSessions = (store: SessionStore, now: number) =>
+  nestOneTime(roots(store).sort(sortSessions(now)))
 
 export const latestRootSession = (stores: SessionStore[], now: number) =>
   stores.flatMap(roots).sort(sortSessions(now))[0]

@@ -133,6 +133,8 @@ export namespace Session {
       status: z.enum(["open", "closed"]),
       requests: z.number(),
       limit: z.number().optional(),
+      /** Requests each opening allows; reopening adds this many on top of what was used. */
+      allowance: z.number().optional(),
       resultMessageID: MessageID.zod.optional(),
       targetSessionID: SessionID.zod.optional(),
       time: z.object({

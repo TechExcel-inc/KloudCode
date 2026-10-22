@@ -19,6 +19,7 @@ import {
   latestRootSession,
   workspaceKey,
 } from "./helpers"
+import { nestOneTime } from "./helpers"
 import { activeSessions, runStopSteps, sessionAttention, stopSteps, type ActiveSource } from "./active-sessions"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
@@ -413,7 +414,10 @@ describe("active sessions", () => {
     })
 
     test("a permission request waits on the person unless it is answered automatically", () => {
-      const asking = source({ session_status: { ses_c: { type: "busy" } }, permission: { ses_c: [perm("per_1", "ses_c")] } })
+      const asking = source({
+        session_status: { ses_c: { type: "busy" } },
+        permission: { ses_c: [perm("per_1", "ses_c")] },
+      })
       expect(sessionAttention(asking, "ses_a")).toEqual({ kind: "waiting", cause: "permission" })
       expect(sessionAttention(asking, "ses_a", () => false)).toEqual({ kind: "working" })
     })
@@ -507,5 +511,19 @@ describe("activeSessions on screen", () => {
     ] as unknown as Parameters<typeof activeSessions>[0]
     expect(activeSessions(groups, () => true, "ses_a").map((item) => item.session.id)).toEqual(["ses_b"])
     expect(activeSessions(groups).map((item) => item.session.id)).toEqual(["ses_b", "ses_a"])
+  })
+})
+
+describe("nestOneTime", () => {
+  const row = (id: string, origin?: string) => ({ id, oneTime: origin ? { originSessionID: origin } : undefined })
+
+  test("puts one-time sessions right after the session they came from", () => {
+    const list = [row("a"), row("t1", "b"), row("b"), row("t2", "a")]
+    expect(nestOneTime(list).map((item) => item.id)).toEqual(["a", "t2", "b", "t1"])
+  })
+
+  test("keeps a one-time session in place when its origin isn't listed", () => {
+    const list = [row("t1", "gone"), row("a")]
+    expect(nestOneTime(list).map((item) => item.id)).toEqual(["t1", "a"])
   })
 })

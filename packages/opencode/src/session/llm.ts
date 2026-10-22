@@ -22,6 +22,8 @@ import { Auth } from "@/auth"
 import { Installation } from "@/installation"
 import { makeRuntime } from "@/effect/run-service"
 import { Todo } from "./todo"
+import { Database, eq } from "@/storage/db"
+import { SessionTable } from "./session.sql"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
@@ -37,6 +39,30 @@ export namespace LLM {
       return {}
     }
   }
+  /** Marks requests from a one-time session (or its subagents) so EAD Pilot can report premium use. */
+  function once(sessionID: string, parentID?: string): Record<string, string> {
+    try {
+      const find = (id: string) =>
+        Database.use((db) =>
+          db
+            .select({ one: SessionTable.one_time })
+            .from(SessionTable)
+            .where(eq(SessionTable.id, SessionID.make(id)))
+            .get(),
+        )?.one
+      const own = find(sessionID)
+      const id = own ? sessionID : parentID && find(parentID) ? parentID : undefined
+      if (!id) return {}
+      const one = own ?? find(id)
+      return {
+        "x-sicode-one-time": id,
+        ...(one?.originSessionID ? { "x-sicode-one-time-origin": one.originSessionID } : {}),
+      }
+    } catch {
+      return {}
+    }
+  }
+
   type Result = Awaited<ReturnType<typeof streamText>>
 
   export type StreamInput = {
@@ -369,6 +395,7 @@ export namespace LLM {
                     // For EAD Pilot's cost records: the request (message) this belongs to and the checklist step in progress.
                     "x-sicode-message": input.user.id,
                     ...step(SessionID.make(input.sessionID)),
+                    ...once(input.sessionID, input.parentSessionID),
                     "User-Agent": `opencode/${Installation.VERSION}`,
                   }),
               ...input.model.headers,

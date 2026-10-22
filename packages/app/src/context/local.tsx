@@ -62,6 +62,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const models = useModels()
 
     const id = createMemo(() => params.id || undefined)
+    // A one-time session runs only on its own model; the server enforces it, the composer just shows it.
+    const locked = createMemo(() => {
+      const session = id()
+      return session ? sync.session.get(session)?.oneTime?.model : undefined
+    })
     const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
@@ -229,6 +234,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const current = () => {
       const item = firstModel(
+        locked,
         () => scope()?.model,
         () => agent.current()?.model,
         fallback,
@@ -247,7 +253,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       })
     }
 
-    const selected = () => scope()?.variant
+    const selected = () => locked()?.variant ?? scope()?.variant
 
     const snapshot = () => {
       const model = current()
@@ -295,7 +301,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         if (!entry) return
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
+      /** True in a one-time session, where the model can't be changed. */
+      locked: () => !!locked(),
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
+        if (locked()) return
         batch(() => {
           setStore("last", {
             type: "model",

@@ -76,8 +76,7 @@ export namespace Flag {
   export const OPENCODE_EXPERIMENTAL_PLAN_MODE = OPENCODE_EXPERIMENTAL || truthy("OPENCODE_EXPERIMENTAL_PLAN_MODE")
   export const OPENCODE_EXPERIMENTAL_WORKSPACES = OPENCODE_EXPERIMENTAL || truthy("OPENCODE_EXPERIMENTAL_WORKSPACES")
   /** One-session-only models: sessions locked to one special-service model. */
-  export const OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS =
-    OPENCODE_EXPERIMENTAL || truthy("OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS")
+  export declare const OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS: boolean
   export const OPENCODE_EXPERIMENTAL_MARKDOWN = !falsy("OPENCODE_EXPERIMENTAL_MARKDOWN")
   export const OPENCODE_MODELS_URL = process.env["OPENCODE_MODELS_URL"]
   export const OPENCODE_MODELS_PATH = process.env["OPENCODE_MODELS_PATH"]
@@ -94,6 +93,15 @@ export namespace Flag {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
   }
 }
+
+// Dynamic getter for OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS, read per request so it can be turned on at runtime
+Object.defineProperty(Flag, "OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS", {
+  get() {
+    return truthy("OPENCODE_EXPERIMENTAL") || truthy("OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS")
+  },
+  enumerable: true,
+  configurable: false,
+})
 
 // Dynamic getter for OPENCODE_DISABLE_PROJECT_CONFIG
 // This must be evaluated at access time, not module load time,

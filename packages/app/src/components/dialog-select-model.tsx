@@ -12,6 +12,7 @@ import { List } from "@opencode-ai/ui/list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
+import { OnceTag, type OnceModel } from "./one-time"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
@@ -24,14 +25,21 @@ const ModelList: Component<{
   onSelect: () => void
   action?: JSX.Element
   model?: ModelState
+  /** Picking a one-session-only model opens a one-time session instead of switching this one. */
+  onOnce?: (model: OnceModel) => void
 }> = (props) => {
   const model = props.model ?? useLocal().model
   const language = useLanguage()
+  const once = language.t("oneTime.picker.section")
 
   const models = createMemo(() =>
     model
       .list()
-      .filter((m) => model.visible({ modelID: m.id, providerID: m.provider.id }))
+      .filter(
+        (m) =>
+          model.visible({ modelID: m.id, providerID: m.provider.id }) ||
+          (!!m.oneSession && !!props.onOnce && !model.locked()),
+      )
       .filter((m) => (props.provider ? m.provider.id === props.provider : true)),
   )
 
@@ -45,13 +53,15 @@ const ModelList: Component<{
       current={model.current()}
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
-      groupBy={(x) => x.provider.name}
+      groupBy={(x) => (x.oneSession ? once : x.provider.name)}
       sortGroupsBy={(a, b) => {
-        const aProvider = a.items[0].provider.id
-        const bProvider = b.items[0].provider.id
-        if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1
-        if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
-        return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
+        // Popular providers first, in their order; one-session-only models sit right after the EAD plans.
+        const rank = (group: { category: string; items: { provider: { id: string } }[] }) => {
+          const id = group.category === once ? "ead" : group.items[0].provider.id
+          const index = popularProviders.indexOf(id)
+          return (index === -1 ? popularProviders.length : index) + (group.category === once ? 0.5 : 0)
+        }
+        return rank(a) - rank(b)
       }}
       itemWrapper={(item, node) => (
         <Tooltip
@@ -64,6 +74,11 @@ const ModelList: Component<{
         </Tooltip>
       )}
       onSelect={(x) => {
+        if (x?.oneSession && props.onOnce) {
+          // The caller closes its own popover or dialog first, so the confirmation isn't dismissed with it.
+          props.onOnce(x)
+          return
+        }
         model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
         })
@@ -72,7 +87,19 @@ const ModelList: Component<{
     >
       {(i) => (
         <div class="w-full flex items-center gap-x-2 text-13-regular">
-          <span class="truncate">{i.name}</span>
+          <Show when={i.oneSession} fallback={<span class="truncate">{i.name}</span>}>
+            {(info) => (
+              <span class="min-w-0 flex flex-col items-start">
+                <span class="truncate">{i.name}</span>
+                <span class="flex items-center gap-1.5 min-w-0">
+                  <OnceTag />
+                  <Show when={info().price}>
+                    <span class="truncate text-12-regular text-text-weak">{info().price}</span>
+                  </Show>
+                </span>
+              </span>
+            )}
+          </Show>
           <Show when={isFree(i.provider.id, i.cost)}>
             <Tag>{language.t("model.tag.free")}</Tag>
           </Show>
@@ -86,7 +113,7 @@ const ModelList: Component<{
 }
 
 type ModelSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "as" | "ref">
-type Dismiss = "escape" | "outside" | "select" | "manage" | "provider"
+type Dismiss = "escape" | "outside" | "select" | "manage" | "provider" | "once"
 
 export function ModelSelectorPopover(props: {
   provider?: string
@@ -95,6 +122,7 @@ export function ModelSelectorPopover(props: {
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
   onClose?: (cause: "escape" | "select") => void
+  onOnce?: (model: OnceModel) => void
 }) {
   const [store, setStore] = createStore<{
     open: boolean
@@ -151,7 +179,8 @@ export function ModelSelectorPopover(props: {
           onFocusOutside={() => close("outside")}
           onCloseAutoFocus={(event) => {
             const dismiss = store.dismiss
-            if (dismiss === "outside") event.preventDefault()
+            // "once" opens the one-time confirmation next; moving focus back to the composer would dismiss it.
+            if (dismiss === "outside" || dismiss === "once") event.preventDefault()
             if (dismiss === "escape" || dismiss === "select") {
               event.preventDefault()
               props.onClose?.(dismiss)
@@ -163,6 +192,14 @@ export function ModelSelectorPopover(props: {
           <ModelList
             provider={props.provider}
             model={props.model}
+            onOnce={
+              props.onOnce &&
+              ((item: OnceModel) => {
+                close("once")
+                // Open the confirmation once the popover has finished closing, as "Manage models" does.
+                setTimeout(() => props.onOnce?.(item), 0)
+              })
+            }
             onSelect={() => close("select")}
             class="p-1"
             action={

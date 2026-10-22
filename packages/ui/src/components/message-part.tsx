@@ -1102,6 +1102,14 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
 
   const text = createMemo(() => textPart()?.text || "")
 
+  // A card written when a one-time session was marked done: its answer, with a way back to it.
+  const once = createMemo(
+    () =>
+      textPart()?.metadata?.oneTimeResult as
+        | { sessionID: string; name?: string; answer?: string; requests?: number }
+        | undefined,
+  )
+
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
   const attachments = createMemo(() => files().filter(attached))
@@ -1198,9 +1206,38 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
       <Show when={text()}>
         <>
           <div data-slot="user-message-body">
-            <div data-slot="user-message-text">
-              <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
-            </div>
+            <Show
+              when={once()}
+              fallback={
+                <div data-slot="user-message-text">
+                  <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+                </div>
+              }
+            >
+              {(item) => (
+                <div data-slot="user-message-text" data-variant="one-time-result">
+                  <div data-slot="one-time-result-head">
+                    <span>{i18n.t("ui.message.oneTime.result", { model: item().name ?? "" })}</span>
+                    <Show when={data.navigateToSession}>
+                      <a
+                        data-slot="one-time-result-open"
+                        href={data.sessionHref?.(item().sessionID)}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          data.navigateToSession?.(item().sessionID)
+                        }}
+                      >
+                        {i18n.t("ui.message.oneTime.open")} ↗
+                      </a>
+                    </Show>
+                  </div>
+                  <Show when={item().answer}>
+                    <div data-slot="one-time-result-answer">{item().answer}</div>
+                  </Show>
+                </div>
+              )}
+            </Show>
           </div>
           <div data-slot="user-message-copy-wrapper">
             <Show when={metaHead() || metaTail()}>

@@ -34,12 +34,14 @@ function model(id: string) {
 // and records which model each request asked for.
 function chat() {
   const seen: string[] = []
+  const tags: (string | null)[] = []
   const encoder = new TextEncoder()
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
       const body = (await req.json()) as { model: string }
       seen.push(body.model)
+      tags.push(req.headers.get("x-sicode-one-time"))
       const chunks = [
         { choices: [{ delta: { role: "assistant" } }] },
         { choices: [{ delta: { content: "done" } }] },
@@ -51,7 +53,7 @@ function chat() {
       return new Response(encoder.encode(payload), { headers: { "content-type": "text/event-stream" } })
     },
   })
-  return { server, seen }
+  return { server, seen, tags }
 }
 
 async function within(fn: () => Promise<void>, url = "http://localhost:1") {
@@ -174,6 +176,7 @@ describe("one-time model lock", () => {
         })
         expect(mock.seen).toContain("premium")
         expect(mock.seen).not.toContain("regular")
+        expect(mock.tags).toContain(session.id)
         if (reply.info.role !== "assistant") throw new Error("expected assistant message")
         expect(reply.info.modelID).toBe(premium.modelID)
         expect((await Session.get(session.id)).oneTime?.requests).toBe(1)
@@ -310,6 +313,45 @@ describe("one-time done and reopen", () => {
       const second = await done({ sessionID: session.id, goTo: "new", addResult: false })
       expect(second.targetSessionID).toBe(first.targetSessionID)
     })
+  })
+
+  test("reopen grants a fresh allowance after the limit is used", async () => {
+    await within(async () => {
+      const session = await open({ model: premium, limit: 2 })
+      await AppRuntime.runPromise(
+        Session.Service.use((svc) =>
+          svc.setOneTime({ sessionID: session.id, oneTime: { ...session.oneTime!, requests: 2 } }),
+        ),
+      )
+      expect(SessionOneTime.blocked(await Session.get(session.id))).toBeDefined()
+      await done({ sessionID: session.id, goTo: "new", addResult: false })
+      const again = await reopen(session.id)
+      expect(again.oneTime?.limit).toBe(4)
+      expect(SessionOneTime.blocked(await Session.get(session.id))).toBeUndefined()
+    })
+  })
+
+  test("the result card carries the one-time session's last answer", async () => {
+    const mock = chat()
+    try {
+      await within(async () => {
+        const origin = await Session.create({})
+        const session = await open({ originSessionID: origin.id, model: premium })
+        await SessionPrompt.prompt({ sessionID: session.id, agent: "build", parts: [{ type: "text", text: "go" }] })
+        await done({ sessionID: session.id, goTo: "origin", addResult: true })
+        const card = (await Session.messages({ sessionID: origin.id })).at(-1)
+        const part = card?.parts[0]
+        if (part?.type !== "text") throw new Error("expected a text part")
+        expect(part.text).toContain("done")
+        expect(part.metadata?.oneTimeResult).toMatchObject({
+          sessionID: session.id,
+          name: "Premium Review",
+          answer: "done",
+        })
+      }, mock.server.url.origin)
+    } finally {
+      mock.server.stop(true)
+    }
   })
 
   test("reopen lets the session take turns again", async () => {

@@ -433,6 +433,10 @@ pub fn spawn_command(
             "OPENCODE_EXPERIMENTAL_FILEWATCHER".to_string(),
             "true".to_string(),
         ),
+        (
+            "OPENCODE_EXPERIMENTAL_ONE_TIME_SESSIONS".to_string(),
+            "true".to_string(),
+        ),
         ("OPENCODE_CLIENT".to_string(), "desktop".to_string()),
         (
             "XDG_STATE_HOME".to_string(),
